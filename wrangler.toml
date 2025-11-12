@@ -1,6 +1,7 @@
 name = "iofold-validation"
 main = "src/index.ts"
 compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
 
 # NOTE: Run `npx wrangler d1 create iofold_validation` to create the database
 # Then replace the database_id below with the actual ID from the output

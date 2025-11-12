@@ -33,7 +33,7 @@ export class EvalGenerator {
     this.client = new Anthropic({
       apiKey: config.anthropicApiKey
     });
-    this.model = config.model || 'claude-3-5-sonnet-20241022';
+    this.model = config.model || 'claude-3-haiku-20240307';
   }
 
   async generate(request: GenerateEvalRequest): Promise<GenerateEvalResult> {
