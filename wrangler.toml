@@ -1,0 +1,13 @@
+name = "iofold-validation"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+# NOTE: Run `npx wrangler d1 create iofold_validation` to create the database
+# Then replace the database_id below with the actual ID from the output
+[[d1_databases]]
+binding = "DB"
+database_name = "iofold_validation"
+database_id = "REPLACE_WITH_ACTUAL_DATABASE_ID"
+
+[vars]
+ENVIRONMENT = "development"

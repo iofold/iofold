@@ -1,0 +1,36 @@
+{
+  "name": "iofold-validation",
+  "version": "0.1.0",
+  "description": "Pre-implementation validation prototype for iofold.com",
+  "main": "src/index.ts",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iofold/main.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/iofold/main/issues"
+  },
+  "homepage": "https://github.com/iofold/main#readme",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251111.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.47.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "langfuse": "^3.38.6",
+    "zod": "^4.1.12"
+  }
+}
