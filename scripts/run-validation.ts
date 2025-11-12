@@ -4,6 +4,8 @@ import { LangfuseAdapter } from '../src/adapters/langfuse';
 import { EvalGenerator } from '../src/eval-generator/generator';
 import { EvalTester } from '../src/eval-generator/tester';
 import { CostTracker } from '../src/analytics/cost-tracker';
+import { writeFileSync } from 'fs';
+import { join } from 'path';
 
 async function main() {
   console.log('=== iofold Pre-Implementation Validation ===\n');
@@ -22,6 +24,8 @@ async function main() {
 
   // Step 2: Manually label traces (for validation, we'll split randomly)
   console.log('2. Labeling traces...');
+  console.log('⚠️  Note: Using arbitrary 50/50 split for demonstration');
+  console.log('   For accurate validation, use pre-labeled positive/negative traces');
   const positiveTraces = traces.slice(0, 5);
   const negativeTraces = traces.slice(5, 10);
   console.log(`✅ Labeled ${positiveTraces.length} positive, ${negativeTraces.length} negative\n`);
@@ -88,9 +92,10 @@ async function main() {
     }))
   };
 
-  console.log('\nWriting results to docs/validation-results.md...');
-  // You would write this to file here
-  console.log(JSON.stringify(results, null, 2));
+  const resultsPath = join(__dirname, '../docs/validation-results.json');
+  writeFileSync(resultsPath, JSON.stringify(results, null, 2));
+  console.log(`✅ Results saved to ${resultsPath}`);
+  console.log('\nNext: Update docs/validation-results.md with findings');
 }
 
 main().catch(console.error);
