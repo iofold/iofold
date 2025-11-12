@@ -46,6 +46,8 @@ npx wrangler d1 execute iofold_validation --remote --file=./schema.sql
 
 ### 4. Set Up Environment Variables
 
+#### For Local Development
+
 Copy `.env.example` to `.env` and fill in your actual API keys:
 
 ```bash
@@ -58,6 +60,24 @@ Required keys:
 - `LANGFUSE_SECRET_KEY`: Your Langfuse secret key
 - `LANGFUSE_BASE_URL`: Langfuse base URL (default: https://cloud.langfuse.com)
 - `ANTHROPIC_API_KEY`: Your Anthropic API key for Claude
+
+#### For Production Deployment
+
+Configure secrets using Wrangler CLI:
+
+```bash
+# Set Langfuse credentials
+npx wrangler secret put LANGFUSE_PUBLIC_KEY
+npx wrangler secret put LANGFUSE_SECRET_KEY
+
+# Set Anthropic API key
+npx wrangler secret put ANTHROPIC_API_KEY
+
+# Optional: Set custom Langfuse base URL (if not using cloud.langfuse.com)
+npx wrangler secret put LANGFUSE_BASE_URL
+```
+
+Each command will prompt you to enter the secret value securely.
 
 ### 5. Verify Setup
 
