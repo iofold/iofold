@@ -24,6 +24,7 @@
   "homepage": "https://github.com/iofold/main#readme",
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251111.0",
+    "@types/node": "^24.10.1",
     "typescript": "^5.9.3",
     "vitest": "^2.1.8",
     "wrangler": "^4.47.0"

@@ -17,7 +17,6 @@ export interface TraceFilter {
 
 export class LangfuseAdapter {
   private client: Langfuse;
-  private authenticated = false;
 
   constructor(private config: LangfuseConfig) {
     this.client = new Langfuse({
@@ -27,46 +26,34 @@ export class LangfuseAdapter {
     });
   }
 
-  async authenticate(): Promise<void> {
-    try {
-      // Test connection by fetching projects
-      await this.client.fetch();
-      this.authenticated = true;
-    } catch (error) {
-      throw new Error(`Langfuse authentication failed: ${error}`);
-    }
-  }
-
   async fetchTraces(filter: TraceFilter = {}): Promise<Trace[]> {
-    if (!this.authenticated) {
-      throw new Error('Not authenticated. Call authenticate() first.');
-    }
-
     try {
-      const traces = await this.client.fetchTraces({
+      const response = await this.client.api.traceList({
         limit: filter.limit || 10,
         userId: filter.userId,
         tags: filter.tags,
-        fromTimestamp: filter.fromTimestamp,
-        toTimestamp: filter.toTimestamp
+        fromTimestamp: filter.fromTimestamp?.toISOString(),
+        toTimestamp: filter.toTimestamp?.toISOString()
       });
 
-      return traces.data.map(trace => this.normalizeTrace(trace));
+      return response.data.map(trace => this.normalizeTrace(trace));
     } catch (error) {
-      throw new Error(`Failed to fetch traces: ${error}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to fetch traces: ${message}`, {
+        cause: error
+      });
     }
   }
 
   async fetchTraceById(id: string): Promise<Trace> {
-    if (!this.authenticated) {
-      throw new Error('Not authenticated. Call authenticate() first.');
-    }
-
     try {
-      const trace = await this.client.fetchTrace(id);
+      const trace = await this.client.api.traceGet(id);
       return this.normalizeTrace(trace);
     } catch (error) {
-      throw new Error(`Failed to fetch trace ${id}: ${error}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to fetch trace ${id}: ${message}`, {
+        cause: error
+      });
     }
   }
 

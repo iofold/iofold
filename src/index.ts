@@ -1,5 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 
+import { z } from 'zod';
 import { LangfuseAdapter } from './adapters/langfuse';
 
 export interface Env {
@@ -9,6 +10,10 @@ export interface Env {
   LANGFUSE_BASE_URL?: string;
   ANTHROPIC_API_KEY: string;
 }
+
+const FetchTracesRequestSchema = z.object({
+  limit: z.number().int().positive().min(1).max(100).optional().default(10)
+});
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -22,7 +27,9 @@ export default {
     // Fetch traces from Langfuse
     if (url.pathname === '/api/traces/fetch' && request.method === 'POST') {
       try {
-        const { limit = 10 } = await request.json();
+        const body = await request.json();
+        const validatedBody = FetchTracesRequestSchema.parse(body);
+        const { limit } = validatedBody;
 
         const adapter = new LangfuseAdapter({
           publicKey: env.LANGFUSE_PUBLIC_KEY,
@@ -30,22 +37,23 @@ export default {
           baseUrl: env.LANGFUSE_BASE_URL
         });
 
-        await adapter.authenticate();
         const traces = await adapter.fetchTraces({ limit });
 
-        // Store traces in D1
-        for (const trace of traces) {
-          await env.DB.prepare(
+        // Store traces in D1 using batch API
+        const statements = traces.map(trace =>
+          env.DB.prepare(
             'INSERT OR REPLACE INTO traces (id, trace_id, source, raw_data, normalized_data) VALUES (?, ?, ?, ?, ?)'
+          ).bind(
+            trace.id,
+            trace.trace_id,
+            trace.source,
+            JSON.stringify(trace.raw_data),
+            JSON.stringify(trace.steps)
           )
-            .bind(
-              trace.id,
-              trace.trace_id,
-              trace.source,
-              JSON.stringify(trace.raw_data),
-              JSON.stringify(trace.steps)
-            )
-            .run();
+        );
+
+        if (statements.length > 0) {
+          await env.DB.batch(statements);
         }
 
         return new Response(JSON.stringify({
