@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { LangfuseAdapter } from './adapters/langfuse';
 import { EvalGenerator } from './eval-generator/generator';
+import { EvalTester } from './eval-generator/tester';
 import { PythonRunner } from './sandbox/python-runner';
 
 export interface Env {
@@ -21,6 +22,13 @@ const GenerateEvalRequestSchema = z.object({
   name: z.string().min(1),
   positiveTraceIds: z.array(z.string()).min(1),
   negativeTraceIds: z.array(z.string()).min(1)
+});
+
+const TestEvalRequestSchema = z.object({
+  traceIds: z.array(z.object({
+    traceId: z.string(),
+    expectedPass: z.boolean()
+  })).min(1)
 });
 
 export default {
@@ -223,6 +231,130 @@ export default {
             details: error.message
           }), {
             status: 500,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Generic errors
+        return new Response(JSON.stringify({
+          success: false,
+          error: error.message || 'Internal server error'
+        }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    // Test eval on training set
+    if (url.pathname.startsWith('/api/evals/') && url.pathname.endsWith('/test') && request.method === 'POST') {
+      try {
+        const evalId = url.pathname.split('/')[3];
+
+        // Fetch eval
+        const evalRecord = await env.DB.prepare(
+          'SELECT * FROM evals WHERE id = ?'
+        ).bind(evalId).first();
+
+        if (!evalRecord) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Eval not found'
+          }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Fetch test cases from request
+        const body = await request.json();
+        const validatedBody = TestEvalRequestSchema.parse(body);
+        const { traceIds } = validatedBody;
+
+        const testCases = await Promise.all(
+          traceIds.map(async (item: { traceId: string; expectedPass: boolean }) => {
+            const traceRecord = await env.DB.prepare(
+              'SELECT * FROM traces WHERE id = ?'
+            ).bind(item.traceId).first();
+
+            if (!traceRecord) {
+              throw new Error(`Trace ${item.traceId} not found`);
+            }
+
+            return {
+              trace: {
+                id: traceRecord.id as string,
+                trace_id: traceRecord.trace_id as string,
+                source: traceRecord.source as 'langfuse' | 'langsmith' | 'openai',
+                steps: JSON.parse(traceRecord.normalized_data as string),
+                raw_data: JSON.parse(traceRecord.raw_data as string)
+              },
+              expectedPass: item.expectedPass
+            };
+          })
+        );
+
+        // Test eval
+        const tester = new EvalTester();
+        const result = await tester.test(evalRecord.code as string, testCases);
+
+        // Update eval with accuracy
+        await env.DB.prepare(
+          'UPDATE evals SET accuracy = ? WHERE id = ?'
+        ).bind(result.accuracy, evalId).run();
+
+        // Store execution results
+        for (const detail of result.details) {
+          const executionId = crypto.randomUUID();
+          await env.DB.prepare(
+            'INSERT INTO eval_executions (id, eval_id, trace_id, predicted_pass, reason, execution_time_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+          )
+            .bind(
+              executionId,
+              evalId,
+              detail.traceId,
+              detail.predicted ? 1 : 0,
+              detail.reason,
+              detail.executionTimeMs,
+              detail.error || null,
+              new Date().toISOString()
+            )
+            .run();
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          result: {
+            accuracy: result.accuracy,
+            correct: result.correct,
+            incorrect: result.incorrect,
+            errors: result.errors,
+            total: result.total,
+            lowConfidence: result.accuracy < 0.8
+          }
+        }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (error: any) {
+        // Zod validation errors (invalid request format)
+        if (error.name === 'ZodError') {
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Invalid request format',
+            details: error.errors
+          }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Trace not found errors
+        if (error.message && error.message.includes('not found')) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: error.message
+          }), {
+            status: 404,
             headers: { 'Content-Type': 'application/json' }
           });
         }

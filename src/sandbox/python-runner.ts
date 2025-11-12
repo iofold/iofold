@@ -55,6 +55,11 @@ export class PythonRunner {
       // This is TEMPORARY - just for validation phase
       const jsCode = this.pythonToJsShim(code);
 
+      // Debug logging
+      // console.log('==== Python to JS conversion ====');
+      // console.log(jsCode);
+      // console.log('================================');
+
       const outputLines: string[] = [];
       const sandbox = {
         console: {
