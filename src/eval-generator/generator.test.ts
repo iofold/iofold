@@ -55,5 +55,8 @@ describe('EvalGenerator', () => {
     expect(result.code).toContain('def eval_answer_quality');
     expect(result.code).toContain('return');
     expect(result.metadata.tokensUsed).toBeGreaterThan(0);
+    expect(result.metadata.cost).toBeDefined();
+    expect(result.metadata.cost.estimatedCostUSD).toBeGreaterThan(0);
+    expect(result.metadata.cost.model).toBe('claude-3-5-sonnet-20241022');
   }, 30000); // 30s timeout for LLM call
 });

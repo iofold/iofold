@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Trace } from '../types/trace';
 import { buildEvalGenerationPrompt } from './prompts';
+import { CostTracker, type CostMetrics } from '../analytics/cost-tracker';
 
 export interface GenerateEvalRequest {
   name: string;
@@ -15,6 +16,7 @@ export interface GenerateEvalResult {
     promptTokens: number;
     completionTokens: number;
     model: string;
+    cost: CostMetrics;
   };
 }
 
@@ -55,13 +57,24 @@ export class EvalGenerator {
     // Extract code from response
     const code = this.extractCode(response.content);
 
+    // Calculate cost
+    const cost = CostTracker.calculateCost({
+      model: this.model,
+      promptTokens: response.usage.input_tokens,
+      completionTokens: response.usage.output_tokens
+    });
+
+    console.log(`[Cost] Generated eval for $${cost.estimatedCostUSD.toFixed(4)}`);
+    console.log(`[Cost] Tokens: ${cost.totalTokens} (${cost.promptTokens} in, ${cost.completionTokens} out)`);
+
     return {
       code,
       metadata: {
         tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
         promptTokens: response.usage.input_tokens,
         completionTokens: response.usage.output_tokens,
-        model: this.model
+        model: this.model,
+        cost
       }
     };
   }
