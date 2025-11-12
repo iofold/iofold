@@ -5,6 +5,11 @@ import { LangfuseAdapter } from './adapters/langfuse';
 import { EvalGenerator } from './eval-generator/generator';
 import { EvalTester } from './eval-generator/tester';
 import { PythonRunner } from './sandbox/python-runner';
+import { EvalsAPI } from './api/evals';
+import { JobsAPI } from './api/jobs';
+import { handleError } from './utils/errors';
+import type { Sandbox } from '@cloudflare/sandbox';
+import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 
 export interface Env {
   DB: D1Database;
@@ -12,6 +17,7 @@ export interface Env {
   LANGFUSE_SECRET_KEY: string;
   LANGFUSE_BASE_URL?: string;
   ANTHROPIC_API_KEY: string;
+  SANDBOX?: DurableObjectNamespace<Sandbox>;
 }
 
 const FetchTracesRequestSchema = z.object({
@@ -35,10 +41,91 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
+    // For simplicity, we'll use a default workspace ID
+    // In production, this would come from authentication
+    const workspaceId = 'workspace_default';
+
+    // Initialize API classes
+    const evalsAPI = new EvalsAPI(env.DB, env.ANTHROPIC_API_KEY, env.SANDBOX);
+    const jobsAPI = new JobsAPI(env.DB);
+
     // Health check
     if (url.pathname === '/health') {
       return new Response('OK', { status: 200 });
     }
+
+    // ============================================================================
+    // JOBS API
+    // ============================================================================
+
+    // GET /api/jobs/:id - Get job status
+    if (url.pathname.match(/^\/api\/jobs\/[^\/]+$/) && request.method === 'GET') {
+      const jobId = url.pathname.split('/')[3];
+      return jobsAPI.getJob(jobId);
+    }
+
+    // GET /api/jobs/:id/stream - Stream job progress
+    if (url.pathname.match(/^\/api\/jobs\/[^\/]+\/stream$/) && request.method === 'GET') {
+      const jobId = url.pathname.split('/')[3];
+      return jobsAPI.streamJob(jobId);
+    }
+
+    // POST /api/jobs/:id/cancel - Cancel job
+    if (url.pathname.match(/^\/api\/jobs\/[^\/]+\/cancel$/) && request.method === 'POST') {
+      const jobId = url.pathname.split('/')[3];
+      return jobsAPI.cancelJob(jobId);
+    }
+
+    // GET /api/jobs - List recent jobs
+    if (url.pathname === '/api/jobs' && request.method === 'GET') {
+      return jobsAPI.listJobs(workspaceId, url.searchParams);
+    }
+
+    // ============================================================================
+    // EVALS API
+    // ============================================================================
+
+    // POST /api/eval-sets/:id/generate - Generate eval
+    if (url.pathname.match(/^\/api\/eval-sets\/[^\/]+\/generate$/) && request.method === 'POST') {
+      const evalSetId = url.pathname.split('/')[3];
+      const body = await request.json();
+      return evalsAPI.generateEval(evalSetId, workspaceId, body);
+    }
+
+    // GET /api/evals - List evals
+    if (url.pathname === '/api/evals' && request.method === 'GET') {
+      return evalsAPI.listEvals(url.searchParams);
+    }
+
+    // GET /api/evals/:id - Get eval details
+    if (url.pathname.match(/^\/api\/evals\/[^\/]+$/) && request.method === 'GET') {
+      const evalId = url.pathname.split('/')[3];
+      return evalsAPI.getEval(evalId);
+    }
+
+    // PATCH /api/evals/:id - Update eval
+    if (url.pathname.match(/^\/api\/evals\/[^\/]+$/) && request.method === 'PATCH') {
+      const evalId = url.pathname.split('/')[3];
+      const body = await request.json();
+      return evalsAPI.updateEval(evalId, body);
+    }
+
+    // POST /api/evals/:id/execute - Execute eval
+    if (url.pathname.match(/^\/api\/evals\/[^\/]+\/execute$/) && request.method === 'POST') {
+      const evalId = url.pathname.split('/')[3];
+      const body = await request.json();
+      return evalsAPI.executeEval(evalId, workspaceId, body);
+    }
+
+    // DELETE /api/evals/:id - Delete eval
+    if (url.pathname.match(/^\/api\/evals\/[^\/]+$/) && request.method === 'DELETE') {
+      const evalId = url.pathname.split('/')[3];
+      return evalsAPI.deleteEval(evalId);
+    }
+
+    // ============================================================================
+    // LEGACY ENDPOINTS (kept for backward compatibility)
+    // ============================================================================
 
     // Fetch traces from Langfuse
     if (url.pathname === '/api/traces/fetch' && request.method === 'POST') {
@@ -85,17 +172,11 @@ export default {
           headers: { 'Content-Type': 'application/json' }
         });
       } catch (error: any) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: error.message
-        }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        return handleError(error);
       }
     }
 
-    // Generate eval function
+    // Generate eval function (legacy endpoint - now prefer /api/eval-sets/:id/generate)
     if (url.pathname === '/api/evals/generate' && request.method === 'POST') {
       try {
         // Validate environment variables
@@ -163,16 +244,18 @@ export default {
           });
         }
 
-        // Store eval in database
+        // Store eval in database (with dummy eval_set_id for legacy support)
         const evalId = crypto.randomUUID();
         await env.DB.prepare(
-          'INSERT INTO evals (id, name, code, training_count, created_at) VALUES (?, ?, ?, ?, ?)'
+          'INSERT INTO evals (id, eval_set_id, name, code, model_used, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
         )
           .bind(
             evalId,
+            'legacy',
             name,
             result.code,
-            positiveTraces.length + negativeTraces.length,
+            result.metadata.model,
+            new Date().toISOString(),
             new Date().toISOString()
           )
           .run();
@@ -186,67 +269,11 @@ export default {
           headers: { 'Content-Type': 'application/json' }
         });
       } catch (error: any) {
-        // Differentiate error types for proper status codes
-
-        // Zod validation errors (invalid request format)
-        if (error.name === 'ZodError') {
-          return new Response(JSON.stringify({
-            success: false,
-            error: 'Invalid request format',
-            details: error.errors
-          }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-
-        // Trace not found errors
-        if (error.message && error.message.includes('not found')) {
-          return new Response(JSON.stringify({
-            success: false,
-            error: error.message
-          }), {
-            status: 404,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-
-        // Claude API errors (external service)
-        if (error.status || error.type === 'api_error') {
-          return new Response(JSON.stringify({
-            success: false,
-            error: 'External API error',
-            details: error.message
-          }), {
-            status: 502,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-
-        // Database errors
-        if (error.message && (error.message.includes('D1') || error.message.includes('database'))) {
-          return new Response(JSON.stringify({
-            success: false,
-            error: 'Database error',
-            details: error.message
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-
-        // Generic errors
-        return new Response(JSON.stringify({
-          success: false,
-          error: error.message || 'Internal server error'
-        }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        return handleError(error);
       }
     }
 
-    // Test eval on training set
+    // Test eval on training set (legacy endpoint)
     if (url.pathname.startsWith('/api/evals/') && url.pathname.endsWith('/test') && request.method === 'POST') {
       try {
         const evalId = url.pathname.split('/')[3];
@@ -295,19 +322,19 @@ export default {
         );
 
         // Test eval
-        const tester = new EvalTester();
+        const tester = new EvalTester({ sandboxBinding: env.SANDBOX });
         const result = await tester.test(evalRecord.code as string, testCases);
 
         // Update eval with accuracy
         await env.DB.prepare(
-          'UPDATE evals SET accuracy = ? WHERE id = ?'
-        ).bind(result.accuracy, evalId).run();
+          'UPDATE evals SET accuracy = ?, test_results = ? WHERE id = ?'
+        ).bind(result.accuracy, JSON.stringify(result), evalId).run();
 
         // Store execution results
         for (const detail of result.details) {
           const executionId = crypto.randomUUID();
           await env.DB.prepare(
-            'INSERT INTO eval_executions (id, eval_id, trace_id, predicted_pass, reason, execution_time_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO eval_executions (id, eval_id, trace_id, result, reason, execution_time_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
           )
             .bind(
               executionId,
@@ -336,37 +363,7 @@ export default {
           headers: { 'Content-Type': 'application/json' }
         });
       } catch (error: any) {
-        // Zod validation errors (invalid request format)
-        if (error.name === 'ZodError') {
-          return new Response(JSON.stringify({
-            success: false,
-            error: 'Invalid request format',
-            details: error.errors
-          }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-
-        // Trace not found errors
-        if (error.message && error.message.includes('not found')) {
-          return new Response(JSON.stringify({
-            success: false,
-            error: error.message
-          }), {
-            status: 404,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-
-        // Generic errors
-        return new Response(JSON.stringify({
-          success: false,
-          error: error.message || 'Internal server error'
-        }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        return handleError(error);
       }
     }
 

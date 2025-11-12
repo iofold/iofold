@@ -1,5 +1,7 @@
-import { PythonRunner } from '../sandbox/python-runner';
+import { PythonRunner, type PythonRunnerConfig } from '../sandbox/python-runner';
 import type { Trace } from '../types/trace';
+import type { DurableObjectNamespace } from '@cloudflare/workers-types';
+import type { Sandbox } from '@cloudflare/sandbox';
 
 export interface TestCase {
   trace: Trace;
@@ -25,11 +27,19 @@ export interface TestCaseResult {
   executionTimeMs: number;
 }
 
+export interface EvalTesterConfig {
+  sandboxBinding?: DurableObjectNamespace<Sandbox>;
+  timeout?: number;
+}
+
 export class EvalTester {
   private runner: PythonRunner;
 
-  constructor() {
-    this.runner = new PythonRunner();
+  constructor(config: EvalTesterConfig = {}) {
+    this.runner = new PythonRunner({
+      sandboxBinding: config.sandboxBinding,
+      timeout: config.timeout
+    });
   }
 
   async test(evalCode: string, testCases: TestCase[]): Promise<TestResult> {

@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Mock the @cloudflare/sandbox module BEFORE importing anything else
+vi.mock('@cloudflare/sandbox', async () => {
+  const mock = await import('../sandbox/__mocks__/sandbox-mock');
+  return {
+    getSandbox: mock.getMockSandbox
+  };
+});
+
 import { EvalTester } from './tester';
 import { PythonRunner } from '../sandbox/python-runner';
+import { mockSandboxBinding } from '../sandbox/__mocks__/sandbox-mock';
 import type { Trace } from '../types/trace';
 
 describe('EvalTester', () => {
@@ -24,7 +34,7 @@ describe('EvalTester', () => {
       };
     });
 
-    const tester = new EvalTester();
+    const tester = new EvalTester({ sandboxBinding: mockSandboxBinding });
 
     // Simple eval that always returns True
     const evalCode = `

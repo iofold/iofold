@@ -1,0 +1,11 @@
+name = "iofold-frontend"
+compatibility_date = "2024-11-01"
+
+# Configuration for Cloudflare Pages
+pages_build_output_dir = ".vercel/output/static"
+
+[env.production]
+name = "iofold-frontend-production"
+
+[env.preview]
+name = "iofold-frontend-preview"

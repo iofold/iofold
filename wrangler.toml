@@ -10,5 +10,16 @@ binding = "DB"
 database_name = "iofold_validation"
 database_id = "REPLACE_WITH_ACTUAL_DATABASE_ID"
 
+# Cloudflare Sandbox for Python code execution
+[[env.production.services]]
+binding = "Sandbox"
+service = "cloudflare/sandbox"
+
+# For local development, you'll need to configure a local sandbox
+# or mock the sandbox binding in tests
+[[env.development.services]]
+binding = "Sandbox"
+service = "cloudflare/sandbox"
+
 [vars]
 ENVIRONMENT = "development"
