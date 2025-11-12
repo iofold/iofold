@@ -90,6 +90,17 @@ export default {
     // Generate eval function
     if (url.pathname === '/api/evals/generate' && request.method === 'POST') {
       try {
+        // Validate environment variables
+        if (!env.ANTHROPIC_API_KEY) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'ANTHROPIC_API_KEY environment variable is not configured'
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
         const body = await request.json();
         const validatedBody = GenerateEvalRequestSchema.parse(body);
         const { name, positiveTraceIds, negativeTraceIds } = validatedBody;
@@ -133,7 +144,7 @@ export default {
 
         // Validate generated code
         const runner = new PythonRunner();
-        const validation = runner['validateCode'](result.code);
+        const validation = runner.validateCode(result.code);
         if (validation) {
           return new Response(JSON.stringify({
             success: false,
@@ -167,9 +178,59 @@ export default {
           headers: { 'Content-Type': 'application/json' }
         });
       } catch (error: any) {
+        // Differentiate error types for proper status codes
+
+        // Zod validation errors (invalid request format)
+        if (error.name === 'ZodError') {
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Invalid request format',
+            details: error.errors
+          }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Trace not found errors
+        if (error.message && error.message.includes('not found')) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: error.message
+          }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Claude API errors (external service)
+        if (error.status || error.type === 'api_error') {
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'External API error',
+            details: error.message
+          }), {
+            status: 502,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Database errors
+        if (error.message && (error.message.includes('D1') || error.message.includes('database'))) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Database error',
+            details: error.message
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Generic errors
         return new Response(JSON.stringify({
           success: false,
-          error: error.message
+          error: error.message || 'Internal server error'
         }), {
           status: 500,
           headers: { 'Content-Type': 'application/json' }

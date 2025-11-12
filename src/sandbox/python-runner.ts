@@ -101,7 +101,7 @@ export class PythonRunner {
     }
   }
 
-  private validateCode(code: string): string | null {
+  public validateCode(code: string): string | null {
     // Check for blocked imports
     for (const blockedImport of BLOCKED_IMPORTS) {
       const importPattern = new RegExp(

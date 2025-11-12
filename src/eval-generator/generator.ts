@@ -66,10 +66,10 @@ export class EvalGenerator {
     };
   }
 
-  private extractCode(content: any[]): string {
+  private extractCode(content: Array<{ type: string; text?: string }>): string {
     // Find text content
     const textContent = content.find(block => block.type === 'text');
-    if (!textContent) {
+    if (!textContent || !textContent.text) {
       throw new Error('No text content in response');
     }
 
