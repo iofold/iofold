@@ -124,9 +124,19 @@ export class PythonRunner {
     }
 
     // Validate allowed imports
-    const importMatches = code.matchAll(/import\s+(\w+)|from\s+(\w+)/g);
-    for (const match of importMatches) {
-      const moduleName = match[1] || match[2];
+    // Match both "import X" and "from X import Y"
+    const simpleImports = code.matchAll(/^import\s+(\w+)/gm);
+    const fromImports = code.matchAll(/^from\s+(\w+)\s+import/gm);
+
+    for (const match of simpleImports) {
+      const moduleName = match[1];
+      if (moduleName && !ALLOWED_IMPORTS.includes(moduleName)) {
+        return `Import not whitelisted: ${moduleName}. Allowed: ${ALLOWED_IMPORTS.join(', ')}`;
+      }
+    }
+
+    for (const match of fromImports) {
+      const moduleName = match[1];
       if (moduleName && !ALLOWED_IMPORTS.includes(moduleName)) {
         return `Import not whitelisted: ${moduleName}. Allowed: ${ALLOWED_IMPORTS.join(', ')}`;
       }
