@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Select } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
 
@@ -83,18 +83,17 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="integration">Integration</Label>
-              <Select
-                id="integration"
-                value={integrationId}
-                onChange={(e) => setIntegrationId(e.target.value)}
-                required
-              >
-                <option value="">Select integration</option>
-                {integrations.map((int) => (
-                  <option key={int.id} value={int.id}>
-                    {int.platform} - {int.name}
-                  </option>
-                ))}
+              <Select value={integrationId} onValueChange={setIntegrationId}>
+                <SelectTrigger id="integration">
+                  <SelectValue placeholder="Select integration" />
+                </SelectTrigger>
+                <SelectContent>
+                  {integrations.map((int) => (
+                    <SelectItem key={int.id} value={int.id}>
+                      {int.platform} - {int.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">

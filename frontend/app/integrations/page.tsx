@@ -5,10 +5,16 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { ErrorState } from '@/components/ui/error-state'
 import { Plus } from 'lucide-react'
+import { IntegrationListSkeleton } from '@/components/skeletons/integration-skeleton'
+import { AddIntegrationModal } from '@/components/modals/add-integration-modal'
+import { IntegrationActions } from '@/components/modals/integration-actions'
 
 export default function IntegrationsPage() {
-  const { data, isLoading } = useQuery({
+  const [addModalOpen, setAddModalOpen] = useState(false)
+
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['integrations'],
     queryFn: () => apiClient.listIntegrations(),
   })
@@ -22,14 +28,21 @@ export default function IntegrationsPage() {
             Connect your observability platforms
           </p>
         </div>
-        <Button>
+        <Button onClick={() => setAddModalOpen(true)}>
           <Plus className="w-4 h-4 mr-2" />
           Add Integration
         </Button>
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12">Loading...</div>
+        <IntegrationListSkeleton count={6} />
+      ) : error ? (
+        <ErrorState
+          title="Failed to load integrations"
+          message="There was an error loading your integrations. Please try again."
+          error={error as Error}
+          onRetry={() => refetch()}
+        />
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {data?.integrations.map((integration) => (
@@ -48,14 +61,17 @@ export default function IntegrationsPage() {
                 </span>
               </div>
               {integration.last_synced_at && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground mb-4">
                   Last synced: {new Date(integration.last_synced_at).toLocaleString()}
                 </p>
               )}
+              <IntegrationActions integrationId={integration.id} />
             </Card>
           ))}
         </div>
       )}
+
+      <AddIntegrationModal open={addModalOpen} onOpenChange={setAddModalOpen} />
     </div>
   )
 }
