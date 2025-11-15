@@ -32,7 +32,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'npm run dev',
-      url: 'http://localhost:8787/v1/api/integrations',
+      url: 'http://localhost:8787/health',
       timeout: 120000,
       reuseExistingServer: true,
       ignoreHTTPSErrors: true,
