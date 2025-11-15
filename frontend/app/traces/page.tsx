@@ -8,16 +8,18 @@ import { TraceCard } from '@/components/trace-card'
 import { TraceFeedback } from '@/components/trace-feedback'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { ErrorState } from '@/components/ui/error-state'
 import { Upload } from 'lucide-react'
 import { formatRelativeTime, getRatingEmoji, truncate } from '@/lib/utils'
 import { ImportTracesModal } from '@/components/modals/import-traces-modal'
+import { TraceListSkeleton } from '@/components/skeletons/trace-skeleton'
 
 export default function TracesPage() {
   const searchParams = useSearchParams()
   const evalSetId = searchParams?.get('eval_set_id') || 'default'
   const [importModalOpen, setImportModalOpen] = useState(false)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['traces'],
     queryFn: () => apiClient.listTraces({ limit: 50 }),
   })
@@ -44,7 +46,14 @@ export default function TracesPage() {
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12">Loading traces...</div>
+        <TraceListSkeleton count={5} />
+      ) : error ? (
+        <ErrorState
+          title="Failed to load traces"
+          message="There was an error loading traces. Please try again."
+          error={error as Error}
+          onRetry={() => refetch()}
+        />
       ) : data?.traces.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           No traces found. Import traces from your integrations to get started.
