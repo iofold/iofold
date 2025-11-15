@@ -1,15 +1,21 @@
 'use client'
 
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { ErrorState } from '@/components/ui/error-state'
 import { Plus } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime } from '@/lib/utils'
+import { EvalSetListSkeleton } from '@/components/skeletons/eval-set-skeleton'
+import { CreateEvalSetModal } from '@/components/modals/create-eval-set-modal'
 
 export default function EvalSetsPage() {
-  const { data, isLoading } = useQuery({
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['eval-sets'],
     queryFn: () => apiClient.listEvalSets(),
   })
@@ -23,14 +29,21 @@ export default function EvalSetsPage() {
             Organize feedback collections for generating evals
           </p>
         </div>
-        <Button>
+        <Button onClick={() => setCreateModalOpen(true)}>
           <Plus className="w-4 h-4 mr-2" />
           Create Eval Set
         </Button>
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12">Loading...</div>
+        <EvalSetListSkeleton count={6} />
+      ) : error ? (
+        <ErrorState
+          title="Failed to load eval sets"
+          message="There was an error loading eval sets. Please try again."
+          error={error as Error}
+          onRetry={() => refetch()}
+        />
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {data?.eval_sets.map((evalSet) => (
@@ -61,6 +74,8 @@ export default function EvalSetsPage() {
           ))}
         </div>
       )}
+
+      <CreateEvalSetModal open={createModalOpen} onOpenChange={setCreateModalOpen} />
     </div>
   )
 }
