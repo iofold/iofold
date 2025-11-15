@@ -8,6 +8,7 @@ import { PythonRunner } from './sandbox/python-runner';
 import { EvalsAPI } from './api/evals';
 import { JobsAPI } from './api/jobs';
 import { handleError } from './utils/errors';
+import { handleApiRequest } from './api';
 import type { Sandbox } from '@cloudflare/sandbox';
 import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 
@@ -37,9 +38,43 @@ const TestEvalRequestSchema = z.object({
   })).min(1)
 });
 
+// CORS headers
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Workspace-Id',
+    'Access-Control-Max-Age': '86400',
+  };
+}
+
+// Add CORS headers to response
+function addCorsHeaders(response: Response): Response {
+  const newResponse = new Response(response.body, response);
+  Object.entries(corsHeaders()).forEach(([key, value]) => {
+    newResponse.headers.set(key, value);
+  });
+  return newResponse;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    // Handle OPTIONS requests (CORS preflight)
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders(),
+      });
+    }
+
+    // Strip /v1 prefix if present
+    let pathname = url.pathname;
+    if (pathname.startsWith('/v1')) {
+      pathname = pathname.substring(3);
+      url.pathname = pathname;
+    }
 
     // For simplicity, we'll use a default workspace ID
     // In production, this would come from authentication
@@ -50,8 +85,14 @@ export default {
     const jobsAPI = new JobsAPI(env.DB);
 
     // Health check
-    if (url.pathname === '/health') {
-      return new Response('OK', { status: 200 });
+    if (pathname === '/health') {
+      return addCorsHeaders(new Response('OK', { status: 200 }));
+    }
+
+    // Try the main API router first (handles /api/integrations, /api/traces, etc.)
+    if (pathname.startsWith('/api/')) {
+      const response = await handleApiRequest(request, env);
+      return addCorsHeaders(response);
     }
 
     // ============================================================================
