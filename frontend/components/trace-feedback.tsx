@@ -1,0 +1,93 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
+import { Button } from '@/components/ui/button'
+import { ThumbsUp, ThumbsDown, Minus } from 'lucide-react'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
+
+interface TraceFeedbackProps {
+  traceId: string
+  evalSetId: string
+  currentRating?: 'positive' | 'negative' | 'neutral' | null
+  onFeedbackChange?: () => void
+}
+
+export function TraceFeedback({ traceId, evalSetId, currentRating, onFeedbackChange }: TraceFeedbackProps) {
+  const [rating, setRating] = useState<'positive' | 'negative' | 'neutral' | null>(currentRating || null)
+  const queryClient = useQueryClient()
+
+  const submitMutation = useMutation({
+    mutationFn: (rating: 'positive' | 'negative' | 'neutral') =>
+      apiClient.submitFeedback({
+        trace_id: traceId,
+        eval_set_id: evalSetId,
+        rating,
+      }),
+    onSuccess: (_, rating) => {
+      setRating(rating)
+      queryClient.invalidateQueries({ queryKey: ['traces'] })
+      queryClient.invalidateQueries({ queryKey: ['eval-sets', evalSetId] })
+      toast.success(`Marked as ${rating}`)
+      onFeedbackChange?.()
+    },
+    onError: () => {
+      toast.error('Failed to submit feedback')
+    },
+  })
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === '1' || e.key === 'ArrowLeft') {
+        e.preventDefault()
+        submitMutation.mutate('positive')
+      } else if (e.key === '2' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        submitMutation.mutate('neutral')
+      } else if (e.key === '3' || e.key === 'ArrowRight') {
+        e.preventDefault()
+        submitMutation.mutate('negative')
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyPress)
+    return () => window.removeEventListener('keydown', handleKeyPress)
+  }, [submitMutation])
+
+  return (
+    <div className="flex gap-2">
+      <Button
+        size="sm"
+        variant={rating === 'positive' ? 'default' : 'outline'}
+        onClick={() => submitMutation.mutate('positive')}
+        disabled={submitMutation.isPending}
+        className={cn(rating === 'positive' && 'bg-green-600 hover:bg-green-700')}
+      >
+        <ThumbsUp className="w-4 h-4 mr-1" />
+        Positive (1)
+      </Button>
+      <Button
+        size="sm"
+        variant={rating === 'neutral' ? 'default' : 'outline'}
+        onClick={() => submitMutation.mutate('neutral')}
+        disabled={submitMutation.isPending}
+      >
+        <Minus className="w-4 h-4 mr-1" />
+        Neutral (2)
+      </Button>
+      <Button
+        size="sm"
+        variant={rating === 'negative' ? 'default' : 'outline'}
+        onClick={() => submitMutation.mutate('negative')}
+        disabled={submitMutation.isPending}
+        className={cn(rating === 'negative' && 'bg-red-600 hover:bg-red-700')}
+      >
+        <ThumbsDown className="w-4 h-4 mr-1" />
+        Negative (3)
+      </Button>
+    </div>
+  )
+}
