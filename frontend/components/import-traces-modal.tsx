@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
-import { SSEClient } from '@/lib/sse-client'
+import { useJobMonitor } from '@/hooks/use-job-monitor'
 import {
   Dialog,
   DialogContent,
@@ -15,10 +15,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { getStatusColor } from '@/lib/utils'
 import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
-import type { JobResponse, Job } from '@/types/api'
+import type { JobResponse } from '@/types/api'
 
 interface ImportTracesModalProps {
   open: boolean
@@ -32,9 +32,25 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [jobId, setJobId] = useState<string | null>(null)
-  const [jobData, setJobData] = useState<Job | null>(null)
-  const [isStreaming, setIsStreaming] = useState(false)
-  const sseClientRef = useRef<SSEClient | null>(null)
+
+  // Use the job monitor hook for SSE + polling fallback
+  const { job: jobData, isStreaming, isPolling, isSSEActive, stop: stopMonitoring } = useJobMonitor(jobId, {
+    autoStart: true,
+    onProgress: (update) => {
+      console.log('[ImportTracesModal] Job progress:', update)
+    },
+    onCompleted: (result) => {
+      console.log('[ImportTracesModal] Import completed:', result)
+      // Refetch traces list
+      queryClient.invalidateQueries({ queryKey: ['traces'] })
+    },
+    onFailed: (error, details) => {
+      console.error('[ImportTracesModal] Import failed:', error, details)
+    },
+    onOpen: () => {
+      console.log('[ImportTracesModal] SSE connection established')
+    },
+  })
 
   // Fetch integrations
   const { data: integrationsData, isLoading: loadingIntegrations } = useQuery({
@@ -63,83 +79,20 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
       return result
     },
     onSuccess: (data) => {
+      // Set the job ID - this will trigger the useJobMonitor hook to start monitoring
       setJobId(data.job_id)
-      setIsStreaming(true)
-
-      // Set initial job state
-      setJobData({
-        id: data.job_id,
-        type: 'import',
-        status: 'queued',
-        progress: 0,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-      })
-
-      // Connect to SSE stream
-      connectToJobStream(data.job_id)
     },
     onError: (error: any) => {
       console.error('Import failed:', error)
     },
   })
 
-  // Connect to SSE stream for job updates
-  const connectToJobStream = (jobId: string) => {
-    try {
-      const eventSource = apiClient.streamJob(jobId)
-
-      const client = new SSEClient(eventSource, {
-        jobId, // Pass job ID for polling fallback
-        apiBaseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787/v1', // Pass API URL for polling fallback
-        onProgress: (update) => {
-          setJobData((prev) => prev ? { ...prev, ...update } : null)
-        },
-        onCompleted: (result) => {
-          setJobData((prev) => prev ? { ...prev, status: 'completed', result } : null)
-          setIsStreaming(false)
-
-          // Refetch traces list
-          queryClient.invalidateQueries({ queryKey: ['traces'] })
-        },
-        onFailed: (error, details) => {
-          setJobData((prev) => prev ? { ...prev, status: 'failed', error } : null)
-          setIsStreaming(false)
-        },
-        onError: (error) => {
-          console.error('SSE connection error:', error)
-          // Don't set isStreaming to false here - let the polling fallback handle it
-        },
-        onOpen: () => {
-          console.log('SSE connection established for job:', jobId)
-        }
-      })
-
-      sseClientRef.current = client
-    } catch (error) {
-      console.error('Failed to connect to SSE stream:', error)
-      setIsStreaming(false)
-    }
-  }
-
-  // Clean up SSE connection when component unmounts or modal closes
+  // Clean up monitoring when modal closes
   useEffect(() => {
-    return () => {
-      if (sseClientRef.current) {
-        sseClientRef.current.close()
-        sseClientRef.current = null
-      }
+    if (!open) {
+      stopMonitoring()
     }
-  }, [])
-
-  // Close SSE connection when modal closes
-  useEffect(() => {
-    if (!open && sseClientRef.current) {
-      sseClientRef.current.close()
-      sseClientRef.current = null
-    }
-  }, [open])
+  }, [open, stopMonitoring])
 
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -151,11 +104,8 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
   }
 
   const handleClose = () => {
-    // Close SSE connection if open
-    if (sseClientRef.current) {
-      sseClientRef.current.close()
-      sseClientRef.current = null
-    }
+    // Stop monitoring
+    stopMonitoring()
 
     // Reset state when closing
     if (!importMutation.isPending && !isStreaming) {
@@ -164,8 +114,6 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
       setDateFrom('')
       setDateTo('')
       setJobId(null)
-      setJobData(null)
-      setIsStreaming(false)
       importMutation.reset()
       onOpenChange(false)
     }
@@ -216,6 +164,16 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
                   <span>{jobData.progress}%</span>
                 </div>
               )}
+              {isStreaming && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Connection:</span>
+                  <span className="text-xs">
+                    {isSSEActive && <span className="text-green-600">Real-time (SSE)</span>}
+                    {isPolling && <span className="text-yellow-600">Polling fallback</span>}
+                    {!isSSEActive && !isPolling && <span className="text-gray-500">Connecting...</span>}
+                  </span>
+                </div>
+              )}
               {jobData?.error && (
                 <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-red-800">
                   {jobData.error}
@@ -242,18 +200,17 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
                   No integrations found. Please add an integration first.
                 </div>
               ) : (
-                <Select
-                  id="integration"
-                  value={integrationId}
-                  onChange={(e) => setIntegrationId(e.target.value)}
-                  required
-                >
-                  <option value="">Select integration...</option>
-                  {integrationsData?.integrations.map((integration) => (
-                    <option key={integration.id} value={integration.id}>
-                      {integration.name} ({integration.platform})
-                    </option>
-                  ))}
+                <Select value={integrationId} onValueChange={setIntegrationId} required>
+                  <SelectTrigger id="integration">
+                    <SelectValue placeholder="Select integration..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {integrationsData?.integrations.map((integration) => (
+                      <SelectItem key={integration.id} value={integration.id}>
+                        {integration.name} ({integration.platform})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               )}
             </div>

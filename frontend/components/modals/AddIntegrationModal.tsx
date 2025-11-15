@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface AddIntegrationModalProps {
   children: React.ReactNode
@@ -116,17 +116,21 @@ export function AddIntegrationModal({ children }: AddIntegrationModalProps) {
             <div className="space-y-2">
               <Label htmlFor="platform">Platform</Label>
               <Select
-                id="platform"
                 value={formData.platform}
-                onChange={(e) =>
+                onValueChange={(value) =>
                   setFormData({
                     ...formData,
-                    platform: e.target.value as 'langfuse' | 'langsmith' | 'openai',
+                    platform: value as 'langfuse' | 'langsmith' | 'openai',
                   })
                 }
                 disabled={mutation.isPending}
               >
-                <option value="langfuse">Langfuse</option>
+                <SelectTrigger id="platform">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="langfuse">Langfuse</SelectItem>
+                </SelectContent>
               </Select>
             </div>
 

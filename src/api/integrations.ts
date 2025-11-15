@@ -151,7 +151,7 @@ export async function listIntegrations(request: Request, env: Env): Promise<Resp
         platform,
         config,
         status,
-        last_sync as last_synced_at,
+        last_synced_at,
         created_at
       FROM integrations
       WHERE workspace_id = ?

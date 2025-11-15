@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient, APIError } from '@/lib/api-client'
+import { useJobMonitor } from '@/hooks/use-job-monitor'
 import type { GenerateEvalRequest } from '@/types/api'
 import {
   Dialog,
@@ -16,7 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
 
 interface GenerateEvalModalProps {
@@ -37,24 +38,37 @@ export function GenerateEvalModal({ children, evalSetId }: GenerateEvalModalProp
 
   const queryClient = useQueryClient()
 
-  // Poll for job status
-  const { data: jobStatus } = useQuery({
-    queryKey: ['job', jobId],
-    queryFn: () => apiClient.getJob(jobId!),
-    enabled: !!jobId && open,
-    refetchInterval: (query) => {
-      // Stop polling when job is complete or failed
-      const data = query.state.data
-      if (data?.status === 'completed' || data?.status === 'failed' || data?.status === 'cancelled') {
-        return false
-      }
-      return 2000 // Poll every 2 seconds
+  // Use job monitor hook for SSE + polling fallback
+  const { job: jobStatus, isStreaming, isPolling, isSSEActive, stop: stopMonitoring } = useJobMonitor(jobId, {
+    autoStart: true,
+    onProgress: (update) => {
+      console.log('[GenerateEvalModal] Job progress:', update)
+    },
+    onCompleted: (result) => {
+      console.log('[GenerateEvalModal] Generation completed:', result)
+      // Invalidate queries to refresh eval list
+      queryClient.invalidateQueries({ queryKey: ['eval-set', evalSetId] })
+      queryClient.invalidateQueries({ queryKey: ['evals'] })
+    },
+    onFailed: (errorMsg, details) => {
+      console.error('[GenerateEvalModal] Generation failed:', errorMsg, details)
+    },
+    onOpen: () => {
+      console.log('[GenerateEvalModal] SSE connection established')
     },
   })
+
+  // Clean up monitoring when modal closes
+  useEffect(() => {
+    if (!open) {
+      stopMonitoring()
+    }
+  }, [open, stopMonitoring])
 
   const mutation = useMutation({
     mutationFn: (data: GenerateEvalRequest) => apiClient.generateEval(evalSetId, data),
     onSuccess: (response) => {
+      // Set job ID to trigger monitoring
       setJobId(response.job_id)
       setError(null)
     },
@@ -75,11 +89,8 @@ export function GenerateEvalModal({ children, evalSetId }: GenerateEvalModalProp
   }
 
   const handleClose = () => {
-    // If job completed successfully, invalidate queries
-    if (jobStatus?.status === 'completed') {
-      queryClient.invalidateQueries({ queryKey: ['eval-set', evalSetId] })
-      queryClient.invalidateQueries({ queryKey: ['evals'] })
-    }
+    // Stop monitoring
+    stopMonitoring()
     setOpen(false)
     // Reset after modal closes
     setTimeout(resetForm, 300)
@@ -158,13 +169,17 @@ export function GenerateEvalModal({ children, evalSetId }: GenerateEvalModalProp
               <div className="space-y-2">
                 <Label htmlFor="model">Model (optional)</Label>
                 <Select
-                  id="model"
                   value={formData.model}
-                  onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                  onValueChange={(value) => setFormData({ ...formData, model: value })}
                   disabled={mutation.isPending}
                 >
-                  <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-                  <option value="gpt-4">GPT-4</option>
+                  <SelectTrigger id="model">
+                    <SelectValue placeholder="Select model..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</SelectItem>
+                    <SelectItem value="gpt-4">GPT-4</SelectItem>
+                  </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   Model to use for generating the eval function
@@ -247,9 +262,18 @@ export function GenerateEvalModal({ children, evalSetId }: GenerateEvalModalProp
                       style={{ width: `${jobStatus?.progress || 0}%` }}
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Progress: {jobStatus?.progress || 0}%
-                  </p>
+                  <div className="flex justify-between items-center mt-2">
+                    <p className="text-xs text-muted-foreground">
+                      Progress: {jobStatus?.progress || 0}%
+                    </p>
+                    {isStreaming && (
+                      <p className="text-xs">
+                        {isSSEActive && <span className="text-green-600">Real-time (SSE)</span>}
+                        {isPolling && <span className="text-yellow-600">Polling fallback</span>}
+                        {!isSSEActive && !isPolling && <span className="text-gray-500">Connecting...</span>}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 

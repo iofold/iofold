@@ -85,16 +85,14 @@ test.describe('Integration Management - Add Integration', () => {
     }
 
     const integrationName = uniqueName('Test Integration')
+    const apiKey = process.env.TEST_LANGFUSE_KEY || 'test_key'
     const integration = await apiRequest<any>(page, '/api/integrations', {
       method: 'POST',
       data: {
         platform: 'langfuse',
         name: integrationName,
-        config: {
-          public_key: publicKey,
-          secret_key: secretKey,
-          base_url: baseUrl,
-        },
+        api_key: apiKey,
+        base_url: baseUrl,
       },
     })
     integrationId = integration.id
@@ -114,16 +112,15 @@ test.describe('Integration Management - Add Integration', () => {
   test('TEST-I04: Delete integration', async ({ page }) => {
     // Create an integration via API
     const integrationName = uniqueName('Test Integration')
+    const apiKey = process.env.TEST_LANGFUSE_KEY || 'test_key'
+    const baseUrl = process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com'
     const integration = await apiRequest<any>(page, '/api/integrations', {
       method: 'POST',
       data: {
         platform: 'langfuse',
         name: integrationName,
-        config: {
-          public_key: process.env.LANGFUSE_PUBLIC_KEY,
-          secret_key: process.env.LANGFUSE_SECRET_KEY,
-          base_url: process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com',
-        },
+        api_key: apiKey,
+        base_url: baseUrl,
       },
     })
     integrationId = integration.id
@@ -156,17 +153,16 @@ test.describe('Integration Management - Add Integration', () => {
     // Create 2 test integrations via API
     const integration1Name = uniqueName('Test Integration 1')
     const integration2Name = uniqueName('Test Integration 2')
+    const apiKey = process.env.TEST_LANGFUSE_KEY || 'test_key'
+    const baseUrl = process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com'
 
     const integration1 = await apiRequest<any>(page, '/api/integrations', {
       method: 'POST',
       data: {
         platform: 'langfuse',
         name: integration1Name,
-        config: {
-          public_key: process.env.LANGFUSE_PUBLIC_KEY,
-          secret_key: process.env.LANGFUSE_SECRET_KEY,
-          base_url: process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com',
-        },
+        api_key: apiKey,
+        base_url: baseUrl,
       },
     })
 
@@ -175,11 +171,8 @@ test.describe('Integration Management - Add Integration', () => {
       data: {
         platform: 'langfuse',
         name: integration2Name,
-        config: {
-          public_key: process.env.LANGFUSE_PUBLIC_KEY,
-          secret_key: process.env.LANGFUSE_SECRET_KEY,
-          base_url: process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com',
-        },
+        api_key: apiKey,
+        base_url: baseUrl,
       },
     })
 

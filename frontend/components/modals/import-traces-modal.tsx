@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
+import { useJobMonitor } from '@/hooks/use-job-monitor'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,8 +22,28 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
   const [integrationId, setIntegrationId] = useState('')
   const [limit, setLimit] = useState('10')
   const [jobId, setJobId] = useState<string | null>(null)
-  const [jobStatus, setJobStatus] = useState<'pending' | 'running' | 'completed' | 'failed' | null>(null)
-  const [progress, setProgress] = useState(0)
+
+  // Use job monitor hook for SSE + polling fallback
+  const { job: jobData, isStreaming, isPolling, isSSEActive, stop: stopMonitoring } = useJobMonitor(jobId, {
+    autoStart: true,
+    onProgress: (update) => {
+      console.log('[ImportTracesModal (modals)] Job progress:', update)
+    },
+    onCompleted: (result) => {
+      console.log('[ImportTracesModal (modals)] Import completed:', result)
+      toast.success(`Successfully imported ${result?.imported_count || 0} traces`)
+    },
+    onFailed: (error, details) => {
+      console.error('[ImportTracesModal (modals)] Import failed:', error, details)
+      toast.error(`Import failed: ${error}`)
+    },
+    onOpen: () => {
+      console.log('[ImportTracesModal (modals)] SSE connection established')
+    },
+  })
+
+  const jobStatus = jobData?.status
+  const progress = jobData?.progress || 0
 
   const importMutation = useMutation({
     mutationFn: (data: { integration_id: string; limit?: number }) =>
@@ -30,7 +51,6 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
     onSuccess: (data) => {
       if (data.job_id) {
         setJobId(data.job_id)
-        setJobStatus('pending')
         toast.success('Import started')
       }
     },
@@ -39,31 +59,12 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
     },
   })
 
-  // Poll job status
+  // Clean up monitoring when modal closes
   useEffect(() => {
-    if (!jobId || jobStatus === 'completed' || jobStatus === 'failed') return
-
-    const interval = setInterval(async () => {
-      try {
-        const job = await apiClient.getJob(jobId)
-        setJobStatus(job.status as any)
-        setProgress(job.progress || 0)
-
-        if (job.status === 'completed') {
-          toast.success(`Imported ${job.result?.imported_count || 0} traces`)
-          clearInterval(interval)
-          setTimeout(() => onOpenChange(false), 2000)
-        } else if (job.status === 'failed') {
-          toast.error(job.error || 'Import failed')
-          clearInterval(interval)
-        }
-      } catch (error) {
-        clearInterval(interval)
-      }
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [jobId, jobStatus, onOpenChange])
+    if (!open) {
+      stopMonitoring()
+    }
+  }, [open, stopMonitoring])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -111,9 +112,18 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
               <div className="space-y-2">
                 <Label>Progress</Label>
                 <Progress value={progress} />
-                <p className="text-sm text-muted-foreground">
-                  Status: {jobStatus}
-                </p>
+                <div className="flex justify-between items-center">
+                  <p className="text-sm text-muted-foreground">
+                    Status: {jobStatus}
+                  </p>
+                  {isStreaming && (
+                    <p className="text-xs">
+                      {isSSEActive && <span className="text-green-600">Real-time (SSE)</span>}
+                      {isPolling && <span className="text-yellow-600">Polling fallback</span>}
+                      {!isSSEActive && !isPolling && <span className="text-gray-500">Connecting...</span>}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
           </div>

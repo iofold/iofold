@@ -23,7 +23,7 @@ export function AddIntegrationModal({ open, onOpenChange }: AddIntegrationModalP
   const queryClient = useQueryClient()
 
   const createMutation = useMutation({
-    mutationFn: (data: { platform: string; name: string; api_key: string; base_url?: string }) =>
+    mutationFn: (data: { platform: 'langfuse' | 'langsmith' | 'openai'; name: string; api_key: string; base_url?: string }) =>
       apiClient.createIntegration(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['integrations'] })

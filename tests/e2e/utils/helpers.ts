@@ -20,7 +20,7 @@ export function getWorkspaceId(): string {
 export async function apiRequest<T>(
   page: Page,
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit & { data?: any } = {}
 ): Promise<T> {
   const baseURL = getAPIBaseURL();
   const workspaceId = getWorkspaceId();
@@ -30,13 +30,37 @@ export async function apiRequest<T>(
     'X-Workspace-Id': workspaceId,
   };
 
-  const response = await page.request.fetch(`${baseURL}${endpoint}`, {
-    ...options,
+  // Convert data to body if provided
+  const { data, ...restOptions } = options;
+
+  // Prepare request options for Playwright's request API
+  const requestOptions: any = {
+    ...restOptions,
     headers: {
       ...headers,
-      ...options.headers,
+      ...restOptions.headers,
     },
-  });
+  };
+
+  // For Playwright's request API, use 'data' property for JSON bodies
+  if (data !== undefined) {
+    requestOptions.data = data;
+  } else if (restOptions.body) {
+    // If body is already set (not via data), keep it
+    requestOptions.data = typeof restOptions.body === 'string'
+      ? JSON.parse(restOptions.body)
+      : restOptions.body;
+  }
+
+  // Debug logging
+  if (process.env.DEBUG_API) {
+    console.log('[apiRequest] URL:', `${baseURL}${endpoint}`);
+    console.log('[apiRequest] Method:', requestOptions.method);
+    console.log('[apiRequest] Headers:', requestOptions.headers);
+    console.log('[apiRequest] Data:', requestOptions.data);
+  }
+
+  const response = await page.request.fetch(`${baseURL}${endpoint}`, requestOptions);
 
   if (!response.ok()) {
     const error = await response.json().catch(() => ({}));
