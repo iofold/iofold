@@ -69,11 +69,15 @@ export default {
       });
     }
 
-    // Strip /v1 prefix if present
+    // Strip /v1 prefix if present and create new request with modified URL
     let pathname = url.pathname;
+    let modifiedRequest = request;
+
     if (pathname.startsWith('/v1')) {
       pathname = pathname.substring(3);
-      url.pathname = pathname;
+      const newUrl = new URL(url);
+      newUrl.pathname = pathname;
+      modifiedRequest = new Request(newUrl, request);
     }
 
     // For simplicity, we'll use a default workspace ID
@@ -91,7 +95,7 @@ export default {
 
     // Try the main API router first (handles /api/integrations, /api/traces, etc.)
     if (pathname.startsWith('/api/')) {
-      const response = await handleApiRequest(request, env);
+      const response = await handleApiRequest(modifiedRequest, env);
       return addCorsHeaders(response);
     }
 
