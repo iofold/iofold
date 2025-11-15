@@ -84,7 +84,7 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="integration">Integration</Label>
-              <Select value={integrationId} onValueChange={setIntegrationId}>
+              <Select name="integration_id" value={integrationId} onValueChange={setIntegrationId}>
                 <SelectTrigger id="integration">
                   <SelectValue placeholder="Select integration" />
                 </SelectTrigger>
@@ -101,6 +101,7 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
               <Label htmlFor="limit">Limit (optional)</Label>
               <Input
                 id="limit"
+                name="limit"
                 type="number"
                 value={limit}
                 onChange={(e) => setLimit(e.target.value)}

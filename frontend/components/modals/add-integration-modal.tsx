@@ -78,6 +78,7 @@ export function AddIntegrationModal({ open, onOpenChange }: AddIntegrationModalP
               <Label htmlFor="name">Name</Label>
               <Input
                 id="name"
+                name="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My Integration"
@@ -88,6 +89,7 @@ export function AddIntegrationModal({ open, onOpenChange }: AddIntegrationModalP
               <Label htmlFor="api_key">API Key</Label>
               <Input
                 id="api_key"
+                name="api_key"
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
@@ -98,6 +100,7 @@ export function AddIntegrationModal({ open, onOpenChange }: AddIntegrationModalP
               <Label htmlFor="base_url">Base URL (optional)</Label>
               <Input
                 id="base_url"
+                name="base_url"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
                 placeholder="https://cloud.langfuse.com"

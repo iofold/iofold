@@ -37,6 +37,8 @@ import {
   deleteIntegration,
 } from './integrations';
 
+import { JobsAPI } from './jobs';
+
 export interface Env {
   DB: D1Database;
 }
@@ -148,6 +150,37 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   const integrationMatch = path.match(/^\/api\/integrations\/([^\/]+)$/);
   if (integrationMatch && method === 'DELETE') {
     return deleteIntegration(request, env, integrationMatch[1]);
+  }
+
+  // ============================================================================
+  // Jobs Endpoints
+  // ============================================================================
+
+  const jobsAPI = new JobsAPI(env.DB);
+
+  // GET /api/jobs/:id - Get job status
+  const jobMatch = path.match(/^\/api\/jobs\/([^\/]+)$/);
+  if (jobMatch && method === 'GET') {
+    return jobsAPI.getJob(jobMatch[1]);
+  }
+
+  // GET /api/jobs/:id/stream - Stream job progress
+  const jobStreamMatch = path.match(/^\/api\/jobs\/([^\/]+)\/stream$/);
+  if (jobStreamMatch && method === 'GET') {
+    return jobsAPI.streamJob(jobStreamMatch[1]);
+  }
+
+  // POST /api/jobs/:id/cancel - Cancel job
+  const jobCancelMatch = path.match(/^\/api\/jobs\/([^\/]+)\/cancel$/);
+  if (jobCancelMatch && method === 'POST') {
+    return jobsAPI.cancelJob(jobCancelMatch[1]);
+  }
+
+  // GET /api/jobs - List recent jobs
+  if (path === '/api/jobs' && method === 'GET') {
+    // Get workspace ID from header (for now using default)
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return jobsAPI.listJobs(workspaceId, url.searchParams);
   }
 
   // ============================================================================

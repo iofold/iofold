@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'next/navigation'
 import { apiClient } from '@/lib/api-client'
@@ -14,7 +14,7 @@ import { formatRelativeTime, getRatingEmoji, truncate } from '@/lib/utils'
 import { ImportTracesModal } from '@/components/import-traces-modal'
 import { TraceListSkeleton } from '@/components/skeletons/trace-skeleton'
 
-export default function TracesPage() {
+function TracesPageContent() {
   const searchParams = useSearchParams()
   const evalSetId = searchParams?.get('eval_set_id') || 'default'
   const [importModalOpen, setImportModalOpen] = useState(false)
@@ -122,5 +122,13 @@ export default function TracesPage() {
         onOpenChange={setImportModalOpen}
       />
     </div>
+  )
+}
+
+export default function TracesPage() {
+  return (
+    <Suspense fallback={<div className="container py-8"><TraceListSkeleton count={5} /></div>}>
+      <TracesPageContent />
+    </Suspense>
   )
 }

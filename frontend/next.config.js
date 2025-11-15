@@ -1,11 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Cloudflare Pages compatibility
-  output: 'export',
+  // Removed 'output: export' to support dynamic routes without generateStaticParams
+  // For Cloudflare Pages deployment, we'll use adapter instead of static export
   images: {
     unoptimized: true,
   },
-  // Enable static export for Cloudflare Pages
   trailingSlash: true,
   reactStrictMode: true,
   // Environment variables
