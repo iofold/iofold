@@ -131,10 +131,11 @@ export interface TestCaseResult {
 // ============================================================================
 
 export interface EvalExecution {
+  id: string;
   trace_id: string;
   eval_id: string;
-  result: boolean;
-  reason: string;
+  predicted_result: boolean;
+  predicted_reason: string;
   execution_time_ms: number;
   error?: string;
   stdout?: string;
@@ -143,8 +144,17 @@ export interface EvalExecution {
 }
 
 export interface EvalExecutionWithContext extends EvalExecution {
-  human_feedback?: Feedback;
+  human_feedback?: {
+    rating: 'positive' | 'negative' | 'neutral';
+    notes: string | null;
+  };
   is_contradiction: boolean;
+  trace_summary?: {
+    trace_id: string;
+    input_preview: string;
+    output_preview: string;
+    source: string;
+  };
 }
 
 export interface MatrixRow {
@@ -347,4 +357,8 @@ export interface JobResponse {
   job_id: string;
   status: string;
   estimated_count?: number;
+}
+
+export interface ListEvalExecutionsResponse extends PaginatedResponse<EvalExecutionWithContext> {
+  executions: EvalExecutionWithContext[];
 }

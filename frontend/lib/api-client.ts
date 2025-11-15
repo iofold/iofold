@@ -14,6 +14,7 @@ import type {
   ListEvalsResponse,
   ListIntegrationsResponse,
   ListTracesResponse,
+  ListEvalExecutionsResponse,
   MatrixResponse,
   SubmitFeedbackRequest,
   Trace,
@@ -252,6 +253,25 @@ class APIClient {
       method: 'POST',
       body: JSON.stringify(data || {}),
     })
+  }
+
+  async getEvalExecutions(
+    evalId: string,
+    params?: {
+      filter?: 'contradictions_only' | 'errors_only' | 'all'
+      cursor?: string
+      limit?: number
+    }
+  ): Promise<{ executions: any[] }> {
+    const query = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          query.append(key, String(value))
+        }
+      })
+    }
+    return this.request(`/api/evals/${evalId}/executions?${query.toString()}`)
   }
 
   // ============================================================================
