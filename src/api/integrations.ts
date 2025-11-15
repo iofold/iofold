@@ -89,13 +89,14 @@ export async function createIntegration(request: Request, env: Env): Promise<Res
     const config = body.base_url ? JSON.stringify({ base_url: body.base_url }) : null;
 
     await env.DB.prepare(
-      `INSERT INTO integrations (id, workspace_id, platform, api_key_encrypted, config, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO integrations (id, workspace_id, platform, name, api_key_encrypted, config, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         integrationId,
         workspaceId,
         body.platform,
+        name,
         encryptApiKey(body.api_key),
         config,
         'active',
