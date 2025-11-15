@@ -68,8 +68,8 @@ export async function createEvalSet(request: Request, env: Env): Promise<Respons
     const now = new Date().toISOString();
 
     await env.DB.prepare(
-      `INSERT INTO eval_sets (id, workspace_id, name, description, target_count, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO eval_sets (id, workspace_id, name, description, target_count, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         evalSetId,
@@ -78,6 +78,7 @@ export async function createEvalSet(request: Request, env: Env): Promise<Respons
         body.description || null,
         minimumExamples,
         'collecting',
+        now,
         now
       )
       .run();
@@ -131,7 +132,7 @@ export async function listEvalSets(request: Request, env: Env): Promise<Response
         es.description,
         es.target_count,
         es.created_at,
-        COALESCE(MAX(f.created_at), es.created_at) as last_updated,
+        COALESCE(es.updated_at, es.created_at) as last_updated,
         COALESCE(SUM(CASE WHEN f.rating = 'positive' THEN 1 ELSE 0 END), 0) as positive_count,
         COALESCE(SUM(CASE WHEN f.rating = 'negative' THEN 1 ELSE 0 END), 0) as negative_count,
         COALESCE(SUM(CASE WHEN f.rating = 'neutral' THEN 1 ELSE 0 END), 0) as neutral_count,
@@ -238,7 +239,7 @@ export async function getEvalSetById(request: Request, env: Env, evalSetId: stri
         created_at: row.created_at,
       })),
       created_at: evalSet.created_at,
-      updated_at: evalSet.created_at, // TODO: Track updated_at separately
+      updated_at: evalSet.updated_at || evalSet.created_at,
     };
 
     return createSuccessResponse(response);
@@ -320,6 +321,9 @@ export async function updateEvalSet(request: Request, env: Env, evalSetId: strin
       // No updates, just return current state
       return getEvalSetById(request, env, evalSetId);
     }
+
+    // Add updated_at to all updates
+    updates.push('updated_at = CURRENT_TIMESTAMP');
 
     // Execute update
     params.push(evalSetId);

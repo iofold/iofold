@@ -48,6 +48,7 @@ CREATE TABLE eval_sets (
   target_count INTEGER DEFAULT 5, -- minimum_examples
   status TEXT DEFAULT 'collecting', -- 'collecting' | 'ready' | 'generated'
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
   UNIQUE(workspace_id, name)
 );

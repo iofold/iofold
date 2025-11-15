@@ -29,35 +29,35 @@ export default function EvalsPage() {
         </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.evals.map((eval) => (
-            <Link key={eval.id} href={`/evals/${eval.id}`}>
+          {data?.evals.map((evalItem) => (
+            <Link key={evalItem.id} href={`/evals/${evalItem.id}`}>
               <Card className="p-6 hover:bg-accent transition-colors cursor-pointer">
-                <h3 className="font-semibold mb-2">{eval.name}</h3>
-                {eval.description && (
+                <h3 className="font-semibold mb-2">{evalItem.name}</h3>
+                {evalItem.description && (
                   <p className="text-sm text-muted-foreground mb-4">
-                    {eval.description}
+                    {evalItem.description}
                   </p>
                 )}
                 <div className="space-y-2 mb-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Accuracy</span>
-                    <span className="font-medium">{formatPercentage(eval.accuracy)}</span>
+                    <span className="font-medium">{formatPercentage(evalItem.accuracy)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Executions</span>
-                    <span className="font-medium">{eval.execution_count}</span>
+                    <span className="font-medium">{evalItem.execution_count}</span>
                   </div>
-                  {eval.contradiction_count > 0 && (
+                  {evalItem.contradiction_count > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Contradictions</span>
                       <span className="font-medium text-red-600">
-                        {eval.contradiction_count}
+                        {evalItem.contradiction_count}
                       </span>
                     </div>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Updated {formatRelativeTime(eval.updated_at)}
+                  Updated {formatRelativeTime(evalItem.updated_at)}
                 </p>
               </Card>
             </Link>

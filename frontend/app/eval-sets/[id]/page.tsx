@@ -82,22 +82,22 @@ export default function EvalSetDetailPage({ params }: { params: { id: string } }
             <h2 className="text-xl font-semibold mb-4">Generated Evals</h2>
             {evalSet.evals.length === 0 ? (
               <p className="text-muted-foreground">
-                No evals generated yet. Collect feedback and click "Generate Eval" when ready.
+                No evals generated yet. Collect feedback and click &quot;Generate Eval&quot; when ready.
               </p>
             ) : (
               <div className="space-y-2">
-                {evalSet.evals.map((eval) => (
-                  <Link key={eval.id} href={`/evals/${eval.id}`}>
+                {evalSet.evals.map((evalItem) => (
+                  <Link key={evalItem.id} href={`/evals/${evalItem.id}`}>
                     <Card className="p-4 hover:bg-accent transition-colors cursor-pointer">
                       <div className="flex justify-between items-center">
                         <div>
-                          <h3 className="font-semibold">{eval.name}</h3>
+                          <h3 className="font-semibold">{evalItem.name}</h3>
                           <p className="text-sm text-muted-foreground">
-                            Accuracy: {Math.round(eval.accuracy * 100)}%
+                            Accuracy: {Math.round(evalItem.accuracy * 100)}%
                           </p>
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          {formatRelativeTime(eval.created_at)}
+                          {formatRelativeTime(evalItem.created_at)}
                         </div>
                       </div>
                     </Card>
