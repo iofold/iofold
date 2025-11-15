@@ -11,7 +11,7 @@ import { Card } from '@/components/ui/card'
 import { ErrorState } from '@/components/ui/error-state'
 import { Upload } from 'lucide-react'
 import { formatRelativeTime, getRatingEmoji, truncate } from '@/lib/utils'
-import { ImportTracesModal } from '@/components/modals/import-traces-modal'
+import { ImportTracesModal } from '@/components/import-traces-modal'
 import { TraceListSkeleton } from '@/components/skeletons/trace-skeleton'
 
 export default function TracesPage() {
@@ -22,12 +22,6 @@ export default function TracesPage() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['traces'],
     queryFn: () => apiClient.listTraces({ limit: 50 }),
-  })
-
-  // Fetch integrations for the modal
-  const { data: integrationsData } = useQuery({
-    queryKey: ['integrations'],
-    queryFn: () => apiClient.listIntegrations(),
   })
 
   return (
@@ -126,7 +120,6 @@ export default function TracesPage() {
       <ImportTracesModal
         open={importModalOpen}
         onOpenChange={setImportModalOpen}
-        integrations={integrationsData?.integrations || []}
       />
     </div>
   )

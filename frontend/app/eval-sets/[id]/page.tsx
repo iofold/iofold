@@ -5,13 +5,14 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { ErrorState } from '@/components/ui/error-state'
 import { Sparkles } from 'lucide-react'
 import { GenerateEvalModal } from '@/components/modals/generate-eval-modal'
 import { EvalSetDetailSkeleton } from '@/components/skeletons/eval-set-skeleton'
 
 export default function EvalSetDetailPage({ params }: { params: { id: string } }) {
   const [generateModalOpen, setGenerateModalOpen] = useState(false)
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['eval-sets', params.id],
     queryFn: () => apiClient.getEvalSet(params.id),
   })
@@ -20,6 +21,20 @@ export default function EvalSetDetailPage({ params }: { params: { id: string } }
     return (
       <div className="container mx-auto px-4 py-8">
         <EvalSetDetailSkeleton />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <ErrorState
+          title="Failed to load eval set"
+          message="There was an error loading this eval set. Please try again."
+          error={error as Error}
+          onRetry={() => refetch()}
+          showHomeButton={true}
+        />
       </div>
     )
   }

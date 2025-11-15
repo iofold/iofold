@@ -5,11 +5,12 @@ import { apiClient } from '@/lib/api-client'
 import { TraceDetail } from '@/components/trace-detail'
 import { FeedbackButtons } from '@/components/feedback-buttons'
 import { Button } from '@/components/ui/button'
+import { ErrorState } from '@/components/ui/error-state'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
 export default function TraceDetailPage({ params }: { params: { id: string } }) {
-  const { data: trace, isLoading } = useQuery({
+  const { data: trace, isLoading, error, refetch } = useQuery({
     queryKey: ['trace', params.id],
     queryFn: () => apiClient.getTrace(params.id),
   })
@@ -18,6 +19,28 @@ export default function TraceDetailPage({ params }: { params: { id: string } }) 
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center py-12">Loading trace...</div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="mb-6">
+          <Link href="/traces">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Traces
+            </Button>
+          </Link>
+        </div>
+        <ErrorState
+          title="Failed to load trace"
+          message="There was an error loading this trace. Please try again."
+          error={error as Error}
+          onRetry={() => refetch()}
+          showHomeButton={true}
+        />
       </div>
     )
   }

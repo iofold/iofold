@@ -3,11 +3,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Card } from '@/components/ui/card'
+import { ErrorState } from '@/components/ui/error-state'
 import Link from 'next/link'
 import { formatRelativeTime, formatPercentage } from '@/lib/utils'
+import { EvalListSkeleton } from '@/components/skeletons/eval-skeleton'
 
 export default function EvalsPage() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['evals'],
     queryFn: () => apiClient.listEvals({ limit: 50 }),
   })
@@ -22,7 +24,14 @@ export default function EvalsPage() {
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12">Loading...</div>
+        <EvalListSkeleton count={6} />
+      ) : error ? (
+        <ErrorState
+          title="Failed to load evals"
+          message="There was an error loading evals. Please try again."
+          error={error as Error}
+          onRetry={() => refetch()}
+        />
       ) : data?.evals.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           No evals found. Create an eval set and generate your first eval.
