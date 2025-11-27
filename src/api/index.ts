@@ -7,6 +7,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { createErrorResponse } from './utils';
+import type { Queue } from '../queue/producer';
 
 // Import endpoint handlers
 import {
@@ -14,6 +15,7 @@ import {
   listTraces,
   getTraceById,
   deleteTrace,
+  createTrace,
 } from './traces';
 
 import {
@@ -33,14 +35,46 @@ import {
 import {
   createIntegration,
   listIntegrations,
+  getIntegrationById,
+  updateIntegration,
   testIntegration,
   deleteIntegration,
 } from './integrations';
 
 import { JobsAPI } from './jobs';
+import { EvalsAPI } from './evals';
+import {
+  getEvalMetrics,
+  getPerformanceTrend,
+  getEvalAlerts,
+  acknowledgeAlert,
+  resolveAlert,
+  updateEvalSettings,
+  getPromptCoverage,
+  getRefinementHistory,
+} from './monitoring';
+
+import {
+  createAgent,
+  listAgents,
+  getAgentById,
+  confirmAgent,
+  deleteAgent,
+  getAgentPrompt,
+} from './agents';
+
+import {
+  listAgentVersions,
+  getAgentVersion,
+  createAgentVersion,
+  promoteAgentVersion,
+  rejectAgentVersion,
+} from './agent-versions';
 
 export interface Env {
   DB: D1Database;
+  /** Cloudflare Queue binding for job processing */
+  JOB_QUEUE?: Queue;
 }
 
 /**
@@ -58,6 +92,11 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   // POST /api/traces/import
   if (path === '/api/traces/import' && method === 'POST') {
     return importTraces(request, env);
+  }
+
+  // POST /api/traces (create trace directly, for testing)
+  if (path === '/api/traces' && method === 'POST') {
+    return createTrace(request, env);
   }
 
   // GET /api/traces
@@ -146,8 +185,18 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return testIntegration(request, env, integrationTestMatch[1]);
   }
 
-  // DELETE /api/integrations/:id
+  // GET /api/integrations/:id
   const integrationMatch = path.match(/^\/api\/integrations\/([^\/]+)$/);
+  if (integrationMatch && method === 'GET') {
+    return getIntegrationById(request, env, integrationMatch[1]);
+  }
+
+  // PATCH /api/integrations/:id
+  if (integrationMatch && method === 'PATCH') {
+    return updateIntegration(request, env, integrationMatch[1]);
+  }
+
+  // DELETE /api/integrations/:id
   if (integrationMatch && method === 'DELETE') {
     return deleteIntegration(request, env, integrationMatch[1]);
   }
@@ -181,6 +230,178 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     // Get workspace ID from header (for now using default)
     const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
     return jobsAPI.listJobs(workspaceId, url.searchParams);
+  }
+
+  // ============================================================================
+  // Evals Endpoints
+  // ============================================================================
+
+  const evalsAPI = new EvalsAPI(env.DB, null as any, null as any);
+
+  // GET /api/evals - List evals
+  if (path === '/api/evals' && method === 'GET') {
+    return evalsAPI.listEvals(url.searchParams);
+  }
+
+  // GET /api/evals/:id - Get eval details
+  const evalMatch = path.match(/^\/api\/evals\/([^\/]+)$/);
+  if (evalMatch && method === 'GET') {
+    return evalsAPI.getEval(evalMatch[1]);
+  }
+
+  // PATCH /api/evals/:id - Update eval
+  if (evalMatch && method === 'PATCH') {
+    const body = await request.json();
+    return evalsAPI.updateEval(evalMatch[1], body);
+  }
+
+  // DELETE /api/evals/:id - Delete eval
+  if (evalMatch && method === 'DELETE') {
+    return evalsAPI.deleteEval(evalMatch[1]);
+  }
+
+  // POST /api/evals/:id/execute - Execute eval
+  const evalExecuteMatch = path.match(/^\/api\/evals\/([^\/]+)\/execute$/);
+  if (evalExecuteMatch && method === 'POST') {
+    const body = await request.json();
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return evalsAPI.executeEval(evalExecuteMatch[1], workspaceId, body);
+  }
+
+  // POST /api/eval-sets/:id/generate - Generate eval from eval set
+  const generateMatch = path.match(/^\/api\/eval-sets\/([^\/]+)\/generate$/);
+  if (generateMatch && method === 'POST') {
+    const body = await request.json();
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return evalsAPI.generateEval(generateMatch[1], workspaceId, body);
+  }
+
+  // ============================================================================
+  // Monitoring Endpoints
+  // ============================================================================
+
+  // GET /api/evals/:id/metrics - Get current performance metrics
+  const metricsMatch = path.match(/^\/api\/evals\/([^\/]+)\/metrics$/);
+  if (metricsMatch && method === 'GET') {
+    return getEvalMetrics(request, env, metricsMatch[1]);
+  }
+
+  // GET /api/evals/:id/performance-trend - Get historical snapshots
+  const trendMatch = path.match(/^\/api\/evals\/([^\/]+)\/performance-trend$/);
+  if (trendMatch && method === 'GET') {
+    return getPerformanceTrend(request, env, trendMatch[1]);
+  }
+
+  // GET /api/evals/:id/alerts - Get performance alerts
+  const alertsMatch = path.match(/^\/api\/evals\/([^\/]+)\/alerts$/);
+  if (alertsMatch && method === 'GET') {
+    return getEvalAlerts(request, env, alertsMatch[1]);
+  }
+
+  // POST /api/evals/:id/alerts/:alertId/acknowledge - Acknowledge alert
+  const acknowledgeMatch = path.match(/^\/api\/evals\/([^\/]+)\/alerts\/([^\/]+)\/acknowledge$/);
+  if (acknowledgeMatch && method === 'POST') {
+    return acknowledgeAlert(request, env, acknowledgeMatch[1], acknowledgeMatch[2]);
+  }
+
+  // POST /api/evals/:id/alerts/:alertId/resolve - Resolve alert
+  const resolveMatch = path.match(/^\/api\/evals\/([^\/]+)\/alerts\/([^\/]+)\/resolve$/);
+  if (resolveMatch && method === 'POST') {
+    return resolveAlert(request, env, resolveMatch[1], resolveMatch[2]);
+  }
+
+  // PATCH /api/evals/:id/settings - Update monitoring settings
+  const settingsMatch = path.match(/^\/api\/evals\/([^\/]+)\/settings$/);
+  if (settingsMatch && method === 'PATCH') {
+    return updateEvalSettings(request, env, settingsMatch[1]);
+  }
+
+  // GET /api/evals/:id/prompt-coverage - Get performance by prompt version
+  const coverageMatch = path.match(/^\/api\/evals\/([^\/]+)\/prompt-coverage$/);
+  if (coverageMatch && method === 'GET') {
+    return getPromptCoverage(request, env, coverageMatch[1]);
+  }
+
+  // GET /api/evals/:id/refinement-history - Get auto-refinement audit log
+  const refinementMatch = path.match(/^\/api\/evals\/([^\/]+)\/refinement-history$/);
+  if (refinementMatch && method === 'GET') {
+    return getRefinementHistory(request, env, refinementMatch[1]);
+  }
+
+  // ============================================================================
+  // Agents Endpoints
+  // ============================================================================
+
+  // POST /api/agents
+  if (path === '/api/agents' && method === 'POST') {
+    return createAgent(request, env);
+  }
+
+  // GET /api/agents
+  if (path === '/api/agents' && method === 'GET') {
+    return listAgents(request, env);
+  }
+
+  // GET /api/agents/:id/prompt (must come before generic :id match)
+  const agentPromptMatch = path.match(/^\/api\/agents\/([^\/]+)\/prompt$/);
+  if (agentPromptMatch && method === 'GET') {
+    return getAgentPrompt(request, env, agentPromptMatch[1]);
+  }
+
+  // POST /api/agents/:id/confirm
+  const agentConfirmMatch = path.match(/^\/api\/agents\/([^\/]+)\/confirm$/);
+  if (agentConfirmMatch && method === 'POST') {
+    return confirmAgent(request, env, agentConfirmMatch[1]);
+  }
+
+  // POST /api/agents/:id/improve (return 501 NOT_IMPLEMENTED for now)
+  const agentImproveMatch = path.match(/^\/api\/agents\/([^\/]+)\/improve$/);
+  if (agentImproveMatch && method === 'POST') {
+    return createErrorResponse(
+      'NOT_IMPLEMENTED',
+      'Agent improvement feature not yet implemented',
+      501
+    );
+  }
+
+  // GET /api/agents/:id/versions
+  const agentVersionsMatch = path.match(/^\/api\/agents\/([^\/]+)\/versions$/);
+  if (agentVersionsMatch && method === 'GET') {
+    return listAgentVersions(request, env, agentVersionsMatch[1]);
+  }
+
+  // POST /api/agents/:id/versions
+  if (agentVersionsMatch && method === 'POST') {
+    return createAgentVersion(request, env, agentVersionsMatch[1]);
+  }
+
+  // GET /api/agents/:id/versions/:version
+  const agentVersionMatch = path.match(/^\/api\/agents\/([^\/]+)\/versions\/([^\/]+)$/);
+  if (agentVersionMatch && method === 'GET') {
+    return getAgentVersion(request, env, agentVersionMatch[1], agentVersionMatch[2]);
+  }
+
+  // POST /api/agents/:id/versions/:version/promote
+  const agentVersionPromoteMatch = path.match(/^\/api\/agents\/([^\/]+)\/versions\/([^\/]+)\/promote$/);
+  if (agentVersionPromoteMatch && method === 'POST') {
+    return promoteAgentVersion(request, env, agentVersionPromoteMatch[1], agentVersionPromoteMatch[2]);
+  }
+
+  // POST /api/agents/:id/versions/:version/reject
+  const agentVersionRejectMatch = path.match(/^\/api\/agents\/([^\/]+)\/versions\/([^\/]+)\/reject$/);
+  if (agentVersionRejectMatch && method === 'POST') {
+    return rejectAgentVersion(request, env, agentVersionRejectMatch[1], agentVersionRejectMatch[2]);
+  }
+
+  // GET /api/agents/:id
+  const agentMatch = path.match(/^\/api\/agents\/([^\/]+)$/);
+  if (agentMatch && method === 'GET') {
+    return getAgentById(request, env, agentMatch[1]);
+  }
+
+  // DELETE /api/agents/:id
+  if (agentMatch && method === 'DELETE') {
+    return deleteAgent(request, env, agentMatch[1]);
   }
 
   // ============================================================================
