@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 const navItems = [
   { href: '/', label: 'Home' },
   { href: '/integrations', label: 'Integrations' },
+  { href: '/agents', label: 'Agents' },
   { href: '/traces', label: 'Traces' },
   { href: '/eval-sets', label: 'Eval Sets' },
   { href: '/evals', label: 'Evals' },

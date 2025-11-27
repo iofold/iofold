@@ -45,6 +45,7 @@ export function IntegrationActions({ integrationId }: IntegrationActionsProps) {
         variant="outline"
         onClick={() => testMutation.mutate()}
         disabled={testMutation.isPending}
+        data-testid="test-integration-button"
       >
         <TestTube2 className="w-4 h-4 mr-1" />
         {testMutation.isPending ? 'Testing...' : 'Test'}
@@ -54,6 +55,7 @@ export function IntegrationActions({ integrationId }: IntegrationActionsProps) {
         variant="destructive"
         onClick={() => deleteMutation.mutate()}
         disabled={deleteMutation.isPending}
+        data-testid="delete-integration-button"
       >
         <Trash2 className="w-4 h-4 mr-1" />
         {deleteMutation.isPending ? 'Deleting...' : 'Delete'}

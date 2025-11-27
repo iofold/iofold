@@ -22,6 +22,17 @@ import type {
   UpdateEvalSetRequest,
   UpdateFeedbackRequest,
 } from '@/types/api'
+import type {
+  Agent,
+  AgentVersion,
+  AgentWithVersion,
+  AgentWithDetails,
+  ListAgentsResponse,
+  CreateAgentRequest,
+  CreateAgentVersionRequest,
+  ConfirmAgentRequest,
+  AgentPromptResponse,
+} from '@/types/agent'
 
 class APIClient {
   private baseURL: string
@@ -29,7 +40,9 @@ class APIClient {
   private workspaceId: string | null = null
 
   constructor(baseURL?: string) {
-    this.baseURL = baseURL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787/v1'
+    this.baseURL = baseURL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787'
+    // For MVP development, use default workspace
+    this.workspaceId = 'workspace_default'
   }
 
   setAuth(token: string, workspaceId: string) {
@@ -341,6 +354,71 @@ class APIClient {
   streamEvalSet(evalSetId: string): EventSource {
     const url = `${this.baseURL}/api/eval-sets/${evalSetId}/stream`
     return new EventSource(url)
+  }
+
+  // ============================================================================
+  // Agents
+  // ============================================================================
+
+  async createAgent(data: CreateAgentRequest): Promise<AgentWithVersion> {
+    return this.request('/api/agents', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async listAgents(status?: string): Promise<ListAgentsResponse> {
+    const params = status ? `?status=${status}` : ''
+    return this.request(`/api/agents${params}`)
+  }
+
+  async getAgent(id: string): Promise<AgentWithDetails> {
+    return this.request(`/api/agents/${id}`)
+  }
+
+  async confirmAgent(id: string, data?: ConfirmAgentRequest): Promise<AgentWithDetails> {
+    return this.request(`/api/agents/${id}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    })
+  }
+
+  async deleteAgent(id: string): Promise<void> {
+    return this.request(`/api/agents/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async getAgentPrompt(id: string): Promise<AgentPromptResponse> {
+    return this.request(`/api/agents/${id}/prompt`)
+  }
+
+  // ============================================================================
+  // Agent Versions
+  // ============================================================================
+
+  async listAgentVersions(agentId: string): Promise<{ versions: AgentVersion[]; active_version_id: string | null }> {
+    return this.request(`/api/agents/${agentId}/versions`)
+  }
+
+  async createAgentVersion(agentId: string, data: CreateAgentVersionRequest): Promise<AgentVersion> {
+    return this.request(`/api/agents/${agentId}/versions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async promoteAgentVersion(agentId: string, version: number): Promise<{ success: boolean; previous_version_id: string | null }> {
+    return this.request(`/api/agents/${agentId}/versions/${version}/promote`, {
+      method: 'POST',
+    })
+  }
+
+  async rejectAgentVersion(agentId: string, version: number, reason?: string): Promise<{ success: boolean }> {
+    return this.request(`/api/agents/${agentId}/versions/${version}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    })
   }
 }
 
