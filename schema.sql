@@ -33,10 +33,14 @@ CREATE TABLE traces (
   integration_id TEXT NOT NULL,
   external_id TEXT NOT NULL, -- ID from source platform (trace_id in old schema)
   trace_data TEXT NOT NULL, -- JSON: normalized LangGraphExecutionStep
+  agent_version_id TEXT, -- Link to agent version
+  assignment_status TEXT DEFAULT 'unassigned', -- 'unassigned' | 'assigned' | 'orphaned'
   imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
   FOREIGN KEY (integration_id) REFERENCES integrations(id) ON DELETE CASCADE,
-  UNIQUE(integration_id, external_id)
+  FOREIGN KEY (agent_version_id) REFERENCES agent_versions(id),
+  UNIQUE(integration_id, external_id),
+  CHECK(assignment_status IN ('unassigned', 'assigned', 'orphaned'))
 );
 
 -- Eval sets (groups of traces for training)
@@ -116,10 +120,91 @@ CREATE TABLE jobs (
   metadata TEXT, -- JSON with job-specific data
   result TEXT, -- JSON with job results
   error TEXT,
+  agent_id TEXT, -- Link to agent
+  agent_version_id TEXT, -- Link to agent version
+  trigger_event TEXT, -- Event that triggered this job
+  trigger_threshold TEXT, -- Threshold configuration for auto-trigger
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   started_at DATETIME,
   completed_at DATETIME,
-  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_id) REFERENCES agents(id),
+  FOREIGN KEY (agent_version_id) REFERENCES agent_versions(id)
+);
+
+-- Agent management tables
+-- Agents table - discovered agent groupings
+CREATE TABLE agents (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'discovered', -- 'discovered' | 'confirmed' | 'archived'
+  active_version_id TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  CHECK(status IN ('discovered', 'confirmed', 'archived'))
+);
+
+-- Agent versions - immutable prompt versions
+CREATE TABLE agent_versions (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  prompt_template TEXT NOT NULL,
+  variables TEXT, -- JSON
+  source TEXT NOT NULL, -- 'discovered' | 'manual' | 'ai_improved'
+  parent_version_id TEXT,
+  accuracy REAL,
+  status TEXT DEFAULT 'candidate', -- 'candidate' | 'active' | 'rejected' | 'archived'
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+  UNIQUE(agent_id, version),
+  CHECK(source IN ('discovered', 'manual', 'ai_improved')),
+  CHECK(status IN ('candidate', 'active', 'rejected', 'archived'))
+);
+
+-- Functions table - unified AI-generated code storage
+CREATE TABLE functions (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  type TEXT NOT NULL, -- 'template_extractor' | 'template_injector' | 'eval'
+  name TEXT NOT NULL,
+  code TEXT NOT NULL, -- Python function code
+  input_schema TEXT, -- JSON schema
+  output_schema TEXT, -- JSON schema
+  model_used TEXT, -- LLM model used for generation
+  parent_function_id TEXT, -- Refinement chain
+  status TEXT DEFAULT 'active', -- 'active' | 'archived' | 'failed'
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  CHECK(type IN ('template_extractor', 'template_injector', 'eval')),
+  CHECK(status IN ('active', 'archived', 'failed'))
+);
+
+-- Agent functions - links agents to their functions
+CREATE TABLE agent_functions (
+  agent_id TEXT NOT NULL,
+  function_id TEXT NOT NULL,
+  role TEXT NOT NULL, -- 'extractor' | 'injector'
+  PRIMARY KEY (agent_id, role),
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+  FOREIGN KEY (function_id) REFERENCES functions(id) ON DELETE CASCADE,
+  CHECK(role IN ('extractor', 'injector'))
+);
+
+-- Prompt best practices - reference material for meta-prompt agent
+CREATE TABLE prompt_best_practices (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL, -- 'openai' | 'anthropic' | 'google'
+  category TEXT NOT NULL, -- 'structure' | 'clarity' | 'safety' | 'reasoning' | 'general'
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  url TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  CHECK(source IN ('openai', 'anthropic', 'google')),
+  CHECK(category IN ('structure', 'clarity', 'safety', 'reasoning', 'general'))
 );
 
 -- Indexes for performance
@@ -127,6 +212,8 @@ CREATE INDEX idx_traces_workspace_id ON traces(workspace_id);
 CREATE INDEX idx_traces_external_id ON traces(external_id);
 CREATE INDEX idx_traces_integration_id ON traces(integration_id);
 CREATE INDEX idx_traces_imported_at ON traces(imported_at);
+CREATE INDEX idx_traces_agent_version_id ON traces(agent_version_id);
+CREATE INDEX idx_traces_assignment_status ON traces(assignment_status);
 
 CREATE INDEX idx_integrations_workspace_id ON integrations(workspace_id);
 CREATE INDEX idx_integrations_platform ON integrations(platform);
@@ -151,6 +238,14 @@ CREATE INDEX idx_jobs_workspace_id ON jobs(workspace_id);
 CREATE INDEX idx_jobs_type ON jobs(type);
 CREATE INDEX idx_jobs_status ON jobs(status);
 CREATE INDEX idx_jobs_created_at ON jobs(created_at);
+
+-- Agent management indexes
+CREATE INDEX idx_agents_workspace_id ON agents(workspace_id);
+CREATE INDEX idx_agents_status ON agents(status);
+CREATE INDEX idx_agent_versions_agent_id ON agent_versions(agent_id);
+CREATE INDEX idx_agent_versions_status ON agent_versions(status);
+CREATE INDEX idx_functions_workspace_id ON functions(workspace_id);
+CREATE INDEX idx_functions_type ON functions(type);
 
 -- View for eval comparison (predictions vs human feedback)
 CREATE VIEW eval_comparison AS
