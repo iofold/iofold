@@ -10,7 +10,7 @@ export interface APIError {
 }
 
 // Job Types
-export type JobType = 'import' | 'generate' | 'execute';
+export type JobType = 'import' | 'generate' | 'execute' | 'monitor' | 'auto_refine' | 'agent_discovery' | 'prompt_improvement' | 'template_drift' | 'eval_revalidation' | 'prompt_evaluation';
 export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface Job {
@@ -30,6 +30,11 @@ export interface JobMetadata {
   evalId?: string;
   traceIds?: string[];
   workspaceId: string;
+  // Agent management fields
+  agentId?: string;
+  agentVersionId?: string;
+  triggerEvent?: string;
+  triggerThreshold?: string;
 }
 
 // Eval Generation Types
