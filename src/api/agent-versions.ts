@@ -314,6 +314,14 @@ export async function promoteAgentVersion(
       );
     }
 
+    if (versionResult.status === 'active') {
+      return createErrorResponse(
+        'VALIDATION_ERROR',
+        'Version is already active',
+        400
+      );
+    }
+
     // Begin transaction-like updates
     // 1. Demote current active version if exists
     if (agent.active_version_id) {
