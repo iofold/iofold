@@ -12,29 +12,37 @@ interface TraceFeedbackProps {
   traceId: string
   evalSetId: string
   currentRating?: 'positive' | 'negative' | 'neutral' | null
+  feedbackId?: string
   onFeedbackChange?: () => void
 }
 
-export function TraceFeedback({ traceId, evalSetId, currentRating, onFeedbackChange }: TraceFeedbackProps) {
+export function TraceFeedback({ traceId, evalSetId, currentRating, feedbackId, onFeedbackChange }: TraceFeedbackProps) {
   const [rating, setRating] = useState<'positive' | 'negative' | 'neutral' | null>(currentRating || null)
   const queryClient = useQueryClient()
 
   const submitMutation = useMutation({
-    mutationFn: (rating: 'positive' | 'negative' | 'neutral') =>
-      apiClient.submitFeedback({
+    mutationFn: (rating: 'positive' | 'negative' | 'neutral') => {
+      // If feedback already exists, update it; otherwise create new
+      if (feedbackId) {
+        return apiClient.updateFeedback(feedbackId, { rating })
+      }
+      return apiClient.submitFeedback({
         trace_id: traceId,
         eval_set_id: evalSetId,
         rating,
-      }),
+      })
+    },
     onSuccess: (_, rating) => {
       setRating(rating)
       queryClient.invalidateQueries({ queryKey: ['traces'] })
+      queryClient.invalidateQueries({ queryKey: ['trace', traceId] })
       queryClient.invalidateQueries({ queryKey: ['eval-sets', evalSetId] })
       toast.success(`Marked as ${rating}`)
       onFeedbackChange?.()
     },
-    onError: () => {
-      toast.error('Failed to submit feedback')
+    onError: (error: any) => {
+      const message = error?.message || 'Unknown error'
+      toast.error(`Failed to submit feedback: ${message}`)
     },
   })
 
@@ -60,30 +68,40 @@ export function TraceFeedback({ traceId, evalSetId, currentRating, onFeedbackCha
   return (
     <div className="flex gap-2">
       <Button
+        data-testid="feedback-positive"
         size="sm"
         variant={rating === 'positive' ? 'default' : 'outline'}
         onClick={() => submitMutation.mutate('positive')}
         disabled={submitMutation.isPending}
-        className={cn(rating === 'positive' && 'bg-green-600 hover:bg-green-700')}
+        className={cn(
+          rating === 'positive' && 'bg-green-600 hover:bg-green-700 active selected'
+        )}
       >
         <ThumbsUp className="w-4 h-4 mr-1" />
         Positive (1)
       </Button>
       <Button
+        data-testid="feedback-neutral"
         size="sm"
         variant={rating === 'neutral' ? 'default' : 'outline'}
         onClick={() => submitMutation.mutate('neutral')}
         disabled={submitMutation.isPending}
+        className={cn(
+          rating === 'neutral' && 'bg-gray-600 hover:bg-gray-700 active selected'
+        )}
       >
         <Minus className="w-4 h-4 mr-1" />
         Neutral (2)
       </Button>
       <Button
+        data-testid="feedback-negative"
         size="sm"
         variant={rating === 'negative' ? 'default' : 'outline'}
         onClick={() => submitMutation.mutate('negative')}
         disabled={submitMutation.isPending}
-        className={cn(rating === 'negative' && 'bg-red-600 hover:bg-red-700')}
+        className={cn(
+          rating === 'negative' && 'bg-red-600 hover:bg-red-700 active selected'
+        )}
       >
         <ThumbsDown className="w-4 h-4 mr-1" />
         Negative (3)

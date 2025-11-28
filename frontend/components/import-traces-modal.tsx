@@ -32,9 +32,14 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [jobId, setJobId] = useState<string | null>(null)
+  // Track if job completed synchronously (no SSE needed)
+  const [syncCompleted, setSyncCompleted] = useState(false)
 
   // Use the job monitor hook for SSE + polling fallback
-  const { job: jobData, isStreaming, isPolling, isSSEActive, stop: stopMonitoring } = useJobMonitor(jobId, {
+  // Only start monitoring if job wasn't completed synchronously
+  const { job: jobData, isStreaming, isPolling, isSSEActive, stop: stopMonitoring } = useJobMonitor(
+    syncCompleted ? null : jobId, // Don't monitor if sync completed
+    {
     autoStart: true,
     onProgress: (update) => {
       console.log('[ImportTracesModal] Job progress:', update)
@@ -79,6 +84,17 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
       return result
     },
     onSuccess: (data) => {
+      // Check if the job already completed synchronously (local dev without queue)
+      if (data.status === 'completed') {
+        console.log('[ImportTracesModal] Import completed synchronously')
+        // Mark as sync completed so we don't start SSE monitoring
+        setSyncCompleted(true)
+        setJobId(data.job_id)
+        // Immediately invalidate traces query
+        queryClient.invalidateQueries({ queryKey: ['traces'] })
+        return
+      }
+
       // Set the job ID - this will trigger the useJobMonitor hook to start monitoring
       setJobId(data.job_id)
     },
@@ -114,6 +130,7 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
       setDateFrom('')
       setDateTo('')
       setJobId(null)
+      setSyncCompleted(false)
       importMutation.reset()
       onOpenChange(false)
     }
@@ -136,13 +153,13 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
         {jobId && (
           <div className="my-4 p-4 rounded-lg border bg-muted/50">
             <div className="flex items-center gap-2 mb-2">
-              {jobData?.status === 'completed' && (
+              {(syncCompleted || jobData?.status === 'completed') && (
                 <CheckCircle2 className="h-5 w-5 text-green-600" aria-hidden="true" />
               )}
               {jobData?.status === 'failed' && (
                 <AlertCircle className="h-5 w-5 text-red-600" aria-hidden="true" />
               )}
-              {(jobData?.status === 'running' || jobData?.status === 'queued') && (
+              {!syncCompleted && (jobData?.status === 'running' || jobData?.status === 'queued') && (
                 <Loader2 className="h-5 w-5 animate-spin text-blue-600" aria-hidden="true" />
               )}
               <span className="font-medium">Import Status</span>
@@ -154,17 +171,17 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Status:</span>
-                <span className={getStatusColor(jobData?.status || 'queued')}>
-                  {jobData?.status || 'queued'}
+                <span className={getStatusColor(syncCompleted ? 'completed' : (jobData?.status || 'queued'))}>
+                  {syncCompleted ? 'completed' : (jobData?.status || 'queued')}
                 </span>
               </div>
-              {jobData?.progress !== undefined && (
+              {!syncCompleted && jobData?.progress !== undefined && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Progress:</span>
                   <span>{jobData.progress}%</span>
                 </div>
               )}
-              {isStreaming && (
+              {!syncCompleted && isStreaming && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Connection:</span>
                   <span className="text-xs">
@@ -179,9 +196,9 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
                   {jobData.error}
                 </div>
               )}
-              {jobData?.status === 'completed' && jobData?.result && (
+              {(syncCompleted || jobData?.status === 'completed') && (
                 <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-green-800">
-                  Successfully imported {jobData.result.imported_count || 0} traces
+                  Import completed successfully
                 </div>
               )}
             </div>
@@ -276,7 +293,7 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={!canSubmit}>
+              <Button type="submit" disabled={!canSubmit} data-testid="import-traces-submit">
                 {importMutation.isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
                 )}
@@ -287,7 +304,7 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
         )}
 
         {/* Close button when job is done */}
-        {jobId && ['completed', 'failed', 'cancelled'].includes(jobData?.status || '') && (
+        {jobId && (syncCompleted || ['completed', 'failed', 'cancelled'].includes(jobData?.status || '')) && (
           <DialogFooter>
             <Button onClick={handleClose}>Close</Button>
           </DialogFooter>

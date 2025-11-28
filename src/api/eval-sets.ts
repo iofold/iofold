@@ -124,6 +124,11 @@ export async function listEvalSets(request: Request, env: Env): Promise<Response
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // Parse limit from query string
+    const url = new URL(request.url);
+    const limitParam = url.searchParams.get('limit');
+    const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 100, 100) : 100;
+
     // Get eval sets with aggregated stats
     const result = await env.DB.prepare(
       `SELECT
@@ -143,15 +148,17 @@ export async function listEvalSets(request: Request, env: Env): Promise<Response
       LEFT JOIN evals e ON es.id = e.eval_set_id
       WHERE es.workspace_id = ?
       GROUP BY es.id
-      ORDER BY es.created_at DESC`
+      ORDER BY es.created_at DESC
+      LIMIT ?`
     )
-      .bind(workspaceId)
+      .bind(workspaceId, limit)
       .all();
 
     const evalSets = result.results.map((row: any) => ({
       id: row.id,
       name: row.name,
       description: row.description,
+      minimum_examples: row.target_count,
       stats: {
         positive_count: row.positive_count,
         negative_count: row.negative_count,
@@ -159,8 +166,8 @@ export async function listEvalSets(request: Request, env: Env): Promise<Response
         total_count: row.total_count,
       },
       eval_count: row.eval_count,
-      last_updated: row.last_updated,
       created_at: row.created_at,
+      updated_at: row.last_updated,
     }));
 
     return createSuccessResponse({ eval_sets: evalSets });

@@ -79,27 +79,42 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
       return createErrorResponse('NOT_FOUND', 'Eval set not found', 404);
     }
 
-    // Check for existing feedback
+    // Check for existing feedback - use upsert pattern
     const existing = await env.DB.prepare(
-      'SELECT id FROM feedback WHERE trace_id = ? AND eval_set_id = ?'
+      'SELECT id, created_at FROM feedback WHERE trace_id = ? AND eval_set_id = ?'
     )
       .bind(body.trace_id, body.eval_set_id)
       .first();
 
+    const now = new Date().toISOString();
+
     if (existing) {
-      return createErrorResponse(
-        'ALREADY_EXISTS',
-        'Feedback already exists for this trace/eval_set combination (use PATCH to update)',
-        409
+      // Update existing feedback (upsert)
+      await env.DB.prepare(
+        `UPDATE feedback SET rating = ?, notes = ? WHERE id = ?`
+      )
+        .bind(body.rating, body.notes || null, existing.id)
+        .run();
+
+      return createSuccessResponse(
+        {
+          id: existing.id,
+          trace_id: body.trace_id,
+          eval_set_id: body.eval_set_id,
+          rating: body.rating,
+          notes: body.notes || null,
+          created_at: existing.created_at,
+          updated: true,
+        },
+        200
       );
     }
 
-    // Create feedback
+    // Create new feedback
     const feedbackId = `fb_${crypto.randomUUID()}`;
-    const now = new Date().toISOString();
 
     await env.DB.prepare(
-      `INSERT INTO feedback (id, eval_set_id, trace_id, rating, rating_detail, created_at)
+      `INSERT INTO feedback (id, eval_set_id, trace_id, rating, notes, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`
     )
       .bind(
@@ -187,7 +202,7 @@ export async function updateFeedback(request: Request, env: Env, feedbackId: str
     }
 
     if (body.notes !== undefined) {
-      updates.push('rating_detail = ?');
+      updates.push('notes = ?');
       params.push(body.notes || null);
     }
 
@@ -204,7 +219,7 @@ export async function updateFeedback(request: Request, env: Env, feedbackId: str
         trace_id: current!.trace_id,
         eval_set_id: current!.eval_set_id,
         rating: current!.rating,
-        notes: current!.rating_detail,
+        notes: current!.notes,
         created_at: current!.created_at,
       });
     }
@@ -229,7 +244,7 @@ export async function updateFeedback(request: Request, env: Env, feedbackId: str
       trace_id: updated!.trace_id,
       eval_set_id: updated!.eval_set_id,
       rating: updated!.rating,
-      notes: updated!.rating_detail,
+      notes: updated!.notes,
       created_at: updated!.created_at,
     });
   } catch (error: any) {

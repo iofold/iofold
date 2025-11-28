@@ -1,32 +1,35 @@
 import { test, expect } from '@playwright/test'
-import { apiRequest, waitForJobCompletion } from '../utils/helpers'
-import { createTestIntegration, deleteTestIntegration } from '../../fixtures/integrations'
+import { createTestIntegration, createTestTrace, deleteTestIntegration } from '../utils/helpers'
 
 test.describe('Trace Management - List Display', () => {
   let integrationId: string | null = null
   let hasTraces = false
 
   test.beforeAll(async ({ browser }) => {
-    // Setup: Create integration and import traces once for all tests
+    // Setup: Create integration and test traces once for all tests
     const page = await browser.newPage()
-    
+
     try {
-      const integration = await createTestIntegration(page)
+      // Create integration (no external API needed)
+      const integration = await createTestIntegration(page, `Trace List Test Integration ${Date.now()}`)
       integrationId = integration.id
 
-      // Import some traces
-      const jobResponse = await apiRequest<any>(page, '/api/traces/import', {
-        method: 'POST',
-        data: {
-          integration_id: integrationId,
-          limit: 5,
-        },
-      })
-
-      if (jobResponse.job_id) {
-        await waitForJobCompletion(page, jobResponse.job_id, { timeout: 90000 })
-        hasTraces = true
+      // Create some test traces directly (no Langfuse import needed)
+      for (let i = 0; i < 3; i++) {
+        await createTestTrace(page, integrationId, {
+          input_preview: `Test input ${i + 1}`,
+          output_preview: `Test output ${i + 1}`,
+          steps: [
+            {
+              step_id: `step_${i + 1}`,
+              type: 'llm',
+              input: { prompt: `Test prompt ${i + 1}` },
+              output: { response: `Test response ${i + 1}` },
+            },
+          ],
+        })
       }
+      hasTraces = true
     } catch (error) {
       console.error('Failed to setup traces:', error)
     } finally {

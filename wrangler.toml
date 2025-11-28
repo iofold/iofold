@@ -21,5 +21,35 @@ service = "cloudflare/sandbox"
 binding = "Sandbox"
 service = "cloudflare/sandbox"
 
+# ============================================================================
+# Cloudflare Queues for Background Job Processing
+# ============================================================================
+
+# Main job queue - producer binding
+[[queues.producers]]
+binding = "JOB_QUEUE"
+queue = "iofold-jobs"
+
+# Main job queue - consumer configuration
+[[queues.consumers]]
+queue = "iofold-jobs"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "iofold-jobs-dlq"
+
+# Dead letter queue - for failed jobs after max retries
+[[queues.producers]]
+binding = "DEAD_LETTER_QUEUE"
+queue = "iofold-jobs-dlq"
+
+# ============================================================================
+# Scheduled Tasks (Cron Triggers)
+# ============================================================================
+
+# Monitoring job runs every 6 hours to check eval performance
+[triggers]
+crons = ["0 */6 * * *"]
+
 [vars]
 ENVIRONMENT = "development"

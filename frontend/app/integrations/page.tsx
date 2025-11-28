@@ -46,17 +46,17 @@ export default function IntegrationsPage() {
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {data?.integrations.map((integration) => (
-            <Card key={integration.id} className="p-6">
+            <Card key={integration.id} className="p-6 hover:shadow-md transition-all duration-200" data-testid={`integration-card-${integration.id}`}>
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <h3 className="font-semibold capitalize">{integration.platform}</h3>
-                  <p className="text-sm text-muted-foreground">{integration.name}</p>
+                  <p className="text-sm text-muted-foreground" data-testid="integration-name">{integration.name}</p>
                 </div>
-                <span className={`px-2 py-1 text-xs rounded ${
+                <span className={`px-2 py-1 text-xs rounded-full font-medium ${
                   integration.status === 'active'
                     ? 'bg-green-100 text-green-700'
                     : 'bg-red-100 text-red-700'
-                }`}>
+                }`} data-testid="integration-status">
                   {integration.status}
                 </span>
               </div>

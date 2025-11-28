@@ -30,10 +30,10 @@ export class EvalGenerator {
   private model: string;
 
   constructor(config: EvalGeneratorConfig) {
+    this.model = config.model || 'claude-3-haiku-20240307';
     this.client = new Anthropic({
       apiKey: config.anthropicApiKey
     });
-    this.model = config.model || 'claude-3-haiku-20240307';
   }
 
   async generate(request: GenerateEvalRequest): Promise<GenerateEvalResult> {

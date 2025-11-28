@@ -16,6 +16,13 @@ import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
 import { decryptAPIKey } from '../utils/crypto';
 
+/**
+ * Simple base64 decode for MVP (matching integrations.ts encryption)
+ */
+function decodeBase64(encoded: string): string {
+  return Buffer.from(encoded, 'base64').toString('utf-8');
+}
+
 export interface TraceImportJobConfig {
   jobId: string;
   integrationId: string;
@@ -81,9 +88,23 @@ export class TraceImportJob {
         throw new Error(`Unsupported platform: ${integration.platform}. Only Langfuse is supported in MVP.`);
       }
 
-      // Step 2: Decrypt API key using proper AES-GCM decryption
+      // Step 2: Decrypt API key
+      // Try base64 first (MVP/local dev), then AES-GCM (production)
       const apiKeyEncrypted = integration.api_key_encrypted as string;
-      const apiKey = await decryptAPIKey(apiKeyEncrypted, this.deps.encryptionKey);
+      let apiKey: string;
+
+      // For MVP, use simple base64 decode (matching integrations.ts encryption)
+      // In production, this should use proper AES-GCM encryption
+      try {
+        apiKey = decodeBase64(apiKeyEncrypted);
+        // Validate decoded key looks like an API key (contains colon for langfuse)
+        if (!apiKey.includes(':')) {
+          throw new Error('Invalid format');
+        }
+      } catch {
+        // Fallback to AES-GCM for production-encrypted keys
+        apiKey = await decryptAPIKey(apiKeyEncrypted, this.deps.encryptionKey);
+      }
 
       // Parse Langfuse credentials (format: "publicKey:secretKey")
       const [publicKey, secretKey] = apiKey.split(':');

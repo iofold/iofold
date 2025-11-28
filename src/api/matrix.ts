@@ -267,12 +267,12 @@ export async function getComparisonMatrix(
     const query = `
       SELECT
         t.id as trace_id,
-        t.external_id,
+        t.trace_id as external_trace_id,
         t.integration_id,
-        t.imported_at as timestamp,
-        t.trace_data,
+        t.timestamp,
+        t.steps,
         f.rating as human_rating,
-        f.rating_detail as human_notes,
+        f.notes as human_notes,
         f.created_at as feedback_created_at
       FROM feedback f
       INNER JOIN traces t ON f.trace_id = t.id
@@ -561,7 +561,7 @@ export async function getEvalExecutionDetail(
         ee.error,
         ee.executed_at,
         f.rating as human_rating,
-        f.rating_detail as human_notes
+        f.notes as human_notes
       FROM eval_executions ee
       LEFT JOIN feedback f ON ee.trace_id = f.trace_id
       WHERE ee.trace_id = ? AND ee.eval_id = ?

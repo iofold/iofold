@@ -53,6 +53,7 @@ export function CreateEvalSetModal({ open, onOpenChange }: CreateEvalSetModalPro
               <Label htmlFor="name">Name</Label>
               <Input
                 id="name"
+                name="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My Eval Set"
@@ -63,6 +64,7 @@ export function CreateEvalSetModal({ open, onOpenChange }: CreateEvalSetModalPro
               <Label htmlFor="description">Description (optional)</Label>
               <Textarea
                 id="description"
+                name="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe what this eval set is for..."

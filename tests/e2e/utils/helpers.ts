@@ -4,7 +4,7 @@ import { Page } from '@playwright/test';
  * Helper to get API client for backend requests during tests
  */
 export function getAPIBaseURL(): string {
-  return process.env.API_URL || 'http://localhost:8787/v1';
+  return process.env.API_URL || 'http://localhost:8787';
 }
 
 /**
@@ -81,11 +81,13 @@ export async function apiRequest<T>(
 export async function waitForJobCompletion(
   page: Page,
   jobId: string,
-  options: { timeout?: number; pollInterval?: number } = {}
+  options: { timeout?: number; pollInterval?: number; staleQueuedTimeout?: number } = {}
 ): Promise<any> {
   const timeout = options.timeout || 120000; // 2 minutes default
   const pollInterval = options.pollInterval || 2000; // 2 seconds
+  const staleQueuedTimeout = options.staleQueuedTimeout || 30000; // 30 seconds for stale queued jobs
   const startTime = Date.now();
+  let firstQueuedTime: number | null = null;
 
   while (Date.now() - startTime < timeout) {
     const job = await apiRequest(page, `/api/jobs/${jobId}`);
@@ -95,11 +97,27 @@ export async function waitForJobCompletion(
     }
 
     if ((job as any).status === 'failed') {
-      throw new Error(`Job failed: ${(job as any).error_message || 'Unknown error'}`);
+      throw new Error(`Job failed: ${(job as any).error_message || (job as any).error || 'Unknown error'}`);
     }
 
     if ((job as any).status === 'cancelled') {
       throw new Error('Job was cancelled');
+    }
+
+    // Detect stale queued jobs (no queue worker running)
+    if ((job as any).status === 'queued') {
+      if (firstQueuedTime === null) {
+        firstQueuedTime = Date.now();
+      } else if (Date.now() - firstQueuedTime > staleQueuedTimeout) {
+        throw new Error(
+          `Job ${jobId} is stuck in "queued" status for over ${staleQueuedTimeout}ms. ` +
+          'This typically happens in local development without a queue worker. ' +
+          'The import traces endpoint should be running synchronously in local dev.'
+        );
+      }
+    } else {
+      // Job is running, reset stale timer
+      firstQueuedTime = null;
     }
 
     // Wait before polling again
@@ -121,10 +139,11 @@ export async function waitForToast(
 }
 
 /**
- * Generate a unique name with timestamp
+ * Generate a unique name with timestamp and random suffix
  */
 export function uniqueName(prefix: string): string {
-  return `${prefix} ${Date.now()}`;
+  const random = Math.random().toString(36).substring(2, 7);
+  return `${prefix} ${Date.now()}_${random}`;
 }
 
 /**
@@ -199,6 +218,83 @@ export async function elementExists(page: Page, selector: string): Promise<boole
  */
 export async function getElementCount(page: Page, selector: string): Promise<number> {
   return page.locator(selector).count();
+}
+
+/**
+ * Create a test trace directly via API (without needing external service)
+ */
+export async function createTestTrace(
+  page: Page,
+  integrationId: string,
+  options?: {
+    trace_id?: string;
+    steps?: any[];
+    input_preview?: string;
+    output_preview?: string;
+    has_errors?: boolean;
+  }
+): Promise<{ id: string; trace_id: string }> {
+  const trace = await apiRequest<any>(page, '/api/traces', {
+    method: 'POST',
+    data: {
+      integration_id: integrationId,
+      trace_id: options?.trace_id,
+      steps: options?.steps || [
+        {
+          step_id: 'step_1',
+          type: 'llm',
+          input: { prompt: 'Test prompt' },
+          output: { response: 'Test response' },
+        },
+      ],
+      input_preview: options?.input_preview || 'Test input for trace',
+      output_preview: options?.output_preview || 'Test output for trace',
+      has_errors: options?.has_errors || false,
+    },
+  });
+  return { id: trace.id, trace_id: trace.trace_id };
+}
+
+/**
+ * Create a test integration directly via API
+ */
+export async function createTestIntegration(
+  page: Page,
+  name?: string
+): Promise<{ id: string; name: string }> {
+  const integrationName = name || uniqueName('Test Integration');
+
+  // Use real Langfuse credentials if available, otherwise use test key
+  // Langfuse expects format: "publicKey:secretKey"
+  let apiKey = 'test_api_key_for_e2e';
+  if (process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY) {
+    apiKey = `${process.env.LANGFUSE_PUBLIC_KEY}:${process.env.LANGFUSE_SECRET_KEY}`;
+  }
+
+  const integration = await apiRequest<any>(page, '/api/integrations', {
+    method: 'POST',
+    data: {
+      platform: 'langfuse',
+      name: integrationName,
+      api_key: apiKey,
+      base_url: process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com',
+    },
+  });
+  return { id: integration.id, name: integrationName };
+}
+
+/**
+ * Delete a test integration
+ */
+export async function deleteTestIntegration(page: Page, integrationId: string): Promise<void> {
+  await apiRequest(page, `/api/integrations/${integrationId}`, { method: 'DELETE' }).catch(() => {});
+}
+
+/**
+ * Delete a test trace
+ */
+export async function deleteTestTrace(page: Page, traceId: string): Promise<void> {
+  await apiRequest(page, `/api/traces/${traceId}`, { method: 'DELETE' }).catch(() => {});
 }
 
 /**

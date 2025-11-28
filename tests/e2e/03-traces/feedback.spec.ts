@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { apiRequest, waitForJobCompletion, waitForToast } from '../utils/helpers'
-import { createTestIntegration, deleteTestIntegration } from '../../fixtures/integrations'
+import { apiRequest, createTestIntegration, createTestTrace, deleteTestIntegration, waitForToast } from '../utils/helpers'
 
 test.describe('Trace Management - Feedback', () => {
   let integrationId: string | null = null
@@ -9,10 +8,10 @@ test.describe('Trace Management - Feedback', () => {
 
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage()
-    
+
     try {
-      // Create integration
-      const integration = await createTestIntegration(page)
+      // Create integration (no external API needed)
+      const integration = await createTestIntegration(page, `Feedback Test Integration ${Date.now()}`)
       integrationId = integration.id
 
       // Create eval set
@@ -25,24 +24,20 @@ test.describe('Trace Management - Feedback', () => {
       })
       evalSetId = evalSet.id
 
-      // Import traces
-      const jobResponse = await apiRequest<any>(page, '/api/traces/import', {
-        method: 'POST',
-        data: {
-          integration_id: integrationId,
-          limit: 1,
-        },
+      // Create test trace directly (no Langfuse import needed)
+      const trace = await createTestTrace(page, integrationId, {
+        input_preview: 'Test input for feedback testing',
+        output_preview: 'Test output for feedback testing',
+        steps: [
+          {
+            step_id: 'step_1',
+            type: 'llm',
+            input: { prompt: 'Test prompt' },
+            output: { response: 'Test response' },
+          },
+        ],
       })
-
-      if (jobResponse.job_id) {
-        await waitForJobCompletion(page, jobResponse.job_id, { timeout: 90000 })
-        
-        // Get first trace ID
-        const traces = await apiRequest<any>(page, '/api/traces', {})
-        if (traces.traces && traces.traces.length > 0) {
-          traceId = traces.traces[0].id
-        }
-      }
+      traceId = trace.id
     } catch (error) {
       console.error('Failed to setup:', error)
     } finally {
@@ -71,15 +66,18 @@ test.describe('Trace Management - Feedback', () => {
     await page.goto(`/traces/${traceId}`)
     await page.waitForLoadState('networkidle')
 
-    // Click thumbs up button
+    // Wait for feedback buttons to appear (means eval set is selected)
     const positiveButton = page.locator('[data-testid="feedback-positive"]')
+    await expect(positiveButton).toBeVisible({ timeout: 10000 })
+
+    // Click thumbs up button
     await positiveButton.click()
 
-    // Wait for success toast
-    await waitForToast(page, 'Feedback', 10000)
+    // Wait for success toast - the toast shows "Marked as positive"
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked.*positive/i })).toBeVisible({ timeout: 10000 })
 
-    // Verify button shows active state
-    await expect(positiveButton).toHaveClass(/active|selected|bg-green/)
+    // Verify button shows active state - check for bg-green or the selected class
+    await expect(positiveButton).toHaveClass(/bg-green|active|selected/, { timeout: 5000 })
   })
 
   test('TEST-T11: Keyboard shortcuts', async ({ page }) => {
@@ -89,30 +87,37 @@ test.describe('Trace Management - Feedback', () => {
     await page.goto(`/traces/${traceId}`)
     await page.waitForLoadState('networkidle')
 
+    // Wait for feedback buttons to be visible (means eval set is auto-selected)
+    const positiveButton = page.locator('[data-testid="feedback-positive"]')
+    await expect(positiveButton).toBeVisible({ timeout: 10000 })
+
     // Press "1" for positive feedback
     await page.keyboard.press('1')
-    
-    // Wait for feedback to be submitted
-    await page.waitForTimeout(1000)
+
+    // Wait for success toast - the toast shows "Marked as positive"
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked.*positive/i })).toBeVisible({ timeout: 10000 })
 
     // Verify positive button is active
-    const positiveButton = page.locator('[data-testid="feedback-positive"]')
-    await expect(positiveButton).toHaveClass(/active|selected|bg-green/)
+    await expect(positiveButton).toHaveClass(/bg-green|active|selected/, { timeout: 5000 })
 
     // Press "2" for neutral feedback
     await page.keyboard.press('2')
-    await page.waitForTimeout(1000)
+
+    // Wait for success toast - the toast shows "Marked as neutral"
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked.*neutral/i })).toBeVisible({ timeout: 10000 })
 
     // Verify neutral button is active
     const neutralButton = page.locator('[data-testid="feedback-neutral"]')
-    await expect(neutralButton).toHaveClass(/active|selected|bg-gray/)
+    await expect(neutralButton).toHaveClass(/bg-gray|active|selected/, { timeout: 5000 })
 
     // Press "3" for negative feedback
     await page.keyboard.press('3')
-    await page.waitForTimeout(1000)
+
+    // Wait for success toast - the toast shows "Marked as negative"
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked.*negative/i })).toBeVisible({ timeout: 10000 })
 
     // Verify negative button is active
     const negativeButton = page.locator('[data-testid="feedback-negative"]')
-    await expect(negativeButton).toHaveClass(/active|selected|bg-red/)
+    await expect(negativeButton).toHaveClass(/bg-red|active|selected/, { timeout: 5000 })
   })
 })

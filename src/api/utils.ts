@@ -64,10 +64,20 @@ export function encodeCursor(timestamp: string, id: string): string {
   return Buffer.from(`${timestamp}:${id}`).toString('base64');
 }
 
-export function decodeCursor(cursor: string): { timestamp: string; id: string } {
-  const decoded = Buffer.from(cursor, 'base64').toString('utf-8');
-  const [timestamp, id] = decoded.split(':');
-  return { timestamp, id };
+export function decodeCursor(cursor: string): { timestamp: string; id: string } | null {
+  try {
+    const decoded = Buffer.from(cursor, 'base64').toString('utf-8');
+    const [timestamp, id] = decoded.split(':');
+
+    // Validate that both timestamp and id are present and non-empty
+    if (!timestamp || !id) {
+      return null;
+    }
+
+    return { timestamp, id };
+  } catch (error) {
+    return null;
+  }
 }
 
 /**

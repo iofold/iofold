@@ -46,7 +46,7 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
   const progress = jobData?.progress || 0
 
   const importMutation = useMutation({
-    mutationFn: (data: { integration_id: string; limit?: number }) =>
+    mutationFn: (data: { integration_id: string; filters?: { limit?: number } }) =>
       apiClient.importTraces(data),
     onSuccess: (data) => {
       if (data.job_id) {
@@ -68,9 +68,10 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    const limitNum = parseInt(limit)
     importMutation.mutate({
       integration_id: integrationId,
-      limit: parseInt(limit) || undefined,
+      filters: limitNum ? { limit: limitNum } : undefined,
     })
   }
 

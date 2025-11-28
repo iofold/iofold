@@ -38,7 +38,16 @@ export class LangfuseAdapter {
 
       return response.data.map(trace => this.normalizeTrace(trace));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      let message: string;
+      if (error instanceof Error) {
+        message = error.message;
+      } else if (error && typeof error === 'object' && 'status' in error) {
+        // Handle Response objects from fetch errors
+        const resp = error as Response;
+        message = `HTTP ${resp.status}`;
+      } else {
+        message = String(error);
+      }
       throw new Error(`Failed to fetch traces: ${message}`, {
         cause: error
       });
@@ -50,7 +59,16 @@ export class LangfuseAdapter {
       const trace = await this.client.api.traceGet(id);
       return this.normalizeTrace(trace);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      let message: string;
+      if (error instanceof Error) {
+        message = error.message;
+      } else if (error && typeof error === 'object' && 'status' in error) {
+        // Handle Response objects from fetch errors
+        const resp = error as Response;
+        message = `HTTP ${resp.status}`;
+      } else {
+        message = String(error);
+      }
       throw new Error(`Failed to fetch trace ${id}: ${message}`, {
         cause: error
       });
@@ -58,26 +76,73 @@ export class LangfuseAdapter {
   }
 
   private normalizeTrace(langfuseTrace: any): Trace {
-    // Extract observations (spans, generations, events)
-    const observations = langfuseTrace.observations || [];
+    // Langfuse returns messages in output.messages, not in observations
+    // observations is just an array of IDs
+    const messages = langfuseTrace.output?.messages || [];
 
-    const steps: LangGraphExecutionStep[] = observations.map((obs: any) => ({
-      step_id: obs.id,
-      trace_id: langfuseTrace.id,
-      timestamp: obs.startTime || obs.timestamp,
-      messages_added: this.extractMessages(obs),
-      tool_calls: this.extractToolCalls(obs),
-      input: obs.input,
-      output: obs.output,
-      metadata: {
-        name: obs.name,
-        type: obs.type,
-        level: obs.level,
-        statusMessage: obs.statusMessage,
-        ...obs.metadata
-      },
-      error: obs.level === 'ERROR' ? obs.statusMessage : undefined
-    }));
+    // Create steps from the messages
+    const steps: LangGraphExecutionStep[] = messages.map((msg: any, index: number) => {
+      // Extract tool calls if this is an AI message
+      const toolCalls = msg.type === 'ai' && msg.tool_calls
+        ? msg.tool_calls.map((tc: any) => ({
+            tool_name: tc.name,
+            arguments: tc.args || {},
+            result: null, // Result comes in next message
+            id: tc.id
+          }))
+        : [];
+
+      // Extract message content
+      let messageContent = '';
+      if (typeof msg.content === 'string') {
+        messageContent = msg.content;
+      } else if (Array.isArray(msg.content)) {
+        // Handle structured content (reasoning + text)
+        messageContent = msg.content
+          .filter((c: any) => c.type === 'text')
+          .map((c: any) => c.text)
+          .join('\n');
+      }
+
+      // Build messages_added array
+      const messages_added: any[] = [];
+      if (msg.type === 'human') {
+        messages_added.push({
+          role: 'user',
+          content: messageContent
+        });
+      } else if (msg.type === 'ai') {
+        messages_added.push({
+          role: 'assistant',
+          content: messageContent
+        });
+      } else if (msg.type === 'tool') {
+        // Tool result message
+        messages_added.push({
+          role: 'tool',
+          content: msg.content,
+          tool_call_id: msg.tool_call_id,
+          name: msg.name
+        });
+      }
+
+      return {
+        step_id: msg.id || `step_${index}`,
+        trace_id: langfuseTrace.id,
+        timestamp: msg.created_at ? new Date(msg.created_at * 1000).toISOString() : langfuseTrace.timestamp,
+        messages_added,
+        tool_calls: toolCalls,
+        input: msg.type === 'human' ? messageContent : null,
+        output: msg.type === 'ai' ? messageContent : msg.type === 'tool' ? msg.content : null,
+        metadata: {
+          type: msg.type,
+          usage: msg.usage_metadata || null,
+          model: msg.response_metadata?.model || null,
+          ...msg.additional_kwargs
+        },
+        error: msg.status === 'error' ? msg.content : undefined
+      };
+    });
 
     return {
       id: langfuseTrace.id,

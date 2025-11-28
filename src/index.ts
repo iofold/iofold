@@ -9,6 +9,9 @@ import { EvalsAPI } from './api/evals';
 import { JobsAPI } from './api/jobs';
 import { handleError } from './utils/errors';
 import { handleApiRequest } from './api';
+import { QueueConsumer, type MessageBatch } from './queue/consumer';
+import { QueueProducer, type Queue } from './queue/producer';
+import type { QueueMessage } from './types/queue';
 import type { Sandbox } from '@cloudflare/sandbox';
 import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 
@@ -19,6 +22,12 @@ export interface Env {
   LANGFUSE_BASE_URL?: string;
   ANTHROPIC_API_KEY: string;
   SANDBOX?: DurableObjectNamespace<Sandbox>;
+  /** Cloudflare Queue binding for job processing */
+  JOB_QUEUE?: Queue;
+  /** Dead letter queue for failed jobs */
+  DEAD_LETTER_QUEUE?: Queue;
+  /** Encryption key for sensitive data */
+  ENCRYPTION_KEY?: string;
 }
 
 const FetchTracesRequestSchema = z.object({
@@ -413,5 +422,54 @@ export default {
     }
 
     return new Response('Not Found', { status: 404 });
+  },
+
+  /**
+   * Queue handler for processing background jobs
+   * Called by Cloudflare when messages arrive in the queue
+   */
+  async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
+    const consumer = new QueueConsumer({
+      db: env.DB,
+      anthropicApiKey: env.ANTHROPIC_API_KEY,
+      sandboxBinding: env.SANDBOX,
+      encryptionKey: env.ENCRYPTION_KEY || 'default-dev-key',
+      deadLetterQueue: env.DEAD_LETTER_QUEUE
+    });
+
+    await consumer.processBatch(batch);
+  },
+
+  /**
+   * Scheduled handler for cron-triggered monitoring jobs
+   * Runs every 6 hours to check eval performance and trigger auto-refinement
+   */
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    console.log(`[Scheduled] Cron triggered at ${new Date(event.scheduledTime).toISOString()}`);
+
+    // Only run monitoring if queue is available
+    if (!env.JOB_QUEUE) {
+      console.warn('[Scheduled] JOB_QUEUE not configured, skipping monitoring');
+      return;
+    }
+
+    const producer = new QueueProducer({
+      queue: env.JOB_QUEUE,
+      db: env.DB
+    });
+
+    // Enqueue monitoring job for all workspaces
+    // In production, you might want to enumerate workspaces and create separate jobs
+    const result = await producer.enqueueMonitorJob(
+      'workspace_default', // Default workspace
+      undefined, // Monitor all evals
+      7 // 7-day window
+    );
+
+    if (result.success) {
+      console.log(`[Scheduled] Monitoring job enqueued: ${result.job_id}`);
+    } else {
+      console.error(`[Scheduled] Failed to enqueue monitoring job: ${result.error}`);
+    }
   }
 };

@@ -56,18 +56,20 @@ function ReviewPageContent() {
   })
 
   // Fetch traces without feedback
+  // Note: We don't filter by eval_set_id here because traces get associated
+  // with an eval set THROUGH feedback. We fetch all traces without feedback,
+  // and the eval_set_id will be used when submitting feedback.
   const {
     data: tracesData,
     isLoading: isLoadingList,
     error: listError,
     refetch,
   } = useQuery({
-    queryKey: ['traces', 'review', evalSetId],
+    queryKey: ['traces', 'review'],
     queryFn: () =>
       apiClient.listTraces({
         has_feedback: false,
         limit: 50,
-        eval_set_id: evalSetId,
       }),
     retry: 2,
   })

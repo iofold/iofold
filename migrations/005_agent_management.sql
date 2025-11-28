@@ -75,7 +75,8 @@ CREATE TABLE prompt_best_practices (
 -- Modify Existing Tables
 -- ============================================================================
 
--- Add agent_version_id and assignment_status to traces
+-- Add agent_id, agent_version_id and assignment_status to traces
+ALTER TABLE traces ADD COLUMN agent_id TEXT REFERENCES agents(id);
 ALTER TABLE traces ADD COLUMN agent_version_id TEXT REFERENCES agent_versions(id);
 ALTER TABLE traces ADD COLUMN assignment_status TEXT DEFAULT 'unassigned'
   CHECK(assignment_status IN ('unassigned', 'assigned', 'orphaned'));

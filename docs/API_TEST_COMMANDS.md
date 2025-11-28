@@ -153,6 +153,220 @@ curl -s -X DELETE \
   "$API_BASE/api/evals/eval_xxx" | jq .
 ```
 
+## Agents API
+
+### List Agents
+```bash
+curl -s -H "X-Workspace-Id: workspace_default" \
+  "$API_BASE/api/agents" | jq .
+```
+
+**Example Response:**
+```json
+{
+  "agents": [
+    {
+      "id": "agent_123",
+      "workspace_id": "workspace_default",
+      "name": "Customer Support Agent",
+      "description": "Handles customer inquiries",
+      "status": "confirmed",
+      "active_version_id": "ver_456",
+      "created_at": "2025-01-15T10:00:00Z",
+      "updated_at": "2025-01-15T10:00:00Z",
+      "active_version": {
+        "id": "ver_456",
+        "agent_id": "agent_123",
+        "version": 1,
+        "prompt_template": "You are a helpful assistant...",
+        "variables": ["question"],
+        "source": "manual",
+        "parent_version_id": null,
+        "accuracy": null,
+        "status": "active",
+        "created_at": "2025-01-15T10:00:00Z"
+      }
+    }
+  ],
+  "pending_discoveries": 0
+}
+```
+
+### Create Agent
+```bash
+curl -s -X POST \
+  -H "X-Workspace-Id: workspace_default" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"My Agent","description":"Agent description"}' \
+  "$API_BASE/api/agents" | jq .
+```
+
+**Example Response:**
+```json
+{
+  "id": "agent_123",
+  "workspace_id": "workspace_default",
+  "name": "My Agent",
+  "description": "Agent description",
+  "status": "confirmed",
+  "active_version_id": null,
+  "created_at": "2025-01-15T10:00:00Z",
+  "updated_at": "2025-01-15T10:00:00Z",
+  "active_version": null
+}
+```
+
+### Get Agent Details
+```bash
+curl -s -H "X-Workspace-Id: workspace_default" \
+  "$API_BASE/api/agents/agent_123" | jq .
+```
+
+**Example Response:**
+```json
+{
+  "id": "agent_123",
+  "workspace_id": "workspace_default",
+  "name": "Customer Support Agent",
+  "description": "Handles customer inquiries",
+  "status": "confirmed",
+  "active_version_id": "ver_456",
+  "created_at": "2025-01-15T10:00:00Z",
+  "updated_at": "2025-01-15T10:00:00Z",
+  "active_version": {
+    "id": "ver_456",
+    "version": 1,
+    "prompt_template": "...",
+    "variables": ["question"],
+    "status": "active"
+  },
+  "versions": [...],
+  "functions": {
+    "extractor": null,
+    "injector": null
+  },
+  "metrics": {
+    "trace_count": 10,
+    "feedback_count": 5,
+    "eval_count": 2,
+    "accuracy": 0.85,
+    "contradiction_rate": 0.15
+  }
+}
+```
+
+### Get Agent Prompt (with ETag support)
+```bash
+# First request
+curl -s -H "X-Workspace-Id: workspace_default" \
+  -i "$API_BASE/api/agents/agent_123/prompt" | jq .
+
+# Response includes ETag header:
+# ETag: "ver_456-2025-01-15T10:00:00Z"
+
+# Subsequent request with If-None-Match (returns 304 if unchanged)
+curl -s -H "X-Workspace-Id: workspace_default" \
+  -H 'If-None-Match: "ver_456-2025-01-15T10:00:00Z"' \
+  -i "$API_BASE/api/agents/agent_123/prompt"
+```
+
+**Example Response (200 OK):**
+```json
+{
+  "template": "You are a helpful assistant. Answer: {question}",
+  "version": 1,
+  "version_id": "ver_456",
+  "variables": ["question"],
+  "updated_at": "2025-01-15T10:00:00Z"
+}
+```
+
+**Example Response (304 Not Modified):**
+```
+HTTP/1.1 304 Not Modified
+ETag: "ver_456-2025-01-15T10:00:00Z"
+```
+
+### Create Agent Version
+```bash
+curl -s -X POST \
+  -H "X-Workspace-Id: workspace_default" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt_template": "You are a helpful assistant. {input}",
+    "variables": ["input"]
+  }' \
+  "$API_BASE/api/agents/agent_123/versions" | jq .
+```
+
+**Example Response:**
+```json
+{
+  "id": "ver_789",
+  "agent_id": "agent_123",
+  "version": 2,
+  "prompt_template": "You are a helpful assistant. {input}",
+  "variables": ["input"],
+  "source": "manual",
+  "parent_version_id": "ver_456",
+  "accuracy": null,
+  "status": "candidate",
+  "created_at": "2025-01-15T11:00:00Z"
+}
+```
+
+### Promote Version
+```bash
+curl -s -X POST \
+  -H "X-Workspace-Id: workspace_default" \
+  "$API_BASE/api/agents/agent_123/versions/2/promote" | jq .
+```
+
+**Example Response:**
+```json
+{
+  "id": "ver_789",
+  "agent_id": "agent_123",
+  "version": 2,
+  "status": "active",
+  ...
+}
+```
+
+**Note:** Promoting a version:
+- Sets the version status to "active"
+- Demotes the previous active version to "archived"
+- Updates the agent's `active_version_id`
+
+### Reject Version
+```bash
+curl -s -X POST \
+  -H "X-Workspace-Id: workspace_default" \
+  "$API_BASE/api/agents/agent_123/versions/2/reject" | jq .
+```
+
+**Example Response:**
+```json
+{
+  "id": "ver_789",
+  "agent_id": "agent_123",
+  "version": 2,
+  "status": "rejected",
+  ...
+}
+```
+
+### Delete Agent
+```bash
+curl -s -X DELETE \
+  -H "X-Workspace-Id: workspace_default" \
+  "$API_BASE/api/agents/agent_123"
+```
+
+**Response:** `204 No Content`
+
+**Note:** Deletion is a soft delete. The agent's status is set to "archived" but the record remains in the database.
+
 ## Jobs API
 
 ### List Recent Jobs
@@ -278,6 +492,9 @@ curl -s "$API/api/evals" | jq -e '.evals' > /dev/null && echo "  PASS" || echo "
 
 echo "✓ Jobs..."
 curl -s -H "$WORKSPACE" "$API/api/jobs" | jq -e '.jobs' > /dev/null && echo "  PASS" || echo "  FAIL"
+
+echo "✓ Agents..."
+curl -s -H "$WORKSPACE" "$API/api/agents" | jq -e '.agents' > /dev/null && echo "  PASS" || echo "  FAIL"
 
 echo "✓ Error handling (404)..."
 curl -s -H "$WORKSPACE" "$API/v1/api/traces/nonexistent" | jq -e '.error.code' | grep -q "NOT_FOUND" && echo "  PASS" || echo "  FAIL"

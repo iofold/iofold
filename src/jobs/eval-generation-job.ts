@@ -15,6 +15,10 @@ export interface EvalGenerationJobConfig {
   model?: string;
   customInstructions?: string;
   workspaceId: string;
+  /** Parent eval ID for refinement (auto-refine jobs) */
+  parentEvalId?: string;
+  /** Include contradicting cases in generation */
+  includeContradictions?: boolean;
 }
 
 export interface EvalGenerationJobDeps {

@@ -64,6 +64,21 @@ export class JobsAPI {
       } else if (job.status === 'cancelled') {
         stream.sendFailed('Job cancelled', '');
         setTimeout(() => stream.close(), 100);
+      } else if (job.status === 'queued') {
+        // Check if job has been queued for too long (stale job detection)
+        const createdAt = new Date(job.created_at);
+        const now = new Date();
+        const ageMs = now.getTime() - createdAt.getTime();
+        const STALE_THRESHOLD_MS = 30000; // 30 seconds
+
+        if (ageMs > STALE_THRESHOLD_MS) {
+          // Job is stale - likely no queue worker processing it
+          stream.sendFailed('Job timed out', 'Job was queued but never started. This may happen in local development without a queue worker.');
+          setTimeout(() => stream.close(), 100);
+        } else {
+          // Poll for updates (in a real implementation, this would be event-driven)
+          this.pollJobUpdates(jobId, stream);
+        }
       } else {
         // Poll for updates (in a real implementation, this would be event-driven)
         this.pollJobUpdates(jobId, stream);
@@ -140,7 +155,8 @@ export class JobsAPI {
   // Helper: Poll for job updates (simple polling implementation)
   private async pollJobUpdates(jobId: string, stream: SSEStream) {
     const pollInterval = 1000; // 1 second
-    const maxPolls = 300; // 5 minutes max
+    const maxPolls = 120; // 2 minutes max to allow time for LLM calls
+    const STALE_QUEUED_THRESHOLD_MS = 30000; // 30 seconds for queued jobs
     let polls = 0;
 
     const interval = setInterval(async () => {
@@ -175,6 +191,17 @@ export class JobsAPI {
           stream.sendFailed('Job cancelled', '');
           stream.close();
           clearInterval(interval);
+        } else if (job.status === 'queued') {
+          // Check if job has been queued for too long (stale job detection)
+          const createdAt = new Date(job.created_at);
+          const now = new Date();
+          const ageMs = now.getTime() - createdAt.getTime();
+
+          if (ageMs > STALE_QUEUED_THRESHOLD_MS) {
+            stream.sendFailed('Job timed out', 'Job was queued but never started. This may happen in local development without a queue worker.');
+            stream.close();
+            clearInterval(interval);
+          }
         }
 
         // Timeout after max polls
