@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState, useMemo, useEffect, Fragment } from 'react'
+import { Suspense, useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -13,7 +13,6 @@ import {
   Filter,
   X,
   ChevronDown,
-  ChevronRight,
   Copy,
   Eye,
   Settings2,
@@ -39,6 +38,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 
 // Trace interface matching API response (TraceSummary)
 interface Trace {
@@ -148,7 +148,7 @@ function TracesPageContent() {
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [selectedTrace, setSelectedTrace] = useState<Trace | null>(null)
   const [sortColumn, setSortColumn] = useState<string>('timestamp')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
 
@@ -295,17 +295,6 @@ function TracesPageContent() {
     } else {
       setSelectedRows(new Set(filteredTraces.map(t => t.id)))
     }
-  }
-
-  // Toggle row expansion
-  const toggleRowExpansion = (id: string) => {
-    const newExpanded = new Set(expandedRows)
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id)
-    } else {
-      newExpanded.add(id)
-    }
-    setExpandedRows(newExpanded)
   }
 
   // Handle column sort
@@ -566,7 +555,6 @@ function TracesPageContent() {
                         onCheckedChange={toggleAllRows}
                       />
                     </th>
-                    <th className="w-10 px-4 py-3"></th>
                     <th
                       className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
                       onClick={() => handleSort('timestamp')}
@@ -611,10 +599,10 @@ function TracesPageContent() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {filteredTraces.map((trace) => (
-                    <Fragment key={trace.id}>
                       <tr
+                        key={trace.id}
                         className="hover:bg-muted/30 transition-colors cursor-pointer"
-                        onClick={() => toggleRowExpansion(trace.id)}
+                        onClick={() => setSelectedTrace(trace)}
                       >
                         <td className="px-4 py-4">
                           <Checkbox
@@ -622,21 +610,6 @@ function TracesPageContent() {
                             onCheckedChange={() => toggleRowSelection(trace.id)}
                             onClick={(e) => e.stopPropagation()}
                           />
-                        </td>
-                        <td className="px-4 py-4">
-                          <button
-                            className="text-muted-foreground hover:text-foreground transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              toggleRowExpansion(trace.id)
-                            }}
-                          >
-                            {expandedRows.has(trace.id) ? (
-                              <ChevronDown className="h-4 w-4" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4" />
-                            )}
-                          </button>
                         </td>
                         <td className="px-4 py-4 text-sm text-muted-foreground whitespace-nowrap">
                           {formatRelativeTime(trace.imported_at || trace.timestamp)}

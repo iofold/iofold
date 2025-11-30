@@ -130,6 +130,8 @@ function ReviewPageContent() {
   const [notes, setNotes] = useState('')
   const [isAutoMode, setIsAutoMode] = useState(false)
   const [useMockData, setUseMockData] = useState(true)
+  const [isTransitioning, setIsTransitioning] = useState(false)
+  const [displayedTrace, setDisplayedTrace] = useState<TraceData | null>(null)
 
   const autoAdvanceTimerRef = useRef<NodeJS.Timeout | null>(null)
   const sessionStartTimeRef = useRef(new Date())
@@ -236,22 +238,20 @@ function ReviewPageContent() {
     // Clear notes
     setNotes('')
 
-    // Auto-advance if enabled
-    if (isAutoMode) {
-      autoAdvanceTimerRef.current = setTimeout(() => {
-        if (currentIndex < totalTraces - 1) {
-          setCurrentIndex(prev => prev + 1)
-        }
-      }, 1500)
-    } else {
-      // Brief delay before moving to next
+    // Trigger exit animation
+    setIsTransitioning(true)
+
+    setTimeout(() => {
+      // Move to next card
+      if (currentIndex < totalTraces - 1) {
+        setCurrentIndex(prev => prev + 1)
+      }
+      // Trigger enter animation
       setTimeout(() => {
-        if (currentIndex < totalTraces - 1) {
-          setCurrentIndex(prev => prev + 1)
-        }
-      }, 300)
-    }
-  }, [currentTrace, currentIndex, totalTraces, isAutoMode, notes, useMockData, agentId, submitFeedbackMutation])
+        setIsTransitioning(false)
+      }, 50)
+    }, 250)
+  }, [currentTrace, currentIndex, totalTraces, notes, useMockData, agentId, submitFeedbackMutation])
 
   const toggleAutoMode = useCallback(() => {
     setIsAutoMode(prev => {

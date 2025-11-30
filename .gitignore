@@ -3,4 +3,5 @@ node_modules/
 .wrangler/
 dist/
 .dev.vars
-.tmp/.playwright-mcp/
+.tmp/
+.playwright-mcp/
