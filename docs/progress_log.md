@@ -51,6 +51,105 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ---
 
+### Queue Consumer: Exponential Backoff and Error Classification
+
+**Time:** 21:37 UTC
+
+**Task:** Implemented intelligent retry logic with exponential backoff and error classification in queue consumer (Task 5 of job queue enhancements plan).
+
+**Changes Made:**
+
+1. **Updated src/queue/consumer.ts:**
+   - Added imports for error classifier and retry backoff modules
+   - Added `RetryAttempt` import from queue types
+
+2. **Created MessageErrorResult interface:**
+   - `shouldRetry: boolean` - Whether message should be retried
+   - `moveToDlq: boolean` - Whether to move to dead letter queue
+   - `errorCategory: ErrorCategory` - Classified error category
+   - `delayMs: number` - Calculated backoff delay
+   - `retryHistory?: RetryAttempt[]` - Updated retry history
+   - `suggestedAction?: string` - Recommended action for resolution
+
+3. **Implemented handleMessageError() method:**
+   - Classifies errors using `classifyError()` from error classifier
+   - Builds comprehensive retry history with timestamps
+   - Checks if error is retryable using `isRetryable()` and `shouldRetryBackoff()`
+   - Calculates exponential backoff delay with jitter
+   - Records retry attempts to database
+   - Returns structured error result for decision making
+
+4. **Implemented recordRetryAttempt() method:**
+   - Inserts retry record into `job_retry_history` table
+   - Updates job record with retry metadata:
+     - `retry_count` - Current attempt number
+     - `error_category` - Classified error category
+     - `last_error_at` - Timestamp of error
+     - `next_retry_at` - Calculated retry time based on backoff delay
+
+5. **Implemented getSuggestedAction() helper:**
+   - Provides human-readable action suggestions for each error category
+   - Helps operators understand how to resolve failures
+
+6. **Updated processBatch() method:**
+   - Replaced simple retry logic with intelligent error handling
+   - Uses `handleMessageError()` for classification and retry decisions
+   - Updates message with retry metadata before retry
+   - Logs detailed retry information including delay and category
+   - Routes to enhanced DLQ handler for permanent failures
+
+7. **Implemented moveToDeadLetterQueueEnhanced() method:**
+   - Creates comprehensive DLQ message with all retry context
+   - Includes error category, retry history, and suggested actions
+   - Sets `requires_user_action` flag for permanent errors
+   - Updates job record with enhanced failure metadata
+   - Stores DLQ info in job metadata for debugging
+
+8. **Maintained backward compatibility:**
+   - Kept legacy `moveToDeadLetterQueue()` method
+   - Ensures old code continues to work during transition
+
+9. **Created comprehensive test suite (src/queue/consumer.test.ts):**
+   - Tests transient error retry with correct classification
+   - Tests permanent error immediate DLQ routing
+   - Tests max retries exhausted scenario
+   - Tests retry history accumulation across attempts
+   - All 4 tests passing
+
+**Files Changed:**
+- `src/queue/consumer.ts` - Enhanced with retry logic (316 lines added)
+- `src/queue/consumer.test.ts` - Created comprehensive test suite (new file)
+
+**Test Results:**
+- ✓ 4/4 tests passing in consumer.test.ts
+- ✓ 22/22 total tests passing (including classifier and backoff tests)
+- Test coverage includes:
+  - Transient network error retry classification
+  - Permanent validation error DLQ routing
+  - Max retries exhausted handling
+  - Retry history recording
+
+**Type Safety:**
+- No new TypeScript errors introduced
+- Pre-existing Cloudflare SDK type issues remain (unrelated to changes)
+- All queue types properly integrated
+
+**Key Features:**
+- Intelligent error classification (transient vs permanent)
+- Exponential backoff with jitter (prevents thundering herd)
+- Comprehensive retry history tracking in database
+- Enhanced DLQ messages with debugging context
+- User action suggestions for failure resolution
+- Full backward compatibility maintained
+
+**Commit:** 58c2d54
+
+**Next Steps:**
+- Task 6: Update JobManager with retry tracking methods
+- Task 7: Add API endpoints for retry history and manual retry
+
+---
+
 ### Database Migration 006: Job Retry Tracking Schema
 
 **Time:** 20:30 UTC
