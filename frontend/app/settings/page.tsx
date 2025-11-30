@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -47,8 +48,13 @@ export default function SettingsPage() {
   const [apiKeyCopied, setApiKeyCopied] = useState(false)
 
   // Theme state
-  const [theme, setTheme] = useState('system')
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
   const [accentColor, setAccentColor] = useState('#4ECFA5')
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Save state
   const [isSaving, setIsSaving] = useState(false)
