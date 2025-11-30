@@ -168,6 +168,11 @@
     --color-muted: #21262D;
     --color-muted-foreground: #8B949E;
 
+    --color-primary: #4ECDC4;
+    --color-primary-foreground: #FFFFFF;
+    --color-secondary: #FF6B9D;
+    --color-secondary-foreground: #FFFFFF;
+
     --color-primary-muted: #21403E;
     --color-secondary-muted: #3D2030;
     --color-success-muted: #1E3A1E;
