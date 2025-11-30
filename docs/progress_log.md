@@ -6,6 +6,64 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### Database Migration 006: Job Retry Tracking Schema
+
+**Time:** 20:30 UTC
+
+**Task:** Created and applied database migration 006 for job retry tracking enhancements.
+
+**Schema Changes:**
+
+1. **Expanded job types CHECK constraint** - Added support for 10 job types:
+   - Existing: `import`, `generate`, `execute`
+   - New: `monitor`, `auto_refine`, `agent_discovery`, `prompt_improvement`, `prompt_evaluation`, `template_drift`, `eval_revalidation`
+
+2. **New columns added to jobs table:**
+   - `retry_count` (INTEGER, default 0) - Current retry attempt number
+   - `max_retries` (INTEGER, default 5) - Maximum allowed retries
+   - `error_category` (TEXT, nullable) - Error classification from ErrorCategory type
+   - `last_error_at` (DATETIME, nullable) - Timestamp of last error
+   - `next_retry_at` (DATETIME, nullable) - Scheduled retry timestamp
+   - `priority` (INTEGER, default 0) - Job priority for queue ordering
+
+3. **New table: job_retry_history** - Audit trail for retry attempts:
+   - `id` (TEXT PRIMARY KEY)
+   - `job_id` (TEXT, foreign key to jobs)
+   - `attempt` (INTEGER) - Retry attempt number
+   - `error` (TEXT) - Error message
+   - `error_category` (TEXT) - Classified error category
+   - `delay_ms` (INTEGER) - Backoff delay in milliseconds
+   - `created_at` (DATETIME)
+
+4. **New indexes created:**
+   - `idx_jobs_next_retry` - For retry scheduling queries (WHERE status='queued' AND next_retry_at IS NOT NULL)
+   - `idx_jobs_priority` - For priority-based queue ordering
+   - `idx_jobs_error_category` - For error analysis (WHERE status='failed')
+   - `idx_job_retry_history_job` - For retry history lookups
+   - `idx_job_retry_history_created_at` - For chronological queries
+
+**Migration Details:**
+- Used SQLite's table recreation pattern (CREATE new → INSERT data → DROP old → RENAME)
+- Preserved all existing data with default values for new columns
+- Maintains foreign key relationships with workspaces, agents, and agent_versions
+
+**Files Created:**
+- `migrations/006_job_retry_tracking.sql`
+
+**Verification:**
+- Migration executed successfully (14 SQL commands)
+- Verified jobs table schema includes all new columns and constraints
+- Verified job_retry_history table created with proper structure
+- Verified all 9 indexes created successfully
+
+**Next Steps:**
+- Implement error classification module (src/errors/classifier.ts)
+- Implement exponential backoff module (src/retry/backoff.ts)
+- Update QueueConsumer to use retry logic
+- Update JobManager with retry tracking methods
+
+---
+
 ### Modal UI/UX Fixes (Dark Mode & Spacing)
 
 **Time:** 19:45 UTC
