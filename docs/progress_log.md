@@ -6,6 +6,45 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### Implement POST /api/agents/:id/improve Endpoint
+
+**Time:** 17:45 UTC
+
+**Summary:** Implemented the agent improvement endpoint that was previously returning 501 NOT_IMPLEMENTED. The endpoint creates a new candidate version with an improved prompt.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/src/api/agents.ts` - Added `improveAgent` function
+- `/home/ygupta/workspace/iofold/src/api/index.ts` - Updated route handler and imports
+
+**Implementation Details:**
+- Added `improveAgent` function that:
+  - Accepts optional `custom_instructions` in request body
+  - Validates agent exists and has an active version with prompt template
+  - Gets next version number from existing versions
+  - Creates new agent version with:
+    - Source: `ai_improved`
+    - Status: `candidate`
+    - Parent: Current active version
+  - Returns 201 Created with new version details
+- Updated router to call `improveAgent` instead of returning 501
+- Added `improveAgent` to exports and imports
+
+**Current Placeholder Behavior:**
+- The function currently appends custom instructions to the existing prompt
+- In production, this would call an LLM to generate an improved prompt
+- Creates a candidate version that must be reviewed and promoted manually
+
+**Next Steps:**
+- Integrate with LLM service (Claude/GPT-4) for actual prompt improvement
+- Implement prompt analysis and optimization logic
+- Add metrics collection for improvement effectiveness
+
+**Verification:**
+- TypeScript compilation checked (no new errors introduced)
+- Committed as: `8708d9a`
+
+---
+
 ### Fix Column Name Mismatch in matrix.ts
 
 **Time:** 17:26 UTC
