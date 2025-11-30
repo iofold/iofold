@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type { Job, JobType, JobStatus, JobMetadata } from '../types/api';
+import type { ErrorCategory } from '../errors/classifier';
 
 export class JobManager {
   constructor(private db: D1Database) {}
@@ -7,10 +8,12 @@ export class JobManager {
   async createJob(
     type: JobType,
     workspaceId: string,
-    metadata: Partial<JobMetadata> = {}
+    metadata: Partial<JobMetadata> & { maxRetries?: number; priority?: number } = {}
   ): Promise<Job> {
     const id = `job_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
+    const maxRetries = metadata.maxRetries ?? 5;
+    const priority = metadata.priority ?? 0;
 
     const fullMetadata: JobMetadata = {
       workspaceId,
@@ -19,8 +22,8 @@ export class JobManager {
 
     await this.db
       .prepare(
-        `INSERT INTO jobs (id, workspace_id, type, status, progress, metadata, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO jobs (id, workspace_id, type, status, progress, metadata, max_retries, priority, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id,
@@ -29,6 +32,8 @@ export class JobManager {
         'queued',
         0,
         JSON.stringify(fullMetadata),
+        maxRetries,
+        priority,
         now
       )
       .run();
@@ -180,6 +185,87 @@ export class JobManager {
     if (!result || !result.metadata) return null;
 
     return JSON.parse(result.metadata as string);
+  }
+
+  /**
+   * Get retry history for a job
+   */
+  async getJobRetryHistory(jobId: string): Promise<Array<{
+    attempt: number;
+    error: string;
+    error_category: ErrorCategory;
+    delay_ms: number;
+    created_at: string;
+  }>> {
+    const results = await this.db
+      .prepare(
+        `SELECT attempt, error, error_category, delay_ms, created_at
+         FROM job_retry_history
+         WHERE job_id = ?
+         ORDER BY attempt ASC`
+      )
+      .bind(jobId)
+      .all();
+
+    return results.results.map(r => ({
+      attempt: r.attempt as number,
+      error: r.error as string,
+      error_category: r.error_category as ErrorCategory,
+      delay_ms: r.delay_ms as number,
+      created_at: r.created_at as string
+    }));
+  }
+
+  /**
+   * List jobs that are pending retry
+   */
+  async listJobsPendingRetry(workspaceId: string, limit = 50): Promise<Job[]> {
+    const results = await this.db
+      .prepare(
+        `SELECT * FROM jobs
+         WHERE workspace_id = ?
+         AND status = 'queued'
+         AND next_retry_at IS NOT NULL
+         AND next_retry_at <= datetime('now')
+         ORDER BY priority DESC, next_retry_at ASC
+         LIMIT ?`
+      )
+      .bind(workspaceId, limit)
+      .all();
+
+    return results.results.map(r => this.jobFromRecord(r));
+  }
+
+  /**
+   * Update job error category
+   */
+  async updateJobErrorCategory(id: string, category: ErrorCategory): Promise<void> {
+    await this.db
+      .prepare('UPDATE jobs SET error_category = ? WHERE id = ?')
+      .bind(category, id)
+      .run();
+  }
+
+  /**
+   * Get jobs by error category for analysis
+   */
+  async getJobsByErrorCategory(
+    workspaceId: string,
+    category: ErrorCategory,
+    limit = 50
+  ): Promise<Job[]> {
+    const results = await this.db
+      .prepare(
+        `SELECT * FROM jobs
+         WHERE workspace_id = ?
+         AND error_category = ?
+         ORDER BY created_at DESC
+         LIMIT ?`
+      )
+      .bind(workspaceId, category, limit)
+      .all();
+
+    return results.results.map(r => this.jobFromRecord(r));
   }
 
   private jobFromRecord(record: any): Job {
