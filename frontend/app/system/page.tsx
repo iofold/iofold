@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { AlertCircle, X, RefreshCw, ChevronDown, CheckCircle, Clock } from 'lucide-react'
+import { JobQueueDashboard } from '@/components/jobs'
 
 // Mock data for performance charts
 const generateResponseTimeData = () => {
@@ -449,6 +450,11 @@ export default function SystemMonitoringPage() {
                   </div>
                 </div>
               </div>
+            </section>
+
+            {/* Job Queue Dashboard */}
+            <section>
+              <JobQueueDashboard workspaceId="default" refreshInterval={5000} />
             </section>
           </div>
 
