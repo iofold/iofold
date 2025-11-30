@@ -646,7 +646,7 @@ test.describe('Integration CRUD Operations', () => {
 
     // Verify empty state elements
     await expect(page.getByText('No integrations connected')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText(/Connect your observability platform/)).toBeVisible();
+    await expect(page.getByText(/Connect your observability platform \(Langfuse, Langsmith, or OpenAI\) to import traces\./)).toBeVisible();
 
     // Verify icon is present (Plug icon)
     const plugIcon = page.locator('svg').filter({ hasText: '' }).first();
