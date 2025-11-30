@@ -74,11 +74,11 @@ export function FeedbackHistory({ traceId, currentUserId }: FeedbackHistoryProps
   const getRatingIcon = (rating: string) => {
     switch (rating) {
       case 'positive':
-        return <ThumbsUp className="w-4 h-4 text-green-600 fill-current" />
+        return <ThumbsUp className="w-4 h-4 text-success fill-current" />
       case 'negative':
-        return <ThumbsDown className="w-4 h-4 text-red-600 fill-current" />
+        return <ThumbsDown className="w-4 h-4 text-destructive fill-current" />
       case 'neutral':
-        return <Minus className="w-4 h-4 text-gray-600" />
+        return <Minus className="w-4 h-4 text-muted-foreground" />
       default:
         return null
     }
@@ -87,13 +87,13 @@ export function FeedbackHistory({ traceId, currentUserId }: FeedbackHistoryProps
   const getRatingColor = (rating: string) => {
     switch (rating) {
       case 'positive':
-        return 'border-l-green-500 bg-green-50'
+        return 'border-l-success bg-success/10'
       case 'negative':
-        return 'border-l-red-500 bg-red-50'
+        return 'border-l-destructive bg-destructive/10'
       case 'neutral':
-        return 'border-l-gray-500 bg-gray-50'
+        return 'border-l-muted-foreground bg-muted'
       default:
-        return 'border-l-gray-300'
+        return 'border-l-border'
     }
   }
 
@@ -107,7 +107,7 @@ export function FeedbackHistory({ traceId, currentUserId }: FeedbackHistoryProps
           <div className="space-y-3">
             {[1, 2].map((i) => (
               <div key={i} className="animate-pulse">
-                <div className="h-20 bg-gray-200 rounded"></div>
+                <div className="h-20 bg-muted rounded"></div>
               </div>
             ))}
           </div>
@@ -193,7 +193,7 @@ export function FeedbackHistory({ traceId, currentUserId }: FeedbackHistoryProps
                           size="sm"
                           onClick={() => handleDelete(feedback.id)}
                           disabled={deleteMutation.isPending}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
                           title="Delete feedback"
                         >
                           <Trash2 className="w-3 h-3" />

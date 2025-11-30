@@ -142,8 +142,8 @@ export function TraceTimeline({
       {/* Header with controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-900">Timeline</h3>
-          <span className="text-xs text-gray-600">
+          <h3 className="text-sm font-semibold text-foreground">Timeline</h3>
+          <span className="text-xs text-muted-foreground">
             {spans.length} span{spans.length !== 1 ? 's' : ''} · {formatTime(totalDuration)}
           </span>
         </div>
@@ -176,7 +176,7 @@ export function TraceTimeline({
             <ZoomIn className="h-4 w-4" />
           </Button>
           {zoom > 1 && (
-            <span className="text-xs text-gray-600 ml-2">{zoom.toFixed(1)}x</span>
+            <span className="text-xs text-muted-foreground ml-2">{zoom.toFixed(1)}x</span>
           )}
         </div>
       </div>
@@ -189,7 +189,7 @@ export function TraceTimeline({
       >
         <div className="relative min-w-full" style={{ width: `${timelineWidth}%` }}>
           {/* Time markers */}
-          <div className="relative h-6 border-b border-gray-200">
+          <div className="relative h-6 border-b border-border">
             {timeMarkers.map((time, idx) => {
               const position = (time / totalDuration) * 100
               return (
@@ -198,8 +198,8 @@ export function TraceTimeline({
                   className="absolute top-0 flex flex-col items-start"
                   style={{ left: `${position}%` }}
                 >
-                  <div className="h-2 w-px bg-gray-300" />
-                  <span className="text-[10px] text-gray-600 mt-0.5 whitespace-nowrap">
+                  <div className="h-2 w-px bg-border" />
+                  <span className="text-[10px] text-muted-foreground mt-0.5 whitespace-nowrap">
                     {formatTime(time)}
                   </span>
                 </div>
@@ -234,8 +234,8 @@ export function TraceTimeline({
                             "h-full rounded px-2 flex items-center",
                             "border transition-all",
                             colors.bgLight,
-                            isSelected && "ring-2 ring-blue-500 ring-offset-1",
-                            isError && "border-red-500 bg-red-50",
+                            isSelected && "ring-2 ring-info ring-offset-1",
+                            isError && "border-destructive bg-destructive/10",
                             isRunning && "animate-pulse",
                             !isError && !isSelected && colors.border,
                           )}
@@ -244,7 +244,7 @@ export function TraceTimeline({
                           <div
                             className={cn(
                               "absolute left-0 top-0 bottom-0 w-1 rounded-l",
-                              isError ? "bg-red-500" : colors.bg
+                              isError ? "bg-destructive" : colors.bg
                             )}
                           />
 
@@ -253,7 +253,7 @@ export function TraceTimeline({
                             <span
                               className={cn(
                                 "text-xs font-medium truncate ml-1",
-                                isError ? "text-red-700" : colors.text
+                                isError ? "text-destructive" : colors.text
                               )}
                             >
                               {span.name}
@@ -271,9 +271,9 @@ export function TraceTimeline({
                           <div>Start: <span className="font-medium">{formatTime(span.startTime)}</span></div>
                           <div>Status: <span className={cn(
                             "font-medium",
-                            span.status === 'success' && "text-green-600",
-                            span.status === 'error' && "text-red-600",
-                            span.status === 'running' && "text-blue-600"
+                            span.status === 'success' && "text-success",
+                            span.status === 'error' && "text-destructive",
+                            span.status === 'running' && "text-info"
                           )}>{span.status}</span></div>
                         </div>
                       </div>
@@ -291,7 +291,7 @@ export function TraceTimeline({
         {Object.entries(SPAN_TYPE_COLORS).map(([type, colors]) => (
           <div key={type} className="flex items-center gap-1.5">
             <div className={cn("w-3 h-3 rounded", colors.bg)} />
-            <span className="text-xs text-gray-600 capitalize">{type}</span>
+            <span className="text-xs text-muted-foreground capitalize">{type}</span>
           </div>
         ))}
       </div>

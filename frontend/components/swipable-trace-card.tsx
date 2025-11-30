@@ -120,26 +120,26 @@ function ToolCallItem({ tool, index, isExpanded, onToggle }: {
   onToggle: () => void
 }) {
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-border rounded-lg overflow-hidden">
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between p-3 hover:bg-muted transition-colors"
       >
         <div className="flex items-center gap-2">
           <span className="text-sm">🔧</span>
-          <span className="text-sm font-medium text-gray-900">
+          <span className="text-sm font-medium text-foreground">
             {tool.tool_name}
           </span>
           {tool.error && (
-            <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded">
+            <span className="text-xs text-destructive bg-destructive/10 px-2 py-0.5 rounded">
               Error
             </span>
           )}
         </div>
         {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-gray-600" />
+          <ChevronUp className="w-4 h-4 text-muted-foreground" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-gray-600" />
+          <ChevronDown className="w-4 h-4 text-muted-foreground" />
         )}
       </button>
 
@@ -150,14 +150,14 @@ function ToolCallItem({ tool, index, isExpanded, onToggle }: {
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="border-t border-gray-200 bg-gray-50"
+            className="border-t border-border bg-muted"
           >
             <div className="p-3 space-y-3">
               {/* Arguments */}
               {tool.arguments && Object.keys(tool.arguments).length > 0 && (
                 <div>
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Arguments:</div>
-                  <pre className="text-xs bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                  <div className="text-xs font-semibold text-muted-foreground mb-1">Arguments:</div>
+                  <pre className="text-xs bg-white p-2 rounded border border-border overflow-x-auto">
                     {JSON.stringify(tool.arguments, null, 2)}
                   </pre>
                 </div>
@@ -166,8 +166,8 @@ function ToolCallItem({ tool, index, isExpanded, onToggle }: {
               {/* Result */}
               {tool.result !== undefined && (
                 <div>
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Result:</div>
-                  <pre className="text-xs bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                  <div className="text-xs font-semibold text-muted-foreground mb-1">Result:</div>
+                  <pre className="text-xs bg-white p-2 rounded border border-border overflow-x-auto">
                     {JSON.stringify(tool.result, null, 2)}
                   </pre>
                 </div>
@@ -176,8 +176,8 @@ function ToolCallItem({ tool, index, isExpanded, onToggle }: {
               {/* Error */}
               {tool.error && (
                 <div>
-                  <div className="text-xs font-semibold text-red-600 mb-1">Error:</div>
-                  <div className="text-xs text-red-700 bg-red-50 p-2 rounded border border-red-200">
+                  <div className="text-xs font-semibold text-destructive mb-1">Error:</div>
+                  <div className="text-xs text-destructive bg-destructive/10 p-2 rounded border border-destructive">
                     {tool.error}
                   </div>
                 </div>
@@ -441,29 +441,29 @@ export function SwipableTraceCard({
           exit={{ opacity: 0 }}
         >
           <div className="text-center">
-            <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-3" />
-            <p className="text-sm font-medium text-gray-700">Submitting feedback...</p>
+            <Loader2 className="w-12 h-12 animate-spin text-info mx-auto mb-3" />
+            <p className="text-sm font-medium text-foreground">Submitting feedback...</p>
           </div>
         </motion.div>
       )}
 
       <div className="p-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-200">
+        <div className="flex items-center justify-between mb-4 pb-4 border-b border-border">
           <div className="flex items-center gap-2">
             <span className="text-2xl" role="img" aria-label={`Status: ${header.status}`}>
               {getStatusEmoji(header.status)}
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-gray-900">
+                <span className="text-sm font-semibold text-foreground">
                   Trace #{header.traceNumber}
                 </span>
-                <span className="text-xs text-gray-600">
+                <span className="text-xs text-muted-foreground">
                   {formatRelativeTime(header.timestamp)}
                 </span>
               </div>
-              <div className="text-xs text-gray-600 mt-0.5">
+              <div className="text-xs text-muted-foreground mt-0.5">
                 {header.stepCount} {header.stepCount === 1 ? 'step' : 'steps'}
                 {header.duration && ` · ${formatDuration(header.duration)}`}
               </div>
@@ -488,8 +488,8 @@ export function SwipableTraceCard({
 
           {/* Tool Calls */}
           {trace.steps.some(s => s.tool_calls?.length > 0) && (
-            <div className="space-y-2 pt-2 border-t border-gray-100">
-              <div className="text-xs font-semibold text-gray-600 mb-2">Tool Calls:</div>
+            <div className="space-y-2 pt-2 border-t border-border">
+              <div className="text-xs font-semibold text-muted-foreground mb-2">Tool Calls:</div>
               {trace.steps.map((step, stepIdx) =>
                 step.tool_calls?.map((tool, toolIdx) => {
                   const globalIdx = stepIdx * 100 + toolIdx
@@ -509,7 +509,7 @@ export function SwipableTraceCard({
 
           {/* Empty state */}
           {trace.steps.length === 0 && (
-            <div className="text-center py-8 text-gray-600">
+            <div className="text-center py-8 text-muted-foreground">
               <p className="text-sm">No messages or tool calls in this trace</p>
               <p className="text-xs mt-1">This trace may be incomplete or still processing</p>
             </div>
@@ -517,27 +517,27 @@ export function SwipableTraceCard({
         </div>
 
         {/* Notes Section */}
-        <div className="mb-4 border-t border-gray-200 pt-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+        <div className="mb-4 border-t border-border pt-4">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Notes (Optional)
           </label>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Add any observations or context..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all"
+            className="w-full px-3 py-2 border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-info focus:border-transparent text-sm transition-all"
             rows={2}
             maxLength={500}
             disabled={isLoading}
           />
           <div className="flex justify-between items-center mt-1">
-            <div className="text-xs text-gray-600">
+            <div className="text-xs text-muted-foreground">
               {notes.length} / 500 characters
             </div>
             {notes.length > 0 && (
               <button
                 onClick={() => setNotes('')}
-                className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                className="text-xs text-info hover:text-info hover:underline"
                 disabled={isLoading}
               >
                 Clear
@@ -556,7 +556,7 @@ export function SwipableTraceCard({
             loading={isLoading && selectedRating === 'positive'}
             className={cn(
               'flex-1 max-w-[140px]',
-              selectedRating === 'positive' && 'ring-2 ring-green-500 ring-offset-2'
+              selectedRating === 'positive' && 'ring-2 ring-success ring-offset-2'
             )}
           >
             <ThumbsUp className="w-4 h-4" />
@@ -571,7 +571,7 @@ export function SwipableTraceCard({
             loading={isLoading && selectedRating === 'neutral'}
             className={cn(
               'flex-1 max-w-[140px]',
-              selectedRating === 'neutral' && 'ring-2 ring-gray-500 ring-offset-2'
+              selectedRating === 'neutral' && 'ring-2 ring-muted-foreground ring-offset-2'
             )}
           >
             <Minus className="w-4 h-4" />
@@ -586,7 +586,7 @@ export function SwipableTraceCard({
             loading={isLoading && selectedRating === 'negative'}
             className={cn(
               'flex-1 max-w-[140px]',
-              selectedRating === 'negative' && 'ring-2 ring-red-500 ring-offset-2'
+              selectedRating === 'negative' && 'ring-2 ring-destructive ring-offset-2'
             )}
           >
             <ThumbsDown className="w-4 h-4" />
@@ -595,9 +595,9 @@ export function SwipableTraceCard({
         </div>
 
         {/* Action Hints */}
-        <div className="border-t border-gray-200 pt-4">
+        <div className="border-t border-border pt-4">
           <div className="text-center space-y-2">
-            <div className="flex items-center justify-center gap-4 text-sm text-gray-600">
+            <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
                 <span role="img" aria-label="Swipe left">
                   👈
@@ -617,7 +617,7 @@ export function SwipableTraceCard({
                 </span>
               </span>
             </div>
-            <div className="flex items-center justify-center gap-1 text-sm text-gray-600">
+            <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
               <span role="img" aria-label="Swipe down">
                 ↓
               </span>
@@ -626,10 +626,10 @@ export function SwipableTraceCard({
                 😐
               </span>
             </div>
-            <div className="text-xs text-gray-600">
-              Or press: <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border">1</kbd> Positive{' '}
-              <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border">2</kbd> Neutral{' '}
-              <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border">3</kbd> Negative
+            <div className="text-xs text-muted-foreground">
+              Or press: <kbd className="px-1.5 py-0.5 bg-muted rounded border">1</kbd> Positive{' '}
+              <kbd className="px-1.5 py-0.5 bg-muted rounded border">2</kbd> Neutral{' '}
+              <kbd className="px-1.5 py-0.5 bg-muted rounded border">3</kbd> Negative
             </div>
           </div>
         </div>

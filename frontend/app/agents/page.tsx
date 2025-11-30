@@ -16,13 +16,13 @@ import type { AgentStatus } from '@/types/agent'
 function getAgentStatusColor(status: AgentStatus): string {
   switch (status) {
     case 'confirmed':
-      return 'text-green-600 bg-green-50'
+      return 'text-success bg-success/10'
     case 'discovered':
-      return 'text-yellow-600 bg-yellow-50'
+      return 'text-warning bg-warning/10'
     case 'archived':
-      return 'text-gray-600 bg-gray-50'
+      return 'text-muted-foreground bg-muted'
     default:
-      return 'text-gray-600 bg-gray-50'
+      return 'text-muted-foreground bg-muted'
   }
 }
 
@@ -50,13 +50,13 @@ export default function AgentsPage() {
       </div>
 
       {data && data.pending_discoveries > 0 && (
-        <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-3" data-testid="pending-discoveries-banner">
-          <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
+        <div className="mb-6 p-4 bg-warning/10 border border-warning rounded-lg flex items-center gap-3" data-testid="pending-discoveries-banner">
+          <AlertCircle className="w-5 h-5 text-warning flex-shrink-0" />
           <div>
-            <p className="text-sm font-medium text-yellow-800" data-testid="pending-discoveries-count">
+            <p className="text-sm font-medium text-warning" data-testid="pending-discoveries-count">
               {data.pending_discoveries} pending {data.pending_discoveries === 1 ? 'discovery' : 'discoveries'}
             </p>
-            <p className="text-xs text-yellow-700">
+            <p className="text-xs text-warning">
               New agents have been discovered from traces. Review and confirm them below.
             </p>
           </div>

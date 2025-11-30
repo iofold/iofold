@@ -131,8 +131,8 @@ export function ResolutionActions({
                 <span>Contradiction reduction: 60-80%</span>
               </div>
               <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span className="text-green-600 text-xs">Ready for processing</span>
+                <div className="w-2 h-2 bg-success rounded-full"></div>
+                <span className="text-success text-xs">Ready for processing</span>
               </div>
             </div>
           </div>
@@ -145,7 +145,7 @@ export function ResolutionActions({
           <Card className="max-w-md w-full">
             <CardContent className="p-6">
               <div className="flex items-start space-x-3 mb-4">
-                <AlertCircle size={24} className="text-yellow-600 mt-1" />
+                <AlertCircle size={24} className="text-warning mt-1" />
                 <div>
                   <h3 className="font-semibold text-foreground">Confirm Bulk Resolution</h3>
                   <p className="text-sm text-muted-foreground mt-1">
@@ -155,8 +155,8 @@ export function ResolutionActions({
                 </div>
               </div>
 
-              <div className="bg-yellow-50 p-3 rounded border border-yellow-200 mb-4">
-                <div className="text-sm text-yellow-800">
+              <div className="bg-warning/10 p-3 rounded border border-warning mb-4">
+                <div className="text-sm text-warning">
                   <div className="font-medium mb-1">What this does:</div>
                   <ul className="text-xs space-y-1">
                     <li>• Removes contradictions from active monitoring</li>

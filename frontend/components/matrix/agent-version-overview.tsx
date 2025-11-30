@@ -73,11 +73,11 @@ export function AgentVersionOverview({
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return 'bg-green-100 text-green-700 border-green-200'
-      case 'candidate': return 'bg-blue-100 text-blue-700 border-blue-200'
-      case 'rejected': return 'bg-red-100 text-red-700 border-red-200'
-      case 'archived': return 'bg-gray-100 text-gray-700 border-gray-200'
-      default: return 'bg-gray-100 text-gray-700 border-gray-200'
+      case 'active': return 'bg-success/10 text-success border-success'
+      case 'candidate': return 'bg-info/10 text-info border-info'
+      case 'rejected': return 'bg-destructive/10 text-destructive border-destructive'
+      case 'archived': return 'bg-muted text-muted-foreground border-border'
+      default: return 'bg-muted text-muted-foreground border-border'
     }
   }
 
@@ -159,7 +159,7 @@ export function AgentVersionOverview({
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <ThumbsUp size={14} className="text-green-600" />
+                        <ThumbsUp size={14} className="text-success" />
                         <span className="text-sm text-foreground">Positive</span>
                       </div>
                       <div className="flex items-center space-x-2">
@@ -171,7 +171,7 @@ export function AgentVersionOverview({
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <Minus size={14} className="text-yellow-600" />
+                        <Minus size={14} className="text-warning" />
                         <span className="text-sm text-foreground">Neutral</span>
                       </div>
                       <div className="flex items-center space-x-2">
@@ -183,7 +183,7 @@ export function AgentVersionOverview({
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <ThumbsDown size={14} className="text-red-600" />
+                        <ThumbsDown size={14} className="text-destructive" />
                         <span className="text-sm text-foreground">Negative</span>
                       </div>
                       <div className="flex items-center space-x-2">
@@ -200,11 +200,11 @@ export function AgentVersionOverview({
                 <div className="pt-4 border-t">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
-                      <AlertTriangle size={16} className="text-red-600" />
+                      <AlertTriangle size={16} className="text-destructive" />
                       <span className="text-sm font-medium text-foreground">Contradictions</span>
                     </div>
                     <div className="text-right">
-                      <div className="text-lg font-bold text-red-600">{metrics.contradictions}</div>
+                      <div className="text-lg font-bold text-destructive">{metrics.contradictions}</div>
                       <div className="text-xs text-muted-foreground">{metrics.contradictionRate}% rate</div>
                     </div>
                   </div>

@@ -18,15 +18,15 @@ import type { AgentVersionStatus, AgentVersionSource } from '@/types/agent'
 function getVersionStatusColor(status: AgentVersionStatus): string {
   switch (status) {
     case 'active':
-      return 'text-green-600 bg-green-50'
+      return 'text-success bg-success/10'
     case 'candidate':
-      return 'text-blue-600 bg-blue-50'
+      return 'text-info bg-info/10'
     case 'rejected':
-      return 'text-red-600 bg-red-50'
+      return 'text-destructive bg-destructive/10'
     case 'archived':
-      return 'text-gray-600 bg-gray-50'
+      return 'text-muted-foreground bg-muted'
     default:
-      return 'text-gray-600 bg-gray-50'
+      return 'text-muted-foreground bg-muted'
   }
 }
 
@@ -97,13 +97,13 @@ export default function AgentDetailPage() {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="space-y-4">
-          <div className="h-8 w-48 bg-gray-100 rounded animate-pulse" />
+          <div className="h-8 w-48 bg-muted rounded animate-pulse" />
           <div className="grid grid-cols-4 gap-4">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-24 bg-gray-100 rounded animate-pulse" />
+              <div key={i} className="h-24 bg-muted rounded animate-pulse" />
             ))}
           </div>
-          <div className="h-64 bg-gray-100 rounded animate-pulse" />
+          <div className="h-64 bg-muted rounded animate-pulse" />
         </div>
       </div>
     )
@@ -137,9 +137,9 @@ export default function AgentDetailPage() {
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-3xl font-bold">{agent.name}</h1>
               <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                agent.status === 'confirmed' ? 'text-green-600 bg-green-50' :
-                agent.status === 'discovered' ? 'text-yellow-600 bg-yellow-50' :
-                'text-gray-600 bg-gray-50'
+                agent.status === 'confirmed' ? 'text-success bg-success/10' :
+                agent.status === 'discovered' ? 'text-warning bg-warning/10' :
+                'text-muted-foreground bg-muted'
               }`}>
                 {agent.status}
               </span>
@@ -231,7 +231,7 @@ export default function AgentDetailPage() {
                       <div className="flex items-center gap-2 mb-2">
                         <h3 className="font-semibold">Version {version.version}</h3>
                         {isActive ? (
-                          <span className="px-2 py-1 text-xs rounded-full font-medium text-blue-600 bg-blue-50">
+                          <span className="px-2 py-1 text-xs rounded-full font-medium text-info bg-info/10">
                             Active
                           </span>
                         ) : (

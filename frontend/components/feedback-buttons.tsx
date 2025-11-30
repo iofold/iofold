@@ -148,7 +148,7 @@ export function FeedbackButtons({
           loading={isLoading && optimisticRating === 'positive'}
           className={cn(
             'transition-all duration-200',
-            activeRating === 'positive' && 'bg-green-50 border-green-500 text-green-700 hover:bg-green-100'
+            activeRating === 'positive' && 'bg-success/10 border-success text-success hover:bg-success/20'
           )}
           data-testid="feedback-positive"
         >
@@ -163,7 +163,7 @@ export function FeedbackButtons({
           loading={isLoading && optimisticRating === 'neutral'}
           className={cn(
             'transition-all duration-200',
-            activeRating === 'neutral' && 'bg-gray-50 border-gray-500 text-gray-700 hover:bg-gray-100'
+            activeRating === 'neutral' && 'bg-muted border-muted-foreground text-muted-foreground hover:bg-muted/80'
           )}
           data-testid="feedback-neutral"
         >
@@ -178,7 +178,7 @@ export function FeedbackButtons({
           loading={isLoading && optimisticRating === 'negative'}
           className={cn(
             'transition-all duration-200',
-            activeRating === 'negative' && 'bg-red-50 border-red-500 text-red-700 hover:bg-red-100'
+            activeRating === 'negative' && 'bg-destructive/10 border-destructive text-destructive hover:bg-destructive/20'
           )}
           data-testid="feedback-negative"
         >
@@ -197,7 +197,7 @@ export function FeedbackButtons({
             disabled={isLoading}
             className={cn(
               'transition-all duration-200',
-              currentFeedback?.notes && 'text-blue-600'
+              currentFeedback?.notes && 'text-info'
             )}
             data-testid="feedback-notes"
           >
