@@ -1,84 +1,297 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { apiClient } from '@/lib/api-client'
-import { TraceCard } from '@/components/trace-card'
 import { TraceFeedback } from '@/components/trace-feedback'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ErrorState } from '@/components/ui/error-state'
-import { Upload, Inbox } from 'lucide-react'
+import { Upload, Inbox, Filter, X, Keyboard } from 'lucide-react'
 import { formatRelativeTime, getRatingEmoji, truncate } from '@/lib/utils'
 import { ImportTracesModal } from '@/components/import-traces-modal'
 import { TraceListSkeleton } from '@/components/skeletons/trace-skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { MetricsBar } from '@/components/traces/MetricsBar'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 function TracesPageContent() {
   const searchParams = useSearchParams()
-  const urlEvalSetId = searchParams?.get('eval_set_id')
-  const [selectedEvalSetId, setSelectedEvalSetId] = useState<string | null>(urlEvalSetId || null)
+  const urlAgentId = searchParams?.get('agent_id')
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(urlAgentId || null)
   const [importModalOpen, setImportModalOpen] = useState(false)
 
-  // Fetch eval sets for the selector
-  const { data: evalSetsData } = useQuery({
-    queryKey: ['eval-sets'],
-    queryFn: () => apiClient.listEvalSets(),
+  // Filter state
+  const [sourceFilter, setSourceFilter] = useState<string>('')
+  const [hasFeedbackFilter, setHasFeedbackFilter] = useState<string>('')
+  const [ratingFilter, setRatingFilter] = useState<string>('')
+  const [dateFrom, setDateFrom] = useState<string>('')
+  const [dateTo, setDateTo] = useState<string>('')
+  const [showFilters, setShowFilters] = useState(false)
+
+  // Build query params based on filters
+  const queryParams = useMemo(() => {
+    const params: {
+      limit: number
+      source?: string
+      has_feedback?: boolean
+      rating?: string
+      date_from?: string
+      date_to?: string
+    } = { limit: 50 }
+
+    if (sourceFilter) params.source = sourceFilter
+    if (hasFeedbackFilter === 'true') params.has_feedback = true
+    if (hasFeedbackFilter === 'false') params.has_feedback = false
+    if (ratingFilter) params.rating = ratingFilter
+    if (dateFrom) params.date_from = dateFrom
+    if (dateTo) params.date_to = dateTo
+
+    return params
+  }, [sourceFilter, hasFeedbackFilter, ratingFilter, dateFrom, dateTo])
+
+  // Count active filters
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (sourceFilter) count++
+    if (hasFeedbackFilter) count++
+    if (ratingFilter) count++
+    if (dateFrom) count++
+    if (dateTo) count++
+    return count
+  }, [sourceFilter, hasFeedbackFilter, ratingFilter, dateFrom, dateTo])
+
+  // Clear all filters
+  const clearFilters = () => {
+    setSourceFilter('')
+    setHasFeedbackFilter('')
+    setRatingFilter('')
+    setDateFrom('')
+    setDateTo('')
+  }
+
+  // Fetch agents for the selector
+  const { data: agentsData } = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => apiClient.listAgents(),
   })
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['traces'],
-    queryFn: () => apiClient.listTraces({ limit: 50 }),
+    queryKey: ['traces', queryParams],
+    queryFn: () => apiClient.listTraces(queryParams),
   })
 
-  // Get the effective eval set ID (from existing feedback or selected)
-  const getEffectiveEvalSetId = (trace: any) => {
-    return trace.feedback?.eval_set_id || selectedEvalSetId
+  // Compute metrics from trace data
+  const metrics = useMemo(() => {
+    if (!data?.traces) return { totalTraces: 0, feedbackCount: 0, errorCount: 0 }
+
+    const traces = data.traces
+    const totalTraces = data.total_count || traces.length
+    const feedbackCount = traces.filter((t: any) => t.feedback).length
+    const errorCount = traces.filter((t: any) => t.summary?.has_errors).length
+
+    return { totalTraces, feedbackCount, errorCount }
+  }, [data])
+
+  // Get the effective agent ID (from existing feedback or selected)
+  const getEffectiveAgentId = (trace: any) => {
+    return trace.feedback?.agent_id || selectedAgentId
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">Traces</h1>
-          <p className="text-muted-foreground">
-            Browse and annotate imported traces
-          </p>
+    <TooltipProvider>
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-3xl font-bold">Traces</h1>
+            <p className="text-muted-foreground">
+              Browse and annotate imported traces
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="text-muted-foreground">
+                  <Keyboard className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs">
+                <div className="text-sm">
+                  <p className="font-semibold mb-2">Keyboard Shortcuts</p>
+                  <div className="space-y-1">
+                    <div className="flex justify-between gap-4">
+                      <span className="text-muted-foreground">Navigate traces</span>
+                      <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">j/k</kbd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-muted-foreground">Open trace</span>
+                      <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">Enter</kbd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-muted-foreground">Toggle filters</span>
+                      <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">f</kbd>
+                    </div>
+                  </div>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+            <Button
+              variant="outline"
+              onClick={() => setShowFilters(!showFilters)}
+              data-testid="toggle-filters-button"
+            >
+              <Filter className="w-4 h-4 mr-2" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-primary text-primary-foreground">
+                  {activeFilterCount}
+                </span>
+              )}
+            </Button>
+            <Button onClick={() => setImportModalOpen(true)} data-testid="import-traces-button">
+              <Upload className="w-4 h-4 mr-2" />
+              Import Traces
+            </Button>
+          </div>
         </div>
-        <Button onClick={() => setImportModalOpen(true)} data-testid="import-traces-button">
-          <Upload className="w-4 h-4 mr-2" />
-          Import Traces
-        </Button>
-      </div>
 
-      {/* Eval Set Selector */}
+        {/* Metrics Bar */}
+        <MetricsBar
+          totalTraces={metrics.totalTraces}
+          feedbackCount={metrics.feedbackCount}
+          errorCount={metrics.errorCount}
+          isLoading={isLoading}
+        />
+
+      {/* Filters Panel */}
+      {showFilters && (
+        <Card className="mb-6 p-4" data-testid="trace-filters-panel">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-medium">Filter Traces</h3>
+            {activeFilterCount > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                <X className="w-4 h-4 mr-1" />
+                Clear All
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="source-filter">Source</Label>
+              <Select
+                value={sourceFilter}
+                onValueChange={setSourceFilter}
+              >
+                <SelectTrigger id="source-filter" data-testid="source-filter">
+                  <SelectValue placeholder="All sources" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All sources</SelectItem>
+                  <SelectItem value="langfuse">Langfuse</SelectItem>
+                  <SelectItem value="langsmith">Langsmith</SelectItem>
+                  <SelectItem value="openai">OpenAI</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="feedback-filter">Has Feedback</Label>
+              <Select
+                value={hasFeedbackFilter}
+                onValueChange={setHasFeedbackFilter}
+              >
+                <SelectTrigger id="feedback-filter" data-testid="has-feedback-filter">
+                  <SelectValue placeholder="Any" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Any</SelectItem>
+                  <SelectItem value="true">With feedback</SelectItem>
+                  <SelectItem value="false">Without feedback</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="rating-filter">Rating</Label>
+              <Select
+                value={ratingFilter}
+                onValueChange={setRatingFilter}
+              >
+                <SelectTrigger id="rating-filter" data-testid="rating-filter">
+                  <SelectValue placeholder="Any rating" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Any rating</SelectItem>
+                  <SelectItem value="positive">Positive</SelectItem>
+                  <SelectItem value="negative">Negative</SelectItem>
+                  <SelectItem value="neutral">Neutral</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="date-from">From Date</Label>
+              <Input
+                id="date-from"
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                data-testid="date-from-filter"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="date-to">To Date</Label>
+              <Input
+                id="date-to"
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                data-testid="date-to-filter"
+              />
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Agent Selector */}
       <div className="mb-6 p-4 bg-muted/50 rounded-lg">
         <div className="flex items-center gap-4">
-          <label className="text-sm font-medium">Eval Set for Feedback:</label>
+          <label className="text-sm font-medium">Agent for Feedback:</label>
           <Select
-            value={selectedEvalSetId || ''}
-            onValueChange={(value) => setSelectedEvalSetId(value || null)}
+            value={selectedAgentId || ''}
+            onValueChange={(value) => setSelectedAgentId(value || null)}
           >
             <SelectTrigger className="w-[280px]">
-              <SelectValue placeholder="Select an eval set..." />
+              <SelectValue placeholder="Select an agent..." />
             </SelectTrigger>
             <SelectContent>
-              {evalSetsData?.eval_sets?.map((evalSet) => (
-                <SelectItem key={evalSet.id} value={evalSet.id}>
-                  {evalSet.name}
+              {agentsData?.agents?.map((agent) => (
+                <SelectItem key={agent.id} value={agent.id}>
+                  {agent.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {!selectedEvalSetId && (
+          {!selectedAgentId && (
             <span className="text-sm text-muted-foreground">
-              Select an eval set to enable quick feedback
+              Select an agent to enable quick feedback
             </span>
           )}
         </div>
       </div>
+
+      {/* Results Summary */}
+      {!isLoading && !error && data?.traces && (
+        <div className="mb-4 text-sm text-muted-foreground" data-testid="traces-count">
+          Showing {data.traces.length} of {data.total_count || data.traces.length} traces
+          {activeFilterCount > 0 && ' (filtered)'}
+        </div>
+      )}
 
       {isLoading ? (
         <TraceListSkeleton count={5} />
@@ -161,16 +374,16 @@ function TracesPageContent() {
               </Link>
 
               <div className="mt-4" onClick={(e) => e.stopPropagation()}>
-                {getEffectiveEvalSetId(trace) ? (
+                {getEffectiveAgentId(trace) ? (
                   <TraceFeedback
                     traceId={trace.id}
-                    evalSetId={getEffectiveEvalSetId(trace)!}
+                    agentId={getEffectiveAgentId(trace)!}
                     currentRating={trace.feedback?.rating}
                     feedbackId={trace.feedback?.id}
                   />
                 ) : (
                   <div className="text-sm text-muted-foreground">
-                    Select an eval set above to provide feedback
+                    Select an agent above to provide feedback
                   </div>
                 )}
               </div>
@@ -179,11 +392,12 @@ function TracesPageContent() {
         </div>
       )}
 
-      <ImportTracesModal
-        open={importModalOpen}
-        onOpenChange={setImportModalOpen}
-      />
-    </div>
+        <ImportTracesModal
+          open={importModalOpen}
+          onOpenChange={setImportModalOpen}
+        />
+      </div>
+    </TooltipProvider>
   )
 }
 

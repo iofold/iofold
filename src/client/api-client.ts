@@ -11,12 +11,11 @@
  * // List traces
  * const traces = await client.traces.list({ limit: 50 });
  *
- * // Create eval set and submit feedback
- * const evalSet = await client.evalSets.create({ name: 'quality-check' });
- * await client.feedback.submit({ trace_id: 'trace_1', eval_set_id: evalSet.id, rating: 'positive' });
+ * // Submit feedback for an agent
+ * await client.feedback.submit({ trace_id: 'trace_1', agent_id: 'agent_1', rating: 'positive' });
  *
  * // Generate eval with SSE progress
- * const job = await client.evals.generate(evalSet.id, { name: 'quality_check' });
+ * const job = await client.evals.generate('agent_1', { name: 'quality_check' });
  * for await (const event of client.jobs.stream(job.job_id)) {
  *   console.log('Progress:', event.progress);
  * }
@@ -75,23 +74,14 @@ interface ToolCall {
   error?: string;
 }
 
-interface EvalSet {
+interface Agent {
   id: string;
   name: string;
   description: string | null;
-  minimum_examples: number;
-  stats: {
-    positive_count: number;
-    negative_count: number;
-    neutral_count: number;
-    total_count: number;
-  };
+  status: 'pending' | 'confirmed';
+  active_version_id: string | null;
   created_at: string;
   updated_at: string;
-}
-
-interface EvalSetWithEvals extends EvalSet {
-  evals: EvalSummary[];
 }
 
 interface EvalSummary {
@@ -104,7 +94,7 @@ interface EvalSummary {
 interface Feedback {
   id: string;
   trace_id: string;
-  eval_set_id: string;
+  agent_id: string;
   rating: 'positive' | 'negative' | 'neutral';
   notes: string | null;
   created_at: string;
@@ -114,7 +104,7 @@ interface Eval {
   id: string;
   name: string;
   description: string | null;
-  eval_set_id: string;
+  agent_id: string;
   code: string;
   model_used: string;
   accuracy: number;
@@ -266,21 +256,9 @@ interface ImportTracesRequest {
   };
 }
 
-interface CreateEvalSetRequest {
-  name: string;
-  description?: string;
-  minimum_examples?: number;
-}
-
-interface UpdateEvalSetRequest {
-  name?: string;
-  description?: string;
-  minimum_examples?: number;
-}
-
 interface SubmitFeedbackRequest {
   trace_id: string;
-  eval_set_id: string;
+  agent_id: string;
   rating: 'positive' | 'negative' | 'neutral';
   notes?: string;
 }
@@ -564,13 +542,13 @@ export class FeedbackQueue {
  *
  * // Use resource methods
  * const traces = await client.traces.list();
- * const evalSet = await client.evalSets.create({ name: 'quality' });
+ * const agent = await client.agents.create({ name: 'quality' });
  * ```
  */
 export class IofoldClient {
   public readonly integrations: IntegrationsAPI;
   public readonly traces: TracesAPI;
-  public readonly evalSets: EvalSetsAPI;
+  public readonly agents: AgentsAPI;
   public readonly feedback: FeedbackAPI;
   public readonly evals: EvalsAPI;
   public readonly matrix: MatrixAPI;
@@ -583,7 +561,7 @@ export class IofoldClient {
   ) {
     this.integrations = new IntegrationsAPI(this);
     this.traces = new TracesAPI(this);
-    this.evalSets = new EvalSetsAPI(this);
+    this.agents = new AgentsAPI(this);
     this.feedback = new FeedbackAPI(this);
     this.evals = new EvalsAPI(this);
     this.matrix = new MatrixAPI(this);
@@ -733,13 +711,13 @@ class TracesAPI {
    * const result = await client.traces.list({ limit: 50 });
    *
    * // All pages (async iteration)
-   * for await (const trace of client.traces.iterate({ eval_set_id: 'set_abc' })) {
+   * for await (const trace of client.traces.iterate({ agent_id: 'agent_abc' })) {
    *   console.log(trace.id);
    * }
    * ```
    */
   async list(params?: {
-    eval_set_id?: string;
+    agent_id?: string;
     source?: string;
     rating?: string;
     has_feedback?: boolean;
@@ -810,76 +788,53 @@ class TracesAPI {
 }
 
 // ============================================================================
-// Eval Sets API
+// Agents API
 // ============================================================================
 
-class EvalSetsAPI {
+class AgentsAPI {
   constructor(private client: IofoldClient) {}
 
   /**
-   * Create new eval set
+   * Create new agent
    *
    * @example
    * ```typescript
-   * const evalSet = await client.evalSets.create({
-   *   name: 'response-quality',
-   *   description: 'Checks if responses are helpful',
-   *   minimum_examples: 5
+   * const agent = await client.agents.create({
+   *   name: 'quality-checker',
+   *   description: 'Checks response quality'
    * });
    * ```
    */
-  async create(request: CreateEvalSetRequest): Promise<EvalSet> {
-    return this.client.request<EvalSet>('POST', '/api/eval-sets', request);
+  async create(request: { name: string; description?: string }): Promise<Agent> {
+    return this.client.request<Agent>('POST', '/api/agents', request);
   }
 
   /**
-   * List all eval sets
+   * List all agents
    */
-  async list(): Promise<{ eval_sets: EvalSet[] }> {
-    return this.client.request('GET', '/api/eval-sets');
+  async list(): Promise<{ agents: Agent[] }> {
+    return this.client.request('GET', '/api/agents');
   }
 
   /**
-   * Get eval set details with associated evals
+   * Get agent details
    */
-  async get(id: string): Promise<EvalSetWithEvals> {
-    return this.client.request<EvalSetWithEvals>('GET', `/api/eval-sets/${id}`);
+  async get(id: string): Promise<Agent> {
+    return this.client.request<Agent>('GET', `/api/agents/${id}`);
   }
 
   /**
-   * Update eval set
-   */
-  async update(id: string, request: UpdateEvalSetRequest): Promise<EvalSet> {
-    return this.client.request<EvalSet>('PATCH', `/api/eval-sets/${id}`, request);
-  }
-
-  /**
-   * Delete eval set and associated feedback
+   * Delete agent
    */
   async delete(id: string): Promise<void> {
-    return this.client.request('DELETE', `/api/eval-sets/${id}`);
+    return this.client.request('DELETE', `/api/agents/${id}`);
   }
 
   /**
-   * Stream real-time updates for eval set (SSE)
-   *
-   * @example
-   * ```typescript
-   * const stream = client.evalSets.stream('set_abc');
-   *
-   * stream.on('feedback_added', (data) => {
-   *   console.log('New feedback:', data);
-   * });
-   *
-   * stream.on('threshold_reached', (data) => {
-   *   console.log('Ready to generate!');
-   * });
-   *
-   * stream.connect();
-   * ```
+   * Confirm agent
    */
-  stream(id: string): SSEConnection {
-    return this.client.createSSEConnection(`/api/eval-sets/${id}/stream`);
+  async confirm(id: string): Promise<Agent> {
+    return this.client.request<Agent>('POST', `/api/agents/${id}/confirm`);
   }
 }
 
@@ -897,7 +852,7 @@ class FeedbackAPI {
    * ```typescript
    * const feedback = await client.feedback.submit({
    *   trace_id: 'trace_abc',
-   *   eval_set_id: 'set_xyz',
+   *   agent_id: 'agent_xyz',
    *   rating: 'positive',
    *   notes: 'Good response quality'
    * });
@@ -931,8 +886,8 @@ class FeedbackAPI {
    * });
    *
    * // Submit multiple feedbacks optimistically
-   * await queue.submit({ trace_id: 'trace_1', eval_set_id: 'set_1', rating: 'positive' });
-   * await queue.submit({ trace_id: 'trace_2', eval_set_id: 'set_1', rating: 'negative' });
+   * await queue.submit({ trace_id: 'trace_1', agent_id: 'agent_1', rating: 'positive' });
+   * await queue.submit({ trace_id: 'trace_2', agent_id: 'agent_1', rating: 'negative' });
    * ```
    */
   createQueue(onUpdate?: (feedback: SubmitFeedbackRequest, status: 'pending' | 'synced' | 'error') => void): FeedbackQueue {
@@ -948,11 +903,11 @@ class EvalsAPI {
   constructor(private client: IofoldClient) {}
 
   /**
-   * Generate eval from eval set (async job)
+   * Generate eval from agent traces (async job)
    *
    * @example
    * ```typescript
-   * const job = await client.evals.generate('set_abc', {
+   * const job = await client.evals.generate('agent_abc', {
    *   name: 'response_quality_check',
    *   description: 'Checks response quality'
    * });
@@ -966,15 +921,15 @@ class EvalsAPI {
    * }
    * ```
    */
-  async generate(eval_set_id: string, request: GenerateEvalRequest): Promise<{ job_id: string; status: string }> {
-    return this.client.request('POST', `/api/eval-sets/${eval_set_id}/generate`, request);
+  async generate(agent_id: string, request: GenerateEvalRequest): Promise<{ job_id: string; status: string }> {
+    return this.client.request('POST', `/api/agents/${agent_id}/generate-eval`, request);
   }
 
   /**
    * List evals with pagination
    */
   async list(params?: {
-    eval_set_id?: string;
+    agent_id?: string;
     cursor?: string;
     limit?: number;
   }): Promise<{
@@ -982,7 +937,7 @@ class EvalsAPI {
       id: string;
       name: string;
       description: string | null;
-      eval_set_id: string;
+      agent_id: string;
       accuracy: number;
       execution_count: number;
       contradiction_count: number;
@@ -1109,7 +1064,7 @@ class MatrixAPI {
    * });
    * ```
    */
-  async get(eval_set_id: string, params: {
+  async get(agent_id: string, params: {
     eval_ids: string | string[];
     filter?: 'contradictions_only' | 'errors_only' | 'all';
     rating?: 'positive' | 'negative' | 'neutral';
@@ -1124,7 +1079,7 @@ class MatrixAPI {
     has_more: boolean;
   }> {
     const evalIds = Array.isArray(params.eval_ids) ? params.eval_ids.join(',') : params.eval_ids;
-    return this.client.request('GET', `/api/eval-sets/${eval_set_id}/matrix`, undefined, {
+    return this.client.request('GET', `/api/agents/${agent_id}/matrix`, undefined, {
       ...params,
       eval_ids: evalIds,
     });
@@ -1266,8 +1221,7 @@ export {
   type ExecutionStep,
   type Message,
   type ToolCall,
-  type EvalSet,
-  type EvalSetWithEvals,
+  type Agent,
   type EvalSummary,
   type Feedback,
   type Eval,
@@ -1285,8 +1239,6 @@ export {
   // Request types
   type CreateIntegrationRequest,
   type ImportTracesRequest,
-  type CreateEvalSetRequest,
-  type UpdateEvalSetRequest,
   type SubmitFeedbackRequest,
   type UpdateFeedbackRequest,
   type GenerateEvalRequest,

@@ -119,3 +119,25 @@ export async function rejectTestAgentVersion(
 
   return version;
 }
+
+/**
+ * Add feedback for traces to an agent via API
+ * This submits feedback for each trace with the given agent_id
+ */
+export async function addTracesToAgent(
+  page: Page,
+  agentId: string,
+  traceIds: string[],
+  ratings: ('positive' | 'negative' | 'neutral')[]
+): Promise<void> {
+  for (let i = 0; i < traceIds.length; i++) {
+    await apiRequest(page, '/api/feedback', {
+      method: 'POST',
+      data: {
+        trace_id: traceIds[i],
+        agent_id: agentId,
+        rating: ratings[i] || 'positive',
+      },
+    });
+  }
+}

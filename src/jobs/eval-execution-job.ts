@@ -44,7 +44,7 @@ export class EvalExecutionJob {
 
       // Step 1: Fetch eval code
       const evalRecord = await this.deps.db
-        .prepare('SELECT id, code, eval_set_id FROM evals WHERE id = ?')
+        .prepare('SELECT id, code, agent_id FROM evals WHERE id = ?')
         .bind(this.config.evalId)
         .first();
 
@@ -53,10 +53,10 @@ export class EvalExecutionJob {
       }
 
       const evalCode = evalRecord.code as string;
-      const evalSetId = evalRecord.eval_set_id as string;
+      const agentId = evalRecord.agent_id as string;
 
       // Step 2: Get traces to execute against
-      const traces = await this.fetchTraces(evalSetId);
+      const traces = await this.fetchTraces(agentId);
 
       if (traces.length === 0) {
         throw new Error('No traces found to execute against');
@@ -168,7 +168,7 @@ export class EvalExecutionJob {
     }
   }
 
-  private async fetchTraces(evalSetId: string): Promise<Trace[]> {
+  private async fetchTraces(agentId: string): Promise<Trace[]> {
     let query: string;
     let bindings: any[];
 
@@ -178,14 +178,14 @@ export class EvalExecutionJob {
       query = `SELECT * FROM traces WHERE id IN (${placeholders})`;
       bindings = this.config.traceIds;
     } else {
-      // Execute against all traces in eval set (that have feedback)
+      // Execute against all traces for agent (that have feedback)
       query = `
         SELECT DISTINCT t.*
         FROM traces t
         JOIN feedback f ON t.id = f.trace_id
-        WHERE f.eval_set_id = ?
+        WHERE f.agent_id = ?
       `;
-      bindings = [evalSetId];
+      bindings = [agentId];
     }
 
     const results = await this.deps.db.prepare(query).bind(...bindings).all();

@@ -11,14 +11,14 @@ import { cn } from '@/lib/utils'
 
 interface FeedbackButtonsProps {
   traceId: string
-  evalSetId?: string
+  agentId?: string
   currentFeedback?: Feedback
   onFeedbackSubmit?: () => void
 }
 
 export function FeedbackButtons({
   traceId,
-  evalSetId,
+  agentId,
   currentFeedback,
   onFeedbackSubmit,
 }: FeedbackButtonsProps) {
@@ -27,12 +27,12 @@ export function FeedbackButtons({
 
   const submitMutation = useMutation({
     mutationFn: (rating: 'positive' | 'negative' | 'neutral') => {
-      if (!evalSetId) {
-        throw new Error('Eval set ID is required')
+      if (!agentId) {
+        throw new Error('Agent ID is required')
       }
       return apiClient.submitFeedback({
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating,
       })
     },
@@ -92,10 +92,10 @@ export function FeedbackButtons({
   const activeRating = optimisticRating || currentFeedback?.rating
   const isLoading = submitMutation.isPending || updateMutation.isPending
 
-  if (!evalSetId && !currentFeedback) {
+  if (!agentId && !currentFeedback) {
     return (
       <div className="text-sm text-muted-foreground">
-        Select an eval set to provide feedback
+        Select an agent to provide feedback
       </div>
     )
   }

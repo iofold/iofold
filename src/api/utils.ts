@@ -136,7 +136,7 @@ export async function parseJsonBody<T>(request: Request): Promise<T> {
 export interface PaginatedResponse<T> {
   data?: T[];
   traces?: T[];
-  eval_sets?: T[];
+  agents?: T[];
   next_cursor: string | null;
   has_more: boolean;
   total_count?: number;

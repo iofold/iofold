@@ -2,15 +2,16 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { apiClient } from '@/lib/api-client'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ErrorState } from '@/components/ui/error-state'
-import { ArrowLeft, Plus, ChevronDown, ChevronUp, CheckCircle, XCircle } from 'lucide-react'
+import { ArrowLeft, Plus, ChevronDown, ChevronUp, CheckCircle, XCircle, Play, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime, formatPercentage } from '@/lib/utils'
 import { CreateAgentVersionModal } from '@/components/modals/create-agent-version-modal'
+import { GenerateEvalModal } from '@/components/modals/generate-eval-modal'
 import { toast } from 'sonner'
 import type { AgentVersionStatus, AgentVersionSource } from '@/types/agent'
 
@@ -42,28 +43,25 @@ function getVersionSourceBadge(source: AgentVersionSource): string {
   }
 }
 
-interface AgentDetailPageProps {
-  params: {
-    id: string
-  }
-}
-
-export default function AgentDetailPage({ params }: AgentDetailPageProps) {
+export default function AgentDetailPage() {
+  const params = useParams()
+  const agentId = params.id as string
   const [createVersionModalOpen, setCreateVersionModalOpen] = useState(false)
+  const [generateEvalModalOpen, setGenerateEvalModalOpen] = useState(false)
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
   const router = useRouter()
   const queryClient = useQueryClient()
 
   const { data: agent, isLoading, error, refetch } = useQuery({
-    queryKey: ['agent', params.id],
-    queryFn: () => apiClient.getAgent(params.id),
+    queryKey: ['agent', agentId],
+    queryFn: () => apiClient.getAgent(agentId),
   })
 
   const promoteMutation = useMutation({
     mutationFn: ({ version }: { version: number }) =>
-      apiClient.promoteAgentVersion(params.id, version),
+      apiClient.promoteAgentVersion(agentId, version),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agent', params.id] })
+      queryClient.invalidateQueries({ queryKey: ['agent', agentId] })
       toast.success('Version promoted successfully')
     },
     onError: () => {
@@ -73,9 +71,9 @@ export default function AgentDetailPage({ params }: AgentDetailPageProps) {
 
   const rejectMutation = useMutation({
     mutationFn: ({ version }: { version: number }) =>
-      apiClient.rejectAgentVersion(params.id, version),
+      apiClient.rejectAgentVersion(agentId, version),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agent', params.id] })
+      queryClient.invalidateQueries({ queryKey: ['agent', agentId] })
       toast.success('Version rejected')
     },
     onError: () => {
@@ -150,10 +148,29 @@ export default function AgentDetailPage({ params }: AgentDetailPageProps) {
               <p className="text-muted-foreground">{agent.description}</p>
             )}
           </div>
-          <Button onClick={() => setCreateVersionModalOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            New Version
-          </Button>
+          <div className="flex gap-2">
+            <Link href={`/agents/${agentId}/playground`}>
+              <Button variant="outline">
+                <Play className="w-4 h-4 mr-2" />
+                Playground
+              </Button>
+            </Link>
+            {agent.metrics.positive_feedback_count >= 1 && agent.metrics.negative_feedback_count >= 1 ? (
+              <Button variant="outline" onClick={() => setGenerateEvalModalOpen(true)}>
+                <Sparkles className="w-4 h-4 mr-2" />
+                Generate Eval
+              </Button>
+            ) : (
+              <Button variant="outline" disabled title="Need both positive and negative feedback to generate an eval">
+                <Sparkles className="w-4 h-4 mr-2" />
+                Need examples
+              </Button>
+            )}
+            <Button onClick={() => setCreateVersionModalOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              New Version
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -303,7 +320,13 @@ export default function AgentDetailPage({ params }: AgentDetailPageProps) {
       <CreateAgentVersionModal
         open={createVersionModalOpen}
         onOpenChange={setCreateVersionModalOpen}
-        agentId={params.id}
+        agentId={agentId}
+      />
+
+      <GenerateEvalModal
+        open={generateEvalModalOpen}
+        onOpenChange={setGenerateEvalModalOpen}
+        agentId={agentId}
       />
     </div>
   )

@@ -51,27 +51,8 @@ export interface ToolCall {
 }
 
 // ============================================================================
-// Eval Sets & Feedback
+// Feedback
 // ============================================================================
-
-export interface EvalSet {
-  id: string;
-  name: string;
-  description: string | null;
-  minimum_examples: number;
-  stats: {
-    positive_count: number;
-    negative_count: number;
-    neutral_count: number;
-    total_count: number;
-  };
-  created_at: string;
-  updated_at: string;
-}
-
-export interface EvalSetWithEvals extends EvalSet {
-  evals: EvalSummary[];
-}
 
 export interface EvalSummary {
   id: string;
@@ -83,7 +64,7 @@ export interface EvalSummary {
 export interface Feedback {
   id: string;
   trace_id: string;
-  eval_set_id: string;
+  agent_id: string;
   rating: 'positive' | 'negative' | 'neutral';
   notes: string | null;
   created_at: string;
@@ -97,7 +78,7 @@ export interface Eval {
   id: string;
   name: string;
   description: string | null;
-  eval_set_id: string;
+  agent_id: string;
   code: string;
   model_used: string;
   accuracy: number;
@@ -286,21 +267,9 @@ export interface ImportTracesRequest {
   };
 }
 
-export interface CreateEvalSetRequest {
-  name: string;
-  description?: string;
-  minimum_examples?: number;
-}
-
-export interface UpdateEvalSetRequest {
-  name?: string;
-  description?: string;
-  minimum_examples?: number;
-}
-
 export interface SubmitFeedbackRequest {
   trace_id: string;
-  eval_set_id: string;
+  agent_id: string;
   rating: 'positive' | 'negative' | 'neutral';
   notes?: string;
 }
@@ -334,10 +303,6 @@ export interface ExecuteEvalRequest {
 
 export interface ListTracesResponse extends PaginatedResponseWithCount<TraceSummary> {
   traces: TraceSummary[];
-}
-
-export interface ListEvalSetsResponse {
-  eval_sets: EvalSet[];
 }
 
 export interface ListEvalsResponse extends PaginatedResponse<Eval> {

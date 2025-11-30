@@ -38,7 +38,7 @@ const UpdateEvalSchema = z.object({
 });
 
 const ListEvalsSchema = z.object({
-  eval_set_id: z.string().optional(),
+  agent_id: z.string().optional(),
   cursor: z.string().optional(),
   limit: z.number().int().min(1).max(200).optional().default(50)
 });
@@ -54,23 +54,23 @@ export class EvalsAPI {
     this.jobManager = new JobManager(db);
   }
 
-  // POST /api/eval-sets/:id/generate - Generate eval (async with job)
+  // POST /api/agents/:id/generate-eval - Generate eval (async with job)
   async generateEval(
-    evalSetId: string,
+    agentId: string,
     workspaceId: string,
     body: any
   ): Promise<Response> {
     try {
       const validated = GenerateEvalSchema.parse(body) as GenerateEvalRequest;
 
-      // Check if eval set exists
-      const evalSet = await this.db
-        .prepare('SELECT id, minimum_examples FROM eval_sets WHERE id = ?')
-        .bind(evalSetId)
+      // Check if agent exists
+      const agent = await this.db
+        .prepare('SELECT id FROM agents WHERE id = ?')
+        .bind(agentId)
         .first();
 
-      if (!evalSet) {
-        return notFoundError('Eval set', evalSetId);
+      if (!agent) {
+        return notFoundError('Agent', agentId);
       }
 
       // Check if we have sufficient examples
@@ -80,25 +80,24 @@ export class EvalsAPI {
              SUM(CASE WHEN rating = 'positive' THEN 1 ELSE 0 END) as positive_count,
              SUM(CASE WHEN rating = 'negative' THEN 1 ELSE 0 END) as negative_count
            FROM feedback
-           WHERE eval_set_id = ?`
+           WHERE agent_id = ?`
         )
-        .bind(evalSetId)
+        .bind(agentId)
         .first();
 
       const positiveCount = (feedbackCount?.positive_count as number) || 0;
       const negativeCount = (feedbackCount?.negative_count as number) || 0;
-      const minimumExamples = evalSet.minimum_examples as number;
 
       if (positiveCount < 1 || negativeCount < 1) {
         return insufficientExamplesError(
           positiveCount + negativeCount,
-          minimumExamples
+          2 // Minimum 2 examples (1 positive + 1 negative)
         );
       }
 
       // Create job
       const job = await this.jobManager.createJob('generate', workspaceId, {
-        evalSetId,
+        agentId,
         workspaceId
       });
 
@@ -106,7 +105,7 @@ export class EvalsAPI {
       const generationJob = new EvalGenerationJob(
         {
           jobId: job.id,
-          evalSetId,
+          agentId,
           name: validated.name,
           description: validated.description,
           model: validated.model,
@@ -144,7 +143,7 @@ export class EvalsAPI {
   async listEvals(queryParams: URLSearchParams): Promise<Response> {
     try {
       const params = {
-        eval_set_id: queryParams.get('eval_set_id') || undefined,
+        agent_id: queryParams.get('agent_id') || undefined,
         cursor: queryParams.get('cursor') || undefined,
         limit: queryParams.get('limit') ? parseInt(queryParams.get('limit')!) : undefined
       };
@@ -155,9 +154,9 @@ export class EvalsAPI {
       const conditions: string[] = [];
       const bindings: any[] = [];
 
-      if (validated.eval_set_id) {
-        conditions.push('eval_set_id = ?');
-        bindings.push(validated.eval_set_id);
+      if (validated.agent_id) {
+        conditions.push('agent_id = ?');
+        bindings.push(validated.agent_id);
       }
 
       if (validated.cursor) {
@@ -181,7 +180,7 @@ export class EvalsAPI {
         id: record.id as string,
         name: record.name as string,
         description: record.description as string | null,
-        eval_set_id: record.eval_set_id as string,
+        agent_id: record.agent_id as string,
         accuracy: record.accuracy as number,
         execution_count: record.execution_count as number,
         contradiction_count: record.contradiction_count as number,
@@ -220,7 +219,7 @@ export class EvalsAPI {
         id: record.id as string,
         name: record.name as string,
         description: record.description as string | null,
-        eval_set_id: record.eval_set_id as string,
+        agent_id: record.agent_id as string,
         code: record.code as string,
         model_used: record.model_used as string,
         accuracy: record.accuracy as number,
@@ -304,7 +303,7 @@ export class EvalsAPI {
 
       // Check if eval exists
       const eval_ = await this.db
-        .prepare('SELECT id, eval_set_id FROM evals WHERE id = ?')
+        .prepare('SELECT id, agent_id FROM evals WHERE id = ?')
         .bind(evalId)
         .first();
 
@@ -317,14 +316,14 @@ export class EvalsAPI {
       if (validated.trace_ids && validated.trace_ids.length > 0) {
         estimatedCount = validated.trace_ids.length;
       } else {
-        // Count traces in eval set
+        // Count traces for agent
         const countResult = await this.db
           .prepare(
             `SELECT COUNT(DISTINCT trace_id) as count
              FROM feedback
-             WHERE eval_set_id = ?`
+             WHERE agent_id = ?`
           )
-          .bind(eval_.eval_set_id)
+          .bind(eval_.agent_id)
           .first();
         estimatedCount = (countResult?.count as number) || 0;
       }

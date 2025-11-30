@@ -38,6 +38,27 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        success: {
+          DEFAULT: 'hsl(var(--success))',
+          foreground: 'hsl(var(--success-foreground))',
+        },
+        warning: {
+          DEFAULT: 'hsl(var(--warning))',
+          foreground: 'hsl(var(--warning-foreground))',
+        },
+        error: {
+          DEFAULT: 'hsl(var(--error))',
+          foreground: 'hsl(var(--error-foreground))',
+        },
+        info: {
+          DEFAULT: 'hsl(var(--info))',
+          foreground: 'hsl(var(--info-foreground))',
+        },
+      },
+      boxShadow: {
+        'elevation-1': 'var(--shadow-elevation-1)',
+        'elevation-2': 'var(--shadow-elevation-2)',
+        'elevation-3': 'var(--shadow-elevation-3)',
       },
       borderRadius: {
         lg: 'var(--radius)',

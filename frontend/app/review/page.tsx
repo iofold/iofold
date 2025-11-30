@@ -6,7 +6,7 @@
  * - Card-swiping interface with keyboard shortcuts
  * - Progress tracking and completion screen
  * - Toast notifications for feedback
- * - URL parameter support for eval_set_id filtering
+ * - URL parameter support for agent_id filtering
  * - Responsive mobile/desktop layout
  */
 
@@ -46,7 +46,7 @@ function ReviewPageContent() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
 
-  const evalSetId = searchParams.get('eval_set_id') || undefined
+  const agentId = searchParams.get('agent_id') || undefined
 
   const [currentIndex, setCurrentIndex] = useState(0)
   const [feedbackCounts, setFeedbackCounts] = useState({
@@ -56,9 +56,9 @@ function ReviewPageContent() {
   })
 
   // Fetch traces without feedback
-  // Note: We don't filter by eval_set_id here because traces get associated
-  // with an eval set THROUGH feedback. We fetch all traces without feedback,
-  // and the eval_set_id will be used when submitting feedback.
+  // Note: We don't filter by agent_id here because traces get associated
+  // with an agent THROUGH feedback. We fetch all traces without feedback,
+  // and the agent_id will be used when submitting feedback.
   const {
     data: tracesData,
     isLoading: isLoadingList,
@@ -101,16 +101,16 @@ function ReviewPageContent() {
     mutationFn: async ({
       trace_id,
       rating,
-      eval_set_id,
+      agent_id,
     }: {
       trace_id: string
       rating: 'positive' | 'negative' | 'neutral'
-      eval_set_id: string
+      agent_id: string
     }) => {
       return apiClient.submitFeedback({
         trace_id,
         rating,
-        eval_set_id,
+        agent_id,
       })
     },
     onSuccess: (_, variables) => {
@@ -127,7 +127,7 @@ function ReviewPageContent() {
       })
 
       // Invalidate traces query to refetch
-      queryClient.invalidateQueries({ queryKey: ['traces', 'review', evalSetId] })
+      queryClient.invalidateQueries({ queryKey: ['traces', 'review', agentId] })
 
       // Move to next trace after a brief delay
       setTimeout(() => {
@@ -145,16 +145,16 @@ function ReviewPageContent() {
   const handleFeedback = (rating: 'positive' | 'negative' | 'neutral') => {
     if (!currentTrace) return
 
-    // Need eval_set_id to submit feedback
-    if (!evalSetId) {
-      toast.error('No eval set selected. Please select an eval set first.')
+    // Need agent_id to submit feedback
+    if (!agentId) {
+      toast.error('No agent selected. Please select an agent first.')
       return
     }
 
     submitFeedbackMutation.mutate({
       trace_id: currentTrace.id,
       rating,
-      eval_set_id: evalSetId,
+      agent_id: agentId,
     })
   }
 
@@ -241,29 +241,29 @@ function ReviewPageContent() {
     )
   }
 
-  // No eval set selected state
-  if (!evalSetId) {
+  // No agent selected state
+  if (!agentId) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center gap-4 mb-6">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => router.push('/eval-sets')}
+            onClick={() => router.push('/agents')}
           >
             <ArrowLeft className="w-4 h-4 mr-2" aria-hidden="true" />
-            Back to Eval Sets
+            Back to Agents
           </Button>
         </div>
 
         <div className="text-center py-12 bg-white rounded-lg shadow-sm">
           <div className="text-6xl mb-4">📋</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">No Eval Set Selected</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">No Agent Selected</h2>
           <p className="text-gray-600 mb-6">
-            Please select an eval set to start reviewing traces.
+            Please select an agent to start reviewing traces.
           </p>
-          <Button onClick={() => router.push('/eval-sets')}>
-            View Eval Sets
+          <Button onClick={() => router.push('/agents')}>
+            View Agents
           </Button>
         </div>
       </div>
@@ -284,10 +284,10 @@ function ReviewPageContent() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push('/eval-sets')}
+              onClick={() => router.push('/agents')}
             >
               <ArrowLeft className="w-4 h-4 mr-2" aria-hidden="true" />
-              Back to Eval Sets
+              Back to Agents
             </Button>
           </div>
 
@@ -336,8 +336,8 @@ function ReviewPageContent() {
             )}
 
             <div className="flex items-center justify-center gap-4">
-              <Button onClick={() => router.push('/eval-sets')}>
-                View Eval Sets
+              <Button onClick={() => router.push('/agents')}>
+                View Agents
               </Button>
               <Button variant="outline" onClick={() => refetch()}>
                 <RefreshCw className="w-4 h-4 mr-2" aria-hidden="true" />
@@ -361,10 +361,10 @@ function ReviewPageContent() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => router.push('/eval-sets')}
+                onClick={() => router.push('/agents')}
               >
                 <ArrowLeft className="w-4 h-4 mr-2" aria-hidden="true" />
-                Back to Eval Sets
+                Back to Agents
               </Button>
               <div>
                 <h1 className="text-3xl font-bold text-gray-900">Trace Review</h1>

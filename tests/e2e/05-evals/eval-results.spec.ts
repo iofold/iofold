@@ -5,7 +5,7 @@ import {
 } from '../utils/helpers';
 import { createTestIntegration, deleteTestIntegration } from '../../fixtures/integrations';
 import { createTestTrace, deleteTestTrace } from '../../fixtures/traces';
-import { createTestEvalSet, deleteTestEvalSet, addTracesToEvalSet } from '../../fixtures/eval-sets';
+import { createTestAgent, deleteTestAgent, addTracesToAgent } from '../../fixtures/agents';
 import {
   setupEvalGenerationMocks,
   setupEvalResultsMocks,
@@ -22,7 +22,7 @@ import {
 test.describe('Eval Results Viewing', () => {
   let integrationId: string;
   let traceIds: string[] = [];
-  let evalSetId: string;
+  let agentId: string;
   let mockEvalId: string;
 
   test.beforeEach(async ({ page }) => {
@@ -47,9 +47,9 @@ test.describe('Eval Results Viewing', () => {
       traceIds.push(trace.id);
     }
 
-    // Create eval set
-    const evalSet = await createTestEvalSet(page);
-    evalSetId = evalSet.id;
+    // Create agent
+    const agent = await createTestAgent(page);
+    agentId = agent.id;
 
     // Add feedback: 3 positive, 3 negative
     const ratings: ('positive' | 'negative')[] = [
@@ -60,11 +60,11 @@ test.describe('Eval Results Viewing', () => {
       'negative',
       'negative',
     ];
-    await addTracesToEvalSet(page, evalSetId, traceIds, ratings);
+    await addTracesToAgent(page, agentId, traceIds, ratings);
 
     // Setup mocks for eval generation
     const { evalId } = await setupEvalGenerationMocks(page, {
-      evalSetId,
+      agentId,
       evalName: uniqueName('Test Eval'),
       traceIds,
     });
@@ -80,8 +80,8 @@ test.describe('Eval Results Viewing', () => {
       for (const traceId of traceIds) {
         await deleteTestTrace(page, traceId);
       }
-      if (evalSetId) {
-        await deleteTestEvalSet(page, evalSetId);
+      if (agentId) {
+        await deleteTestAgent(page, agentId);
       }
       if (integrationId) {
         await deleteTestIntegration(page, integrationId);
@@ -96,7 +96,7 @@ test.describe('Eval Results Viewing', () => {
     // Setup results mocks without contradictions
     await setupEvalResultsMocks(page, {
       evalId: mockEvalId,
-      evalSetId,
+      agentId,
       traceIds,
       evalName: 'Test Eval',
       hasContradictions: false,
@@ -145,7 +145,7 @@ test.describe('Eval Results Viewing', () => {
     // Setup results mocks WITH contradictions
     await setupEvalResultsMocks(page, {
       evalId: mockEvalId,
-      evalSetId,
+      agentId,
       traceIds,
       evalName: 'Test Eval',
       hasContradictions: true,

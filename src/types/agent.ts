@@ -128,8 +128,10 @@ export interface AgentDiscoveryJobResult {
 
 export interface PromptImprovementJobResult {
   new_version_id: string;
-  accuracy_delta: number;
+  new_version_number: number;
   changes_summary: string;
+  failure_patterns: string[];
+  best_practices_applied: string[];
 }
 
 export interface PromptEvaluationJobResult {

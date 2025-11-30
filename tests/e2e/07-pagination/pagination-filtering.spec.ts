@@ -3,7 +3,7 @@
  *
  * Comprehensive tests for pagination and filtering across all list views:
  * - Traces list pagination
- * - Eval sets list pagination
+ * - Agents list pagination
  * - Integrations list
  * - Various filter combinations
  *
@@ -15,7 +15,7 @@ import { apiRequest, createTestIntegration, createTestTrace } from '../utils/hel
 
 test.describe('Pagination and Filtering', () => {
   let integrationId: string;
-  let evalSetIds: string[] = [];
+  let agentIds: string[] = [];
   const createdTraceIds: string[] = [];
 
   test.beforeAll(async ({ browser }) => {
@@ -43,16 +43,16 @@ test.describe('Pagination and Filtering', () => {
       createdTraceIds.push(trace.id);
     }
 
-    // Create multiple eval sets for pagination testing
+    // Create multiple agents for pagination testing
     for (let i = 0; i < 5; i++) {
-      const evalSet = await apiRequest<any>(page, '/api/eval-sets', {
+      const agent = await apiRequest<any>(page, '/api/agents', {
         method: 'POST',
         data: {
-          name: `Pagination Test Eval Set ${i + 1} - ${Date.now()}`,
-          description: `For testing pagination - set ${i + 1}`,
+          name: `Pagination Test Agent ${i + 1} - ${Date.now()}`,
+          description: `For testing pagination - agent ${i + 1}`,
         },
       });
-      evalSetIds.push(evalSet.id);
+      agentIds.push(agent.id);
     }
 
     await context.close();
@@ -67,9 +67,9 @@ test.describe('Pagination and Filtering', () => {
       await apiRequest(page, `/api/traces/${traceId}`, { method: 'DELETE' }).catch(() => {});
     }
 
-    // Clean up eval sets
-    for (const evalSetId of evalSetIds) {
-      await apiRequest(page, `/api/eval-sets/${evalSetId}`, { method: 'DELETE' }).catch(() => {});
+    // Clean up agents
+    for (const agentId of agentIds) {
+      await apiRequest(page, `/api/agents/${agentId}`, { method: 'DELETE' }).catch(() => {});
     }
 
     // Clean up integration
@@ -179,29 +179,29 @@ test.describe('Pagination and Filtering', () => {
     }
   });
 
-  // ==================== EVAL SETS PAGINATION ====================
+  // ==================== AGENTS PAGINATION ====================
 
-  test('TEST-PF11: Should list eval sets with pagination info', async ({ page }) => {
-    const evalSets = await apiRequest<any>(page, '/api/eval-sets');
+  test('TEST-PF11: Should list agents with pagination info', async ({ page }) => {
+    const agents = await apiRequest<any>(page, '/api/agents');
 
-    expect(evalSets).toHaveProperty('eval_sets');
-    expect(Array.isArray(evalSets.eval_sets)).toBe(true);
+    expect(agents).toHaveProperty('agents');
+    expect(Array.isArray(agents.agents)).toBe(true);
   });
 
-  test('TEST-PF12: Should paginate eval sets with limit', async ({ page }) => {
-    const evalSets = await apiRequest<any>(page, '/api/eval-sets?limit=2');
+  test('TEST-PF12: Should paginate agents with limit', async ({ page }) => {
+    const agents = await apiRequest<any>(page, '/api/agents?limit=2');
 
-    expect(evalSets.eval_sets.length).toBeLessThanOrEqual(2);
+    expect(agents.agents.length).toBeLessThanOrEqual(2);
   });
 
-  test('TEST-PF13: Should return eval sets in order', async ({ page }) => {
-    const evalSets = await apiRequest<any>(page, '/api/eval-sets');
+  test('TEST-PF13: Should return agents in order', async ({ page }) => {
+    const agents = await apiRequest<any>(page, '/api/agents');
 
-    if (evalSets.eval_sets.length >= 2) {
+    if (agents.agents.length >= 2) {
       // Verify ordering (usually by created_at desc or name)
-      for (let i = 0; i < evalSets.eval_sets.length - 1; i++) {
-        const current = new Date(evalSets.eval_sets[i].created_at);
-        const next = new Date(evalSets.eval_sets[i + 1].created_at);
+      for (let i = 0; i < agents.agents.length - 1; i++) {
+        const current = new Date(agents.agents[i].created_at);
+        const next = new Date(agents.agents[i + 1].created_at);
         // Newer should come first (desc order)
         expect(current.getTime()).toBeGreaterThanOrEqual(next.getTime());
       }
@@ -243,15 +243,15 @@ test.describe('Pagination and Filtering', () => {
     expect(paginationExists || nextButtonExists || loadMoreExists).toBeTruthy();
   });
 
-  test('TEST-PF17: Should display eval sets in grid or list', async ({ page }) => {
-    await page.goto('/eval-sets');
+  test('TEST-PF17: Should display agents in grid or list', async ({ page }) => {
+    await page.goto('/agents');
     await page.waitForLoadState('networkidle');
 
-    // Should see eval sets
-    const evalSetsList = page.locator('[data-testid="eval-sets-list"], [data-testid="eval-set-card"]');
-    const count = await evalSetsList.count();
+    // Should see agents
+    const agentsList = page.locator('[data-testid="agents-list"], [data-testid="agent-card"]');
+    const count = await agentsList.count();
 
-    // Should have some eval sets visible
+    // Should have some agents visible
     expect(count).toBeGreaterThanOrEqual(0);
   });
 

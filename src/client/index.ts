@@ -23,8 +23,7 @@ export {
   type ExecutionStep,
   type Message,
   type ToolCall,
-  type EvalSet,
-  type EvalSetWithEvals,
+  type Agent,
   type EvalSummary,
   type Feedback,
   type Eval,
@@ -42,8 +41,6 @@ export {
   // Request types
   type CreateIntegrationRequest,
   type ImportTracesRequest,
-  type CreateEvalSetRequest,
-  type UpdateEvalSetRequest,
   type SubmitFeedbackRequest,
   type UpdateFeedbackRequest,
   type GenerateEvalRequest,

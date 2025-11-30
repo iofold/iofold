@@ -26,7 +26,6 @@ export interface Job {
 }
 
 export interface JobMetadata {
-  evalSetId?: string;
   evalId?: string;
   traceIds?: string[];
   workspaceId: string;
@@ -89,7 +88,7 @@ export interface Eval {
   id: string;
   name: string;
   description: string | null;
-  eval_set_id: string;
+  agent_id: string;
   code: string;
   model_used: string;
   accuracy: number;
@@ -104,7 +103,7 @@ export interface EvalSummary {
   id: string;
   name: string;
   description: string | null;
-  eval_set_id: string;
+  agent_id: string;
   accuracy: number;
   execution_count: number;
   contradiction_count: number;

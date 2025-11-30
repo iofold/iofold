@@ -46,6 +46,10 @@ export class SSEClient {
   private pollingInterval: NodeJS.Timeout | null = null
   private isPolling = false
   private hasReceivedData = false
+  private isClosed = false
+  private errorCount = 0
+  private maxErrorRetries = 3
+  private isHandlingError = false
 
   constructor(eventSource: EventSource, options: SSEClientOptions = {}) {
     this.eventSource = eventSource
@@ -55,7 +59,7 @@ export class SSEClient {
 
     // Start fallback polling after 3 seconds if no data received
     setTimeout(() => {
-      if (!this.hasReceivedData && !this.isPolling && this.options.jobId) {
+      if (!this.hasReceivedData && !this.isPolling && !this.isClosed && this.options.jobId) {
         console.warn('SSE connection timeout, falling back to polling')
         this.fallbackToPolling()
       }
@@ -108,16 +112,41 @@ export class SSEClient {
 
     // Handle connection errors
     this.eventSource.addEventListener('error', (error: Event) => {
+      // CRITICAL: Prevent re-entrant error handling and close IMMEDIATELY
+      // EventSource auto-reconnects within milliseconds, so we must stop it first
+      if (this.isHandlingError || this.isClosed) {
+        return
+      }
+      this.isHandlingError = true
+
+      // IMMEDIATELY close EventSource to prevent auto-reconnect loop
+      // This MUST happen before any async operations or checks
+      if (this.eventSource) {
+        this.eventSource.close()
+        this.eventSource = null
+      }
+
       console.error('SSE connection error:', error)
+      this.errorCount++
       this.options.onError?.(error)
 
+      // Stop if we've had too many errors
+      if (this.errorCount >= this.maxErrorRetries) {
+        console.warn(`SSE connection failed ${this.errorCount} times, stopping`)
+        this.close()
+        this.isHandlingError = false
+        return
+      }
+
       // Fall back to polling if we have the necessary info
-      if (!this.hasReceivedData && this.options.jobId && !this.isPolling) {
+      if (this.options.jobId && !this.isPolling) {
         console.warn('SSE connection failed, falling back to polling')
         this.fallbackToPolling()
       } else {
         this.close()
       }
+
+      this.isHandlingError = false
     })
   }
 
@@ -136,10 +165,10 @@ export class SSEClient {
       this.eventSource = null
     }
 
-    // Start polling every 2 seconds
+    // Start polling every 3 seconds (reasonable rate limit)
     this.pollingInterval = setInterval(() => {
       this.pollJobStatus()
-    }, 2000)
+    }, 3000)
 
     // Do first poll immediately
     this.pollJobStatus()
@@ -191,10 +220,14 @@ export class SSEClient {
    * Close the SSE connection and stop polling
    */
   close() {
+    // Mark as intentionally closed to prevent reconnection
+    this.isClosed = true
+
     // Close EventSource
     if (this.eventSource && this.eventSource.readyState !== EventSource.CLOSED) {
       this.eventSource.close()
     }
+    this.eventSource = null
 
     // Stop polling
     if (this.pollingInterval) {

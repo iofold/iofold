@@ -125,9 +125,13 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Get all agents with active versions
-    const agentsResult = await env.DB.prepare(
-      `SELECT
+    // Parse query parameters
+    const url = new URL(request.url);
+    const limitParam = url.searchParams.get('limit');
+    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+
+    // Build query with optional LIMIT
+    let query = `SELECT
         a.id,
         a.workspace_id,
         a.name,
@@ -148,8 +152,14 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
       FROM agents a
       LEFT JOIN agent_versions av ON a.active_version_id = av.id
       WHERE a.workspace_id = ? AND a.status != ?
-      ORDER BY a.created_at DESC`
-    )
+      ORDER BY a.created_at DESC`;
+
+    if (limit && limit > 0) {
+      query += ` LIMIT ${limit}`;
+    }
+
+    // Get agents with active versions
+    const agentsResult = await env.DB.prepare(query)
       .bind(workspaceId, 'archived')
       .all();
 
@@ -264,34 +274,31 @@ export async function getAgentById(request: Request, env: Env, agentId: string):
       .bind(agentId, 'active')
       .all();
 
-    // Get metrics
+    // Get metrics - use feedback.agent_id for direct relationship
     const metricsResult = await env.DB.prepare(
       `SELECT
-        COUNT(DISTINCT t.id) as trace_count,
+        COUNT(DISTINCT f.trace_id) as trace_count,
         COUNT(DISTINCT f.id) as feedback_count,
+        COUNT(DISTINCT CASE WHEN f.rating = 'positive' THEN f.id END) as positive_feedback_count,
+        COUNT(DISTINCT CASE WHEN f.rating = 'negative' THEN f.id END) as negative_feedback_count,
         COUNT(DISTINCT e.id) as eval_count
       FROM agents a
-      LEFT JOIN traces t ON t.agent_id = a.id
-      LEFT JOIN feedback f ON t.id = f.trace_id
-      LEFT JOIN evals e ON e.id IN (
-        SELECT DISTINCT eval_id FROM eval_executions WHERE trace_id IN (
-          SELECT id FROM traces WHERE agent_id = a.id
-        )
-      )
+      LEFT JOIN feedback f ON f.agent_id = a.id
+      LEFT JOIN evals e ON e.agent_id = a.id
       WHERE a.id = ?`
     )
       .bind(agentId)
       .first();
 
     // Calculate accuracy and contradiction rate from eval executions if available
+    // Use feedback.agent_id directly to filter by agent
     const evalStatsResult = await env.DB.prepare(
       `SELECT
-        AVG(CASE WHEN ee.result = f.rating THEN 1.0 ELSE 0.0 END) as accuracy,
-        AVG(CASE WHEN ee.result != f.rating THEN 1.0 ELSE 0.0 END) as contradiction_rate
+        AVG(CASE WHEN ee.predicted_result = (f.rating = 'positive') THEN 1.0 ELSE 0.0 END) as accuracy,
+        AVG(CASE WHEN ee.predicted_result != (f.rating = 'positive') THEN 1.0 ELSE 0.0 END) as contradiction_rate
       FROM eval_executions ee
-      JOIN feedback f ON ee.trace_id = f.trace_id
-      WHERE ee.trace_id IN (SELECT id FROM traces WHERE agent_id = ?)
-        AND f.rating IN ('positive', 'negative')`
+      JOIN feedback f ON ee.trace_id = f.trace_id AND f.agent_id = ?
+      WHERE f.rating IN ('positive', 'negative')`
     )
       .bind(agentId)
       .first();
@@ -363,6 +370,8 @@ export async function getAgentById(request: Request, env: Env, agentId: string):
       metrics: {
         trace_count: (metricsResult?.trace_count as number) || 0,
         feedback_count: (metricsResult?.feedback_count as number) || 0,
+        positive_feedback_count: (metricsResult?.positive_feedback_count as number) || 0,
+        negative_feedback_count: (metricsResult?.negative_feedback_count as number) || 0,
         eval_count: (metricsResult?.eval_count as number) || 0,
         accuracy: (evalStatsResult?.accuracy as number) || null,
         contradiction_rate: (evalStatsResult?.contradiction_rate as number) || null,

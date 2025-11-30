@@ -9,7 +9,7 @@ import { SSEStream } from '../utils/sse';
 
 export interface EvalGenerationJobConfig {
   jobId: string;
-  evalSetId: string;
+  agentId: string;
   name: string;
   description?: string;
   model?: string;
@@ -92,14 +92,14 @@ export class EvalGenerationJob {
       await this.deps.db
         .prepare(
           `INSERT INTO evals (
-            id, eval_set_id, name, description, code, model_used,
+            id, agent_id, name, description, code, model_used,
             accuracy, test_results, execution_count, contradiction_count,
             created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           evalId,
-          this.config.evalSetId,
+          this.config.agentId,
           this.config.name,
           this.config.description || null,
           generationResult.code,
@@ -157,16 +157,16 @@ export class EvalGenerationJob {
     positive: Trace[];
     negative: Trace[];
   }> {
-    // Fetch all feedback for the eval set
+    // Fetch all feedback for the agent
     const feedbackRecords = await this.deps.db
       .prepare(
         `SELECT f.trace_id, f.rating, t.id, t.trace_id as external_trace_id,
                 t.source, t.normalized_data, t.raw_data
          FROM feedback f
          JOIN traces t ON f.trace_id = t.id
-         WHERE f.eval_set_id = ? AND f.rating IN ('positive', 'negative')`
+         WHERE f.agent_id = ? AND f.rating IN ('positive', 'negative')`
       )
-      .bind(this.config.evalSetId)
+      .bind(this.config.agentId)
       .all();
 
     const positive: Trace[] = [];

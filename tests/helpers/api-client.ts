@@ -93,7 +93,7 @@ export class TestAPIClient {
   // Feedback
   async submitFeedback(data: {
     trace_id: string;
-    eval_set_id: string;
+    agent_id: string;
     rating: 'positive' | 'negative' | 'neutral';
     notes?: string;
   }) {
@@ -103,22 +103,22 @@ export class TestAPIClient {
     });
   }
 
-  // Eval Sets
-  async createEvalSet(data: { name: string; description?: string }) {
-    return this.request('/api/eval-sets', {
+  // Agents
+  async createAgent(data: { name: string; description?: string }) {
+    return this.request('/api/agents', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
   // Evals
-  async generateEval(evalSetId: string, data: {
+  async generateEval(agentId: string, data: {
     name: string;
     description?: string;
     model: string;
     instructions?: string;
   }) {
-    return this.request(`/api/eval-sets/${evalSetId}/generate`, {
+    return this.request(`/api/agents/${agentId}/generate-eval`, {
       method: 'POST',
       body: JSON.stringify(data),
     });

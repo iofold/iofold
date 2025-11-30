@@ -78,11 +78,11 @@ BEGIN
   UPDATE integrations SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
--- Trigger for eval_sets
-CREATE TRIGGER IF NOT EXISTS update_eval_sets_timestamp
-AFTER UPDATE ON eval_sets
+-- Trigger for agents
+CREATE TRIGGER IF NOT EXISTS update_agents_timestamp
+AFTER UPDATE ON agents
 BEGIN
-  UPDATE eval_sets SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+  UPDATE agents SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
 -- Trigger for feedback
@@ -210,7 +210,7 @@ FROM (
   UNION ALL SELECT 'workspaces', COUNT(*) FROM workspaces
   UNION ALL SELECT 'integrations', COUNT(*) FROM integrations
   UNION ALL SELECT 'traces', COUNT(*) FROM traces
-  UNION ALL SELECT 'eval_sets', COUNT(*) FROM eval_sets
+  UNION ALL SELECT 'agents', COUNT(*) FROM agents
   UNION ALL SELECT 'feedback', COUNT(*) FROM feedback
   UNION ALL SELECT 'evals', COUNT(*) FROM evals
   UNION ALL SELECT 'eval_executions', COUNT(*) FROM eval_executions

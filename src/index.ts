@@ -139,11 +139,11 @@ export default {
     // EVALS API
     // ============================================================================
 
-    // POST /api/eval-sets/:id/generate - Generate eval
-    if (url.pathname.match(/^\/api\/eval-sets\/[^\/]+\/generate$/) && request.method === 'POST') {
-      const evalSetId = url.pathname.split('/')[3];
+    // POST /api/agents/:id/generate-eval - Generate eval (legacy pattern matcher)
+    if (url.pathname.match(/^\/api\/agents\/[^\/]+\/generate-eval$/) && request.method === 'POST') {
+      const agentId = url.pathname.split('/')[3];
       const body = await request.json();
-      return evalsAPI.generateEval(evalSetId, workspaceId, body);
+      return evalsAPI.generateEval(agentId, workspaceId, body);
     }
 
     // GET /api/evals - List evals
@@ -230,7 +230,7 @@ export default {
       }
     }
 
-    // Generate eval function (legacy endpoint - now prefer /api/eval-sets/:id/generate)
+    // Generate eval function (legacy endpoint - now prefer /api/agents/:id/generate-eval)
     if (url.pathname === '/api/evals/generate' && request.method === 'POST') {
       try {
         // Validate environment variables
@@ -298,10 +298,10 @@ export default {
           });
         }
 
-        // Store eval in database (with dummy eval_set_id for legacy support)
+        // Store eval in database (with dummy agent_id for legacy support)
         const evalId = crypto.randomUUID();
         await env.DB.prepare(
-          'INSERT INTO evals (id, eval_set_id, name, code, model_used, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          'INSERT INTO evals (id, agent_id, name, code, model_used, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
         )
           .bind(
             evalId,

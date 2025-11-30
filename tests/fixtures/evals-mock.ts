@@ -54,10 +54,10 @@ export function createMockJob(jobId: string, type: string = 'generate') {
 }
 
 // Mock eval data
-export function createMockEval(evalId: string, evalSetId: string, name: string) {
+export function createMockEval(evalId: string, agentId: string, name: string) {
   return {
     id: evalId,
-    eval_set_id: evalSetId,
+    agent_id: agentId,
     name,
     description: 'Mock eval for testing',
     code: MOCK_EVAL_CODE,
@@ -101,7 +101,7 @@ export function createMockMatrix(evalId: string, traceIds: string[]) {
  * Setup route mocking for eval generation job API
  *
  * Intercepts:
- * - POST /api/eval-sets/:id/generate → returns mock job
+ * - POST /api/agents/:id/generate-eval → returns mock job
  * - GET /api/jobs/:id → returns completed job
  * - GET /api/evals → returns mock evals list
  * - GET /api/evals/:id → returns mock eval detail
@@ -109,7 +109,7 @@ export function createMockMatrix(evalId: string, traceIds: string[]) {
 export async function setupEvalGenerationMocks(
   page: Page,
   options: {
-    evalSetId: string;
+    agentId: string;
     evalName?: string;
     traceIds?: string[];
   }
@@ -118,8 +118,8 @@ export async function setupEvalGenerationMocks(
   const evalId = `eval_mock_${Date.now()}`;
   const evalName = options.evalName || 'Test Eval';
 
-  // Mock POST /api/eval-sets/:id/generate
-  await page.route(`**/api/eval-sets/${options.evalSetId}/generate`, async (route) => {
+  // Mock POST /api/agents/:id/generate-eval
+  await page.route(`**/api/agents/${options.agentId}/generate-eval`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -140,7 +140,7 @@ export async function setupEvalGenerationMocks(
 
   // Mock GET /api/evals (list)
   await page.route('**/api/evals?**', async (route) => {
-    const mockEval = createMockEval(evalId, options.evalSetId, evalName);
+    const mockEval = createMockEval(evalId, options.agentId, evalName);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -154,7 +154,7 @@ export async function setupEvalGenerationMocks(
   // Mock GET /api/evals/:id (detail)
   await page.route(`**/api/evals/${evalId}`, async (route) => {
     if (route.request().method() === 'GET') {
-      const mockEval = createMockEval(evalId, options.evalSetId, evalName);
+      const mockEval = createMockEval(evalId, options.agentId, evalName);
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -175,7 +175,7 @@ export async function setupEvalExecutionMocks(
   page: Page,
   options: {
     evalId: string;
-    evalSetId: string;
+    agentId: string;
     evalName?: string;
   }
 ): Promise<{ jobId: string }> {
@@ -204,7 +204,7 @@ export async function setupEvalExecutionMocks(
   // Update eval mock with execution results
   await page.route(`**/api/evals/${options.evalId}`, async (route) => {
     if (route.request().method() === 'GET') {
-      const mockEval = createMockEval(options.evalId, options.evalSetId, evalName);
+      const mockEval = createMockEval(options.evalId, options.agentId, evalName);
       mockEval.execution_count = 1;
       await route.fulfill({
         status: 200,
@@ -226,7 +226,7 @@ export async function setupEvalResultsMocks(
   page: Page,
   options: {
     evalId: string;
-    evalSetId: string;
+    agentId: string;
     traceIds: string[];
     evalName?: string;
     hasContradictions?: boolean;
@@ -237,7 +237,7 @@ export async function setupEvalResultsMocks(
   // Mock GET /api/evals/:id
   await page.route(`**/api/evals/${options.evalId}`, async (route) => {
     if (route.request().method() === 'GET') {
-      const mockEval = createMockEval(options.evalId, options.evalSetId, evalName);
+      const mockEval = createMockEval(options.evalId, options.agentId, evalName);
       mockEval.execution_count = 1;
       if (options.hasContradictions) {
         mockEval.contradiction_count = 1;
@@ -253,8 +253,8 @@ export async function setupEvalResultsMocks(
     }
   });
 
-  // Mock GET /api/eval-sets/:id/matrix
-  await page.route(`**/api/eval-sets/${options.evalSetId}/matrix**`, async (route) => {
+  // Mock GET /api/agents/:id/matrix
+  await page.route(`**/api/agents/${options.agentId}/matrix**`, async (route) => {
     const matrix = createMockMatrix(options.evalId, options.traceIds);
     if (!options.hasContradictions) {
       // Make all rows match

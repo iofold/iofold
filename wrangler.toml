@@ -51,5 +51,22 @@ queue = "iofold-jobs-dlq"
 [triggers]
 crons = ["0 */6 * * *"]
 
+# ============================================================================
+# Cloudflare Vectorize for Agent Discovery
+# ============================================================================
+
+# NOTE: Run `npx wrangler vectorize create system-prompts --dimensions 768 --metric cosine`
+# to create the vector index
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "system-prompts"
+
+# ============================================================================
+# Cloudflare Workers AI for Embeddings
+# ============================================================================
+
+[ai]
+binding = "AI"
+
 [vars]
 ENVIRONMENT = "development"

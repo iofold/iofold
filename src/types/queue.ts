@@ -30,7 +30,10 @@ export type JobPayload =
   | GenerateJobPayload
   | ExecuteJobPayload
   | MonitorJobPayload
-  | AutoRefineJobPayload;
+  | AutoRefineJobPayload
+  | AgentDiscoveryJobPayload
+  | PromptImprovementJobPayload
+  | PromptEvaluationJobPayload;
 
 /**
  * Payload for trace import jobs
@@ -50,7 +53,7 @@ export interface ImportJobPayload {
  */
 export interface GenerateJobPayload {
   type: 'generate';
-  eval_set_id: string;
+  agent_id: string;
   name: string;
   description?: string;
   model?: string;
@@ -96,6 +99,41 @@ export interface AutoRefineJobPayload {
     contradiction_rate?: number;
     error_rate?: number;
   };
+}
+
+/**
+ * Payload for agent discovery jobs
+ */
+export interface AgentDiscoveryJobPayload {
+  type: 'agent_discovery';
+  /** Similarity threshold for clustering (default: 0.85) */
+  similarity_threshold?: number;
+  /** Minimum cluster size to create an agent (default: 5) */
+  min_cluster_size?: number;
+  /** Maximum traces to process in one job (default: 100) */
+  max_traces?: number;
+}
+
+/**
+ * Payload for prompt improvement jobs
+ */
+export interface PromptImprovementJobPayload {
+  type: 'prompt_improvement';
+  /** Agent ID to improve */
+  agent_id: string;
+  /** Maximum contradictions to analyze (default: 20) */
+  max_contradictions?: number;
+}
+
+/**
+ * Payload for prompt evaluation jobs
+ */
+export interface PromptEvaluationJobPayload {
+  type: 'prompt_evaluation';
+  /** Agent version ID (candidate) to evaluate */
+  agent_version_id: string;
+  /** Maximum traces to evaluate (default: 50) */
+  max_traces?: number;
 }
 
 /**

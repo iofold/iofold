@@ -61,34 +61,17 @@ async function completeAnnotationWorkflow() {
       }
     }
 
-    // 4. Create eval set
-    console.log('\n4. Creating eval set...');
-    const evalSet = await client.evalSets.create({
+    // 4. Create agent
+    console.log('\n4. Creating agent...');
+    const agent = await client.agents.create({
       name: 'response-quality',
       description: 'Checks if responses are helpful and accurate',
-      minimum_examples: 5,
     });
-    console.log('   Eval set created:', evalSet.id);
+    console.log('   Agent created:', agent.id);
 
-    // 5. Setup real-time eval set monitoring
-    console.log('\n5. Setting up real-time monitoring...');
-    const evalSetStream = client.evalSets.stream(evalSet.id);
-
-    evalSetStream.on('feedback_added', (data) => {
-      console.log('   New feedback:', data.rating, 'for trace', data.trace_id);
-      console.log('   Stats:', data.stats);
-    });
-
-    evalSetStream.on('threshold_reached', async (data) => {
-      console.log('   Threshold reached! Ready to generate eval.');
-      console.log('   Minimum examples:', data.minimum_examples);
-      console.log('   Current count:', data.current_count);
-
-      // Trigger eval generation
-      await generateEval(evalSet.id);
-    });
-
-    evalSetStream.connect();
+    // 5. Real-time agent monitoring would be set up here
+    // (streaming support to be implemented for agents)
+    console.log('\n5. Agent created, ready for feedback...');
 
     // 6. Annotate traces with optimistic UI
     console.log('\n6. Annotating traces...');
@@ -101,7 +84,7 @@ async function completeAnnotationWorkflow() {
     for await (const trace of client.traces.iterate({ limit: 10 })) {
       await feedbackQueue.submit({
         trace_id: trace.id,
-        eval_set_id: evalSet.id,
+        agent_id: agent.id,
         rating: count % 3 === 0 ? 'positive' : count % 3 === 1 ? 'negative' : 'neutral',
         notes: 'Example annotation',
       });
@@ -117,9 +100,8 @@ async function completeAnnotationWorkflow() {
     }
     console.log('   All feedbacks synced!');
 
-    // Keep stream alive for a bit
-    await sleep(5000);
-    evalSetStream.close();
+    // Demo complete
+    await sleep(1000);
   } catch (error) {
     handleError(error);
   }
@@ -129,13 +111,13 @@ async function completeAnnotationWorkflow() {
 // Example 2: Generate and Test Eval
 // ============================================================================
 
-async function generateEval(evalSetId: string) {
+async function generateEval(agentId: string) {
   console.log('\n=== Generate Eval ===\n');
 
   try {
     // Generate eval
     console.log('1. Generating eval...');
-    const genJob = await client.evals.generate(evalSetId, {
+    const genJob = await client.evals.generate(agentId, {
       name: 'response_quality_check',
       description: 'Automated response quality evaluation',
       model: 'claude-sonnet-4.5',
@@ -209,12 +191,12 @@ async function exploreMatrix() {
   console.log('=== Explore Comparison Matrix ===\n');
 
   try {
-    const evalSetId = 'set_abc123';
+    const agentId = 'agent_abc123';
     const evalIds = ['eval_1', 'eval_2', 'eval_3'];
 
     // Fetch matrix with contradictions only
     console.log('1. Fetching matrix (contradictions only)...');
-    const matrix = await client.matrix.get(evalSetId, {
+    const matrix = await client.matrix.get(agentId, {
       eval_ids: evalIds,
       filter: 'contradictions_only',
       limit: 50,
@@ -457,7 +439,7 @@ async function main() {
   // Uncomment the example you want to run:
 
   // await completeAnnotationWorkflow();
-  // await generateEval('set_abc123');
+  // await generateEval('agent_abc123');
   // await exploreMatrix();
   // await paginationExamples();
   // await errorHandlingExample();

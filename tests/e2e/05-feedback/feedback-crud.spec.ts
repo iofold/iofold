@@ -16,7 +16,7 @@ import { apiRequest, createTestIntegration, createTestTrace, deleteTestIntegrati
 test.describe('Feedback CRUD Operations', () => {
   let integrationId: string;
   let traceId: string;
-  let evalSetId: string;
+  let agentId: string;
   let feedbackId: string | null = null;
 
   test.beforeAll(async ({ browser }) => {
@@ -42,15 +42,15 @@ test.describe('Feedback CRUD Operations', () => {
     });
     traceId = trace.id;
 
-    // Create test eval set
-    const evalSet = await apiRequest<any>(page, '/api/eval-sets', {
+    // Create test agent
+    const agent = await apiRequest<any>(page, '/api/agents', {
       method: 'POST',
       data: {
-        name: `Feedback Test Eval Set ${Date.now()}`,
+        name: `Feedback Test Agent ${Date.now()}`,
         description: 'For testing feedback CRUD operations',
       },
     });
-    evalSetId = evalSet.id;
+    agentId = agent.id;
 
     await context.close();
   });
@@ -60,8 +60,8 @@ test.describe('Feedback CRUD Operations', () => {
     const page = await context.newPage();
 
     // Cleanup in reverse order
-    if (evalSetId) {
-      await apiRequest(page, `/api/eval-sets/${evalSetId}`, { method: 'DELETE' }).catch(() => {});
+    if (agentId) {
+      await apiRequest(page, `/api/agents/${agentId}`, { method: 'DELETE' }).catch(() => {});
     }
     if (integrationId) {
       await apiRequest(page, `/api/integrations/${integrationId}`, { method: 'DELETE' }).catch(() => {});
@@ -79,13 +79,13 @@ test.describe('Feedback CRUD Operations', () => {
   });
 
   test('TEST-FB01: Should create positive feedback via API', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No test data available');
+    test.skip(!traceId || !agentId, 'No test data available');
 
     const feedback = await apiRequest<any>(page, '/api/feedback', {
       method: 'POST',
       data: {
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating: 'positive',
         notes: 'Test positive feedback',
       },
@@ -98,13 +98,13 @@ test.describe('Feedback CRUD Operations', () => {
   });
 
   test('TEST-FB02: Should create negative feedback via API', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No test data available');
+    test.skip(!traceId || !agentId, 'No test data available');
 
     const feedback = await apiRequest<any>(page, '/api/feedback', {
       method: 'POST',
       data: {
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating: 'negative',
         notes: 'Test negative feedback',
       },
@@ -116,13 +116,13 @@ test.describe('Feedback CRUD Operations', () => {
   });
 
   test('TEST-FB03: Should create neutral feedback via API', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No test data available');
+    test.skip(!traceId || !agentId, 'No test data available');
 
     const feedback = await apiRequest<any>(page, '/api/feedback', {
       method: 'POST',
       data: {
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating: 'neutral',
       },
     });
@@ -134,14 +134,14 @@ test.describe('Feedback CRUD Operations', () => {
   });
 
   test('TEST-FB04: Should update feedback rating via PATCH', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No test data available');
+    test.skip(!traceId || !agentId, 'No test data available');
 
     // Create initial feedback
     const feedback = await apiRequest<any>(page, '/api/feedback', {
       method: 'POST',
       data: {
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating: 'positive',
       },
     });
@@ -160,14 +160,14 @@ test.describe('Feedback CRUD Operations', () => {
   });
 
   test('TEST-FB05: Should update feedback notes via PATCH', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No test data available');
+    test.skip(!traceId || !agentId, 'No test data available');
 
     // Create initial feedback
     const feedback = await apiRequest<any>(page, '/api/feedback', {
       method: 'POST',
       data: {
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating: 'positive',
         notes: 'Original notes',
       },
@@ -187,14 +187,14 @@ test.describe('Feedback CRUD Operations', () => {
   });
 
   test('TEST-FB06: Should delete feedback via DELETE', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No test data available');
+    test.skip(!traceId || !agentId, 'No test data available');
 
     // Create feedback
     const feedback = await apiRequest<any>(page, '/api/feedback', {
       method: 'POST',
       data: {
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating: 'positive',
       },
     });
@@ -212,14 +212,14 @@ test.describe('Feedback CRUD Operations', () => {
   });
 
   test('TEST-FB07: Should upsert when submitting duplicate feedback', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No test data available');
+    test.skip(!traceId || !agentId, 'No test data available');
 
     // Create initial feedback
     const feedback = await apiRequest<any>(page, '/api/feedback', {
       method: 'POST',
       data: {
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating: 'positive',
       },
     });
@@ -230,7 +230,7 @@ test.describe('Feedback CRUD Operations', () => {
       method: 'POST',
       data: {
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating: 'negative',
       },
     });
@@ -242,13 +242,13 @@ test.describe('Feedback CRUD Operations', () => {
   });
 
   test('TEST-FB08: Should fail with missing trace_id', async ({ page }) => {
-    test.skip(!evalSetId, 'No test data available');
+    test.skip(!agentId, 'No test data available');
 
     try {
       await apiRequest(page, '/api/feedback', {
         method: 'POST',
         data: {
-          eval_set_id: evalSetId,
+          agent_id: agentId,
           rating: 'positive',
         },
       });
@@ -258,7 +258,7 @@ test.describe('Feedback CRUD Operations', () => {
     }
   });
 
-  test('TEST-FB09: Should fail with missing eval_set_id', async ({ page }) => {
+  test('TEST-FB09: Should fail with missing agent_id', async ({ page }) => {
     test.skip(!traceId, 'No test data available');
 
     try {
@@ -269,21 +269,21 @@ test.describe('Feedback CRUD Operations', () => {
           rating: 'positive',
         },
       });
-      throw new Error('Should have thrown an error for missing eval_set_id');
+      throw new Error('Should have thrown an error for missing agent_id');
     } catch (error: any) {
       expect(error.message).toContain('400');
     }
   });
 
   test('TEST-FB10: Should fail with invalid rating value', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No test data available');
+    test.skip(!traceId || !agentId, 'No test data available');
 
     try {
       await apiRequest(page, '/api/feedback', {
         method: 'POST',
         data: {
           trace_id: traceId,
-          eval_set_id: evalSetId,
+          agent_id: agentId,
           rating: 'invalid_rating',
         },
       });
@@ -294,14 +294,14 @@ test.describe('Feedback CRUD Operations', () => {
   });
 
   test('TEST-FB11: Should fail with non-existent trace_id', async ({ page }) => {
-    test.skip(!evalSetId, 'No test data available');
+    test.skip(!agentId, 'No test data available');
 
     try {
       await apiRequest(page, '/api/feedback', {
         method: 'POST',
         data: {
           trace_id: 'non_existent_trace_id',
-          eval_set_id: evalSetId,
+          agent_id: agentId,
           rating: 'positive',
         },
       });
@@ -311,7 +311,7 @@ test.describe('Feedback CRUD Operations', () => {
     }
   });
 
-  test('TEST-FB12: Should fail with non-existent eval_set_id', async ({ page }) => {
+  test('TEST-FB12: Should fail with non-existent agent_id', async ({ page }) => {
     test.skip(!traceId, 'No test data available');
 
     try {
@@ -319,25 +319,25 @@ test.describe('Feedback CRUD Operations', () => {
         method: 'POST',
         data: {
           trace_id: traceId,
-          eval_set_id: 'non_existent_eval_set_id',
+          agent_id: 'non_existent_agent_id',
           rating: 'positive',
         },
       });
-      throw new Error('Should have thrown an error for non-existent eval set');
+      throw new Error('Should have thrown an error for non-existent agent');
     } catch (error: any) {
       expect(error.message).toContain('404');
     }
   });
 
   test('TEST-FB13: Should update feedback shown on trace detail', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No test data available');
+    test.skip(!traceId || !agentId, 'No test data available');
 
     // Create feedback via API
     const feedback = await apiRequest<any>(page, '/api/feedback', {
       method: 'POST',
       data: {
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating: 'positive',
         notes: 'Visible on trace detail',
       },
@@ -352,13 +352,13 @@ test.describe('Feedback CRUD Operations', () => {
   });
 
   test('TEST-FB14: Should handle empty notes as null', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No test data available');
+    test.skip(!traceId || !agentId, 'No test data available');
 
     const feedback = await apiRequest<any>(page, '/api/feedback', {
       method: 'POST',
       data: {
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating: 'positive',
         notes: '',
       },
@@ -369,7 +369,7 @@ test.describe('Feedback CRUD Operations', () => {
   });
 
   test('TEST-FB15: Should handle very long notes', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No test data available');
+    test.skip(!traceId || !agentId, 'No test data available');
 
     const longNotes = 'A'.repeat(5000);
 
@@ -377,7 +377,7 @@ test.describe('Feedback CRUD Operations', () => {
       method: 'POST',
       data: {
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating: 'positive',
         notes: longNotes,
       },

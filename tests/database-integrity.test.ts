@@ -43,7 +43,8 @@ describe('Database Schema Verification', () => {
       'workspace_members',
       'integrations',
       'traces',
-      'eval_sets',
+      'agents',
+      'agent_versions',
       'feedback',
       'evals',
       'eval_executions',
@@ -155,8 +156,8 @@ describe('Database Schema Verification', () => {
     }
   });
 
-  it('should have correct column types for eval_sets table', async () => {
-    const result = await db.prepare("PRAGMA table_info(eval_sets)").all();
+  it('should have correct column types for agents table', async () => {
+    const result = await db.prepare("PRAGMA table_info(agents)").all();
     const columns = result.results as any[];
 
     const expectedColumns = {
@@ -164,7 +165,7 @@ describe('Database Schema Verification', () => {
       workspace_id: 'TEXT',
       name: 'TEXT',
       description: 'TEXT',
-      minimum_examples: 'INTEGER',
+      current_version_id: 'TEXT',
       created_at: 'DATETIME',
       updated_at: 'DATETIME',
     };
@@ -182,7 +183,7 @@ describe('Database Schema Verification', () => {
 
     const expectedColumns = {
       id: 'TEXT',
-      eval_set_id: 'TEXT',
+      agent_id: 'TEXT',
       trace_id: 'TEXT',
       rating: 'TEXT',
       notes: 'TEXT',
@@ -203,7 +204,7 @@ describe('Database Schema Verification', () => {
 
     const expectedColumns = {
       id: 'TEXT',
-      eval_set_id: 'TEXT',
+      agent_id: 'TEXT',
       name: 'TEXT',
       description: 'TEXT',
       version: 'INTEGER',
@@ -291,7 +292,7 @@ describe('Database Schema Verification', () => {
       // Workspace-based queries
       'idx_integrations_workspace',
       'idx_traces_workspace',
-      'idx_eval_sets_workspace',
+      'idx_agents_workspace',
       'idx_jobs_workspace',
       // Trace queries
       'idx_traces_integration',
@@ -299,12 +300,12 @@ describe('Database Schema Verification', () => {
       'idx_traces_source',
       'idx_traces_has_errors',
       // Feedback queries
-      'idx_feedback_eval_set',
+      'idx_feedback_agent',
       'idx_feedback_trace',
       'idx_feedback_rating',
-      'idx_feedback_eval_set_rating',
+      'idx_feedback_agent_rating',
       // Eval queries
-      'idx_evals_eval_set',
+      'idx_evals_agent',
       'idx_evals_status',
       'idx_evals_parent',
       // Execution queries
@@ -418,8 +419,8 @@ describe('Data Integrity Constraints', () => {
     ).rejects.toThrow();
   });
 
-  it('should enforce unique constraint on feedback per eval_set/trace pair', async () => {
-    const evalSetId = nanoid();
+  it('should enforce unique constraint on feedback per agent/trace pair', async () => {
+    const agentId = nanoid();
     const traceId = nanoid();
     const integrationId = nanoid();
     const feedback1 = nanoid();
@@ -441,27 +442,27 @@ describe('Data Integrity Constraints', () => {
       .run();
 
     await db
-      .prepare('INSERT INTO eval_sets (id, workspace_id, name) VALUES (?, ?, ?)')
-      .bind(evalSetId, workspaceId, 'Test Eval Set')
+      .prepare('INSERT INTO agents (id, workspace_id, name) VALUES (?, ?, ?)')
+      .bind(agentId, workspaceId, 'Test Agent')
       .run();
 
     // First feedback
     await db
-      .prepare('INSERT INTO feedback (id, eval_set_id, trace_id, rating) VALUES (?, ?, ?, ?)')
-      .bind(feedback1, evalSetId, traceId, 'positive')
+      .prepare('INSERT INTO feedback (id, agent_id, trace_id, rating) VALUES (?, ?, ?, ?)')
+      .bind(feedback1, agentId, traceId, 'positive')
       .run();
 
-    // Duplicate feedback for same eval_set/trace should fail
+    // Duplicate feedback for same agent/trace should fail
     await expect(
       db
-        .prepare('INSERT INTO feedback (id, eval_set_id, trace_id, rating) VALUES (?, ?, ?, ?)')
-        .bind(feedback2, evalSetId, traceId, 'negative')
+        .prepare('INSERT INTO feedback (id, agent_id, trace_id, rating) VALUES (?, ?, ?, ?)')
+        .bind(feedback2, agentId, traceId, 'negative')
         .run()
     ).rejects.toThrow();
   });
 
   it('should enforce CHECK constraint on feedback rating', async () => {
-    const evalSetId = nanoid();
+    const agentId = nanoid();
     const traceId = nanoid();
     const integrationId = nanoid();
     const feedbackId = nanoid();
@@ -482,15 +483,15 @@ describe('Data Integrity Constraints', () => {
       .run();
 
     await db
-      .prepare('INSERT INTO eval_sets (id, workspace_id, name) VALUES (?, ?, ?)')
-      .bind(evalSetId, workspaceId, 'Check Eval Set')
+      .prepare('INSERT INTO agents (id, workspace_id, name) VALUES (?, ?, ?)')
+      .bind(agentId, workspaceId, 'Check Agent')
       .run();
 
     // Invalid rating should fail
     await expect(
       db
-        .prepare('INSERT INTO feedback (id, eval_set_id, trace_id, rating) VALUES (?, ?, ?, ?)')
-        .bind(feedbackId, evalSetId, traceId, 'invalid_rating')
+        .prepare('INSERT INTO feedback (id, agent_id, trace_id, rating) VALUES (?, ?, ?, ?)')
+        .bind(feedbackId, agentId, traceId, 'invalid_rating')
         .run()
     ).rejects.toThrow();
   });
@@ -580,14 +581,14 @@ describe('Data Integrity Constraints', () => {
   });
 
   it('should set timestamps automatically', async () => {
-    const evalSetId = nanoid();
+    const agentId = nanoid();
 
     await db
-      .prepare('INSERT INTO eval_sets (id, workspace_id, name) VALUES (?, ?, ?)')
-      .bind(evalSetId, workspaceId, 'Timestamp Test')
+      .prepare('INSERT INTO agents (id, workspace_id, name) VALUES (?, ?, ?)')
+      .bind(agentId, workspaceId, 'Timestamp Test')
       .run();
 
-    const result = await db.prepare('SELECT * FROM eval_sets WHERE id = ?').bind(evalSetId).first();
+    const result = await db.prepare('SELECT * FROM agents WHERE id = ?').bind(agentId).first();
 
     expect(result).toBeDefined();
     expect(result.created_at).toBeDefined();
@@ -624,7 +625,7 @@ describe('Database Query Performance', () => {
     expect(duration).toBeLessThan(100); // Should complete in < 100ms
   });
 
-  it('should compute eval set stats efficiently', async () => {
+  it('should compute agent stats efficiently', async () => {
     const start = Date.now();
 
     await db
@@ -636,10 +637,10 @@ describe('Database Query Performance', () => {
           SUM(CASE WHEN rating = 'negative' THEN 1 ELSE 0 END) as negative_count,
           SUM(CASE WHEN rating = 'neutral' THEN 1 ELSE 0 END) as neutral_count
         FROM feedback
-        WHERE eval_set_id = ?
+        WHERE agent_id = ?
       `
       )
-      .bind('test-eval-set')
+      .bind('test-agent')
       .first();
 
     const duration = Date.now() - start;
@@ -764,7 +765,7 @@ describe('State Management', () => {
   });
 
   it('should handle feedback updates without creating duplicates', async () => {
-    const evalSetId = nanoid();
+    const agentId = nanoid();
     const traceId = nanoid();
     const integrationId = nanoid();
     const feedbackId = nanoid();
@@ -785,14 +786,14 @@ describe('State Management', () => {
       .run();
 
     await db
-      .prepare('INSERT INTO eval_sets (id, workspace_id, name) VALUES (?, ?, ?)')
-      .bind(evalSetId, workspaceId, 'Feedback Update Set')
+      .prepare('INSERT INTO agents (id, workspace_id, name) VALUES (?, ?, ?)')
+      .bind(agentId, workspaceId, 'Feedback Update Agent')
       .run();
 
     // Create initial feedback
     await db
-      .prepare('INSERT INTO feedback (id, eval_set_id, trace_id, rating) VALUES (?, ?, ?, ?)')
-      .bind(feedbackId, evalSetId, traceId, 'positive')
+      .prepare('INSERT INTO feedback (id, agent_id, trace_id, rating) VALUES (?, ?, ?, ?)')
+      .bind(feedbackId, agentId, traceId, 'positive')
       .run();
 
     // Update feedback
@@ -803,8 +804,8 @@ describe('State Management', () => {
 
     // Verify only one feedback record exists
     const result = await db
-      .prepare('SELECT * FROM feedback WHERE eval_set_id = ? AND trace_id = ?')
-      .bind(evalSetId, traceId)
+      .prepare('SELECT * FROM feedback WHERE agent_id = ? AND trace_id = ?')
+      .bind(agentId, traceId)
       .all();
 
     expect(result.results.length).toBe(1);
@@ -813,18 +814,18 @@ describe('State Management', () => {
 
   it('should handle concurrent updates with proper isolation', async () => {
     const evalId = nanoid();
-    const evalSetId = nanoid();
+    const agentId = nanoid();
 
     await db
-      .prepare('INSERT INTO eval_sets (id, workspace_id, name) VALUES (?, ?, ?)')
-      .bind(evalSetId, workspaceId, 'Concurrent Test Set')
+      .prepare('INSERT INTO agents (id, workspace_id, name) VALUES (?, ?, ?)')
+      .bind(agentId, workspaceId, 'Concurrent Test Agent')
       .run();
 
     await db
       .prepare(
-        'INSERT INTO evals (id, eval_set_id, name, code, model_used, version) VALUES (?, ?, ?, ?, ?, ?)'
+        'INSERT INTO evals (id, agent_id, name, code, model_used, version) VALUES (?, ?, ?, ?, ?, ?)'
       )
-      .bind(evalId, evalSetId, 'Test Eval', 'def eval_fn(): pass', 'claude-sonnet-4.5', 1)
+      .bind(evalId, agentId, 'Test Eval', 'def eval_fn(): pass', 'claude-sonnet-4.5', 1)
       .run();
 
     // Simulate concurrent execution count updates
@@ -844,7 +845,7 @@ describe('State Management', () => {
   });
 
   it('should verify eval_comparison view calculates contradictions correctly', async () => {
-    const evalSetId = nanoid();
+    const agentId = nanoid();
     const evalId = nanoid();
     const traceId1 = nanoid();
     const traceId2 = nanoid();
@@ -859,15 +860,15 @@ describe('State Management', () => {
       .run();
 
     await db
-      .prepare('INSERT INTO eval_sets (id, workspace_id, name) VALUES (?, ?, ?)')
-      .bind(evalSetId, workspaceId, 'Contradiction Test Set')
+      .prepare('INSERT INTO agents (id, workspace_id, name) VALUES (?, ?, ?)')
+      .bind(agentId, workspaceId, 'Contradiction Test Agent')
       .run();
 
     await db
       .prepare(
-        'INSERT INTO evals (id, eval_set_id, name, code, model_used, version) VALUES (?, ?, ?, ?, ?, ?)'
+        'INSERT INTO evals (id, agent_id, name, code, model_used, version) VALUES (?, ?, ?, ?, ?, ?)'
       )
-      .bind(evalId, evalSetId, 'Contradiction Eval', 'def eval_fn(): pass', 'claude-sonnet-4.5', 1)
+      .bind(evalId, agentId, 'Contradiction Eval', 'def eval_fn(): pass', 'claude-sonnet-4.5', 1)
       .run();
 
     // Create traces
@@ -887,13 +888,13 @@ describe('State Management', () => {
 
     // Create feedback
     await db
-      .prepare('INSERT INTO feedback (id, eval_set_id, trace_id, rating) VALUES (?, ?, ?, ?)')
-      .bind(nanoid(), evalSetId, traceId1, 'positive')
+      .prepare('INSERT INTO feedback (id, agent_id, trace_id, rating) VALUES (?, ?, ?, ?)')
+      .bind(nanoid(), agentId, traceId1, 'positive')
       .run();
 
     await db
-      .prepare('INSERT INTO feedback (id, eval_set_id, trace_id, rating) VALUES (?, ?, ?, ?)')
-      .bind(nanoid(), evalSetId, traceId2, 'negative')
+      .prepare('INSERT INTO feedback (id, agent_id, trace_id, rating) VALUES (?, ?, ?, ?)')
+      .bind(nanoid(), agentId, traceId2, 'negative')
       .run();
 
     // Create eval executions - one matching, one contradicting

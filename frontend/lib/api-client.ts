@@ -1,9 +1,6 @@
 import type {
-  CreateEvalSetRequest,
   CreateIntegrationRequest,
   Eval,
-  EvalSet,
-  EvalSetWithEvals,
   ExecuteEvalRequest,
   Feedback,
   GenerateEvalRequest,
@@ -14,12 +11,10 @@ import type {
   ListEvalsResponse,
   ListIntegrationsResponse,
   ListTracesResponse,
-  ListEvalExecutionsResponse,
   MatrixResponse,
   SubmitFeedbackRequest,
   Trace,
   UpdateEvalRequest,
-  UpdateEvalSetRequest,
   UpdateFeedbackRequest,
 } from '@/types/api'
 import type {
@@ -124,7 +119,7 @@ class APIClient {
   }
 
   async listTraces(params?: {
-    eval_set_id?: string
+    agent_id?: string
     source?: string
     rating?: string
     has_feedback?: boolean
@@ -161,37 +156,6 @@ class APIClient {
     })
   }
 
-  // ============================================================================
-  // Eval Sets
-  // ============================================================================
-
-  async createEvalSet(data: CreateEvalSetRequest): Promise<EvalSet> {
-    return this.request('/api/eval-sets', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
-  }
-
-  async listEvalSets(): Promise<{ eval_sets: EvalSet[] }> {
-    return this.request('/api/eval-sets')
-  }
-
-  async getEvalSet(id: string): Promise<EvalSetWithEvals> {
-    return this.request(`/api/eval-sets/${id}`)
-  }
-
-  async updateEvalSet(id: string, data: UpdateEvalSetRequest): Promise<EvalSet> {
-    return this.request(`/api/eval-sets/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    })
-  }
-
-  async deleteEvalSet(id: string): Promise<void> {
-    return this.request(`/api/eval-sets/${id}`, {
-      method: 'DELETE',
-    })
-  }
 
   // ============================================================================
   // Feedback
@@ -221,15 +185,15 @@ class APIClient {
   // Evals
   // ============================================================================
 
-  async generateEval(evalSetId: string, data: GenerateEvalRequest): Promise<JobResponse> {
-    return this.request(`/api/eval-sets/${evalSetId}/generate`, {
+  async generateEval(agentId: string, data: GenerateEvalRequest): Promise<JobResponse> {
+    return this.request(`/api/agents/${agentId}/generate-eval`, {
       method: 'POST',
       body: JSON.stringify(data),
     })
   }
 
   async listEvals(params?: {
-    eval_set_id?: string
+    agent_id?: string
     cursor?: string
     limit?: number
   }): Promise<ListEvalsResponse> {
@@ -288,31 +252,6 @@ class APIClient {
   }
 
   // ============================================================================
-  // Matrix
-  // ============================================================================
-
-  async getMatrix(
-    evalSetId: string,
-    params: {
-      eval_ids: string
-      filter?: 'contradictions_only' | 'errors_only' | 'all'
-      rating?: string
-      date_from?: string
-      date_to?: string
-      cursor?: string
-      limit?: number
-    }
-  ): Promise<MatrixResponse> {
-    const query = new URLSearchParams()
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) {
-        query.append(key, String(value))
-      }
-    })
-    return this.request(`/api/eval-sets/${evalSetId}/matrix?${query.toString()}`)
-  }
-
-  // ============================================================================
   // Jobs
   // ============================================================================
 
@@ -348,11 +287,6 @@ class APIClient {
 
   streamJob(jobId: string): EventSource {
     const url = `${this.baseURL}/api/jobs/${jobId}/stream`
-    return new EventSource(url)
-  }
-
-  streamEvalSet(evalSetId: string): EventSource {
-    const url = `${this.baseURL}/api/eval-sets/${evalSetId}/stream`
     return new EventSource(url)
   }
 
@@ -419,6 +353,30 @@ class APIClient {
       method: 'POST',
       body: JSON.stringify({ reason }),
     })
+  }
+
+  // ============================================================================
+  // Matrix / Comparison
+  // ============================================================================
+
+  async getMatrix(
+    agentId: string,
+    params?: {
+      eval_ids?: string
+      filter?: 'all' | 'contradictions_only' | 'errors_only'
+      cursor?: string
+      limit?: number
+    }
+  ): Promise<MatrixResponse> {
+    const query = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          query.append(key, String(value))
+        }
+      })
+    }
+    return this.request(`/api/agents/${agentId}/matrix?${query.toString()}`)
   }
 }
 

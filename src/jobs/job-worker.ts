@@ -156,22 +156,22 @@ export class JobWorker {
       throw new Error('Job metadata not found');
     }
 
-    const evalSetId = (metadata as any).eval_set_id;
+    const agentId = (metadata as any).agent_id;
     const name = (metadata as any).name;
     const description = (metadata as any).description;
     const model = (metadata as any).model;
     const customInstructions = (metadata as any).custom_instructions;
     const workspaceId = metadata.workspaceId;
 
-    if (!evalSetId || !name || !workspaceId) {
-      throw new Error('Missing required job metadata: eval_set_id, name, or workspaceId');
+    if (!agentId || !name || !workspaceId) {
+      throw new Error('Missing required job metadata: agent_id, name, or workspaceId');
     }
 
     // Create and execute EvalGenerationJob
     const genJob = new EvalGenerationJob(
       {
         jobId: job.id,
-        evalSetId,
+        agentId,
         name,
         description,
         model,

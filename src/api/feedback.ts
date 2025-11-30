@@ -23,7 +23,7 @@ export interface Env {
  *
  * Submit feedback (rating) for a trace. Optimistic UI pattern on frontend.
  *
- * @param request - HTTP request with trace_id, eval_set_id, rating, and optional notes
+ * @param request - HTTP request with trace_id, agent_id, rating, and optional notes
  * @param env - Cloudflare environment with D1 database
  * @returns 201 Created with feedback details
  */
@@ -34,16 +34,16 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
 
     const body = await parseJsonBody<{
       trace_id: string;
-      eval_set_id: string;
+      agent_id: string;
       rating: 'positive' | 'negative' | 'neutral';
       notes?: string;
     }>(request);
 
     // Validate required fields
-    if (!body.trace_id || !body.eval_set_id || !body.rating) {
+    if (!body.trace_id || !body.agent_id || !body.rating) {
       return createErrorResponse(
         'MISSING_REQUIRED_FIELD',
-        'trace_id, eval_set_id, and rating are required',
+        'trace_id, agent_id, and rating are required',
         400
       );
     }
@@ -68,22 +68,22 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
       return createErrorResponse('NOT_FOUND', 'Trace not found', 404);
     }
 
-    // Verify eval set exists and belongs to workspace
-    const evalSet = await env.DB.prepare(
-      'SELECT id FROM eval_sets WHERE id = ? AND workspace_id = ?'
+    // Verify agent exists and belongs to workspace
+    const agent = await env.DB.prepare(
+      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
     )
-      .bind(body.eval_set_id, workspaceId)
+      .bind(body.agent_id, workspaceId)
       .first();
 
-    if (!evalSet) {
-      return createErrorResponse('NOT_FOUND', 'Eval set not found', 404);
+    if (!agent) {
+      return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // Check for existing feedback - use upsert pattern
     const existing = await env.DB.prepare(
-      'SELECT id, created_at FROM feedback WHERE trace_id = ? AND eval_set_id = ?'
+      'SELECT id, created_at FROM feedback WHERE trace_id = ? AND agent_id = ?'
     )
-      .bind(body.trace_id, body.eval_set_id)
+      .bind(body.trace_id, body.agent_id)
       .first();
 
     const now = new Date().toISOString();
@@ -91,7 +91,7 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
     if (existing) {
       // Update existing feedback (upsert)
       await env.DB.prepare(
-        `UPDATE feedback SET rating = ?, notes = ? WHERE id = ?`
+        `UPDATE feedback SET rating = ?, rating_detail = ? WHERE id = ?`
       )
         .bind(body.rating, body.notes || null, existing.id)
         .run();
@@ -100,7 +100,7 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
         {
           id: existing.id,
           trace_id: body.trace_id,
-          eval_set_id: body.eval_set_id,
+          agent_id: body.agent_id,
           rating: body.rating,
           notes: body.notes || null,
           created_at: existing.created_at,
@@ -114,12 +114,12 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
     const feedbackId = `fb_${crypto.randomUUID()}`;
 
     await env.DB.prepare(
-      `INSERT INTO feedback (id, eval_set_id, trace_id, rating, notes, created_at)
+      `INSERT INTO feedback (id, agent_id, trace_id, rating, rating_detail, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`
     )
       .bind(
         feedbackId,
-        body.eval_set_id,
+        body.agent_id,
         body.trace_id,
         body.rating,
         body.notes || null,
@@ -131,7 +131,7 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
       {
         id: feedbackId,
         trace_id: body.trace_id,
-        eval_set_id: body.eval_set_id,
+        agent_id: body.agent_id,
         rating: body.rating,
         notes: body.notes || null,
         created_at: now,
@@ -171,10 +171,10 @@ export async function updateFeedback(request: Request, env: Env, feedbackId: str
 
     // Verify feedback exists and belongs to workspace
     const feedback = await env.DB.prepare(
-      `SELECT f.id, f.trace_id, f.eval_set_id
+      `SELECT f.id, f.trace_id, f.agent_id
        FROM feedback f
-       JOIN eval_sets es ON f.eval_set_id = es.id
-       WHERE f.id = ? AND es.workspace_id = ?`
+       JOIN agents a ON f.agent_id = a.id
+       WHERE f.id = ? AND a.workspace_id = ?`
     )
       .bind(feedbackId, workspaceId)
       .first();
@@ -202,7 +202,7 @@ export async function updateFeedback(request: Request, env: Env, feedbackId: str
     }
 
     if (body.notes !== undefined) {
-      updates.push('notes = ?');
+      updates.push('rating_detail = ?');
       params.push(body.notes || null);
     }
 
@@ -217,9 +217,9 @@ export async function updateFeedback(request: Request, env: Env, feedbackId: str
       return createSuccessResponse({
         id: current!.id,
         trace_id: current!.trace_id,
-        eval_set_id: current!.eval_set_id,
+        agent_id: current!.agent_id,
         rating: current!.rating,
-        notes: current!.notes,
+        notes: current!.rating_detail,
         created_at: current!.created_at,
       });
     }
@@ -242,9 +242,9 @@ export async function updateFeedback(request: Request, env: Env, feedbackId: str
     return createSuccessResponse({
       id: updated!.id,
       trace_id: updated!.trace_id,
-      eval_set_id: updated!.eval_set_id,
+      agent_id: updated!.agent_id,
       rating: updated!.rating,
-      notes: updated!.notes,
+      notes: updated!.rating_detail,
       created_at: updated!.created_at,
     });
   } catch (error: any) {
@@ -277,8 +277,8 @@ export async function deleteFeedback(request: Request, env: Env, feedbackId: str
     const feedback = await env.DB.prepare(
       `SELECT f.id
        FROM feedback f
-       JOIN eval_sets es ON f.eval_set_id = es.id
-       WHERE f.id = ? AND es.workspace_id = ?`
+       JOIN agents a ON f.agent_id = a.id
+       WHERE f.id = ? AND a.workspace_id = ?`
     )
       .bind(feedbackId, workspaceId)
       .first();

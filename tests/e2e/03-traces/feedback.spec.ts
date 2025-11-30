@@ -4,7 +4,7 @@ import { apiRequest, createTestIntegration, createTestTrace, deleteTestIntegrati
 test.describe('Trace Management - Feedback', () => {
   let integrationId: string | null = null
   let traceId: string | null = null
-  let evalSetId: string | null = null
+  let agentId: string | null = null
 
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage()
@@ -14,15 +14,15 @@ test.describe('Trace Management - Feedback', () => {
       const integration = await createTestIntegration(page, `Feedback Test Integration ${Date.now()}`)
       integrationId = integration.id
 
-      // Create eval set
-      const evalSet = await apiRequest<any>(page, '/api/eval-sets', {
+      // Create agent
+      const agent = await apiRequest<any>(page, '/api/agents', {
         method: 'POST',
         data: {
-          name: `Test Eval Set ${Date.now()}`,
+          name: `Test Agent ${Date.now()}`,
           description: 'For feedback testing',
         },
       })
-      evalSetId = evalSet.id
+      agentId = agent.id
 
       // Create test trace directly (no Langfuse import needed)
       const trace = await createTestTrace(page, integrationId, {
@@ -51,8 +51,8 @@ test.describe('Trace Management - Feedback', () => {
       if (integrationId) {
         await deleteTestIntegration(page, integrationId).catch(() => {})
       }
-      if (evalSetId) {
-        await apiRequest(page, `/api/eval-sets/${evalSetId}`, { method: 'DELETE' }).catch(() => {})
+      if (agentId) {
+        await apiRequest(page, `/api/agents/${agentId}`, { method: 'DELETE' }).catch(() => {})
       }
     } finally {
       await page.close()
@@ -60,13 +60,13 @@ test.describe('Trace Management - Feedback', () => {
   })
 
   test('TEST-T07: Submit positive feedback', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No trace or eval set available')
+    test.skip(!traceId || !agentId, 'No trace or agent available')
 
     // Navigate to trace detail page
     await page.goto(`/traces/${traceId}`)
     await page.waitForLoadState('networkidle')
 
-    // Wait for feedback buttons to appear (means eval set is selected)
+    // Wait for feedback buttons to appear (means agent is selected)
     const positiveButton = page.locator('[data-testid="feedback-positive"]')
     await expect(positiveButton).toBeVisible({ timeout: 10000 })
 
@@ -81,13 +81,13 @@ test.describe('Trace Management - Feedback', () => {
   })
 
   test('TEST-T11: Keyboard shortcuts', async ({ page }) => {
-    test.skip(!traceId || !evalSetId, 'No trace or eval set available')
+    test.skip(!traceId || !agentId, 'No trace or agent available')
 
     // Navigate to trace detail page
     await page.goto(`/traces/${traceId}`)
     await page.waitForLoadState('networkidle')
 
-    // Wait for feedback buttons to be visible (means eval set is auto-selected)
+    // Wait for feedback buttons to be visible (means agent is auto-selected)
     const positiveButton = page.locator('[data-testid="feedback-positive"]')
     await expect(positiveButton).toBeVisible({ timeout: 10000 })
 

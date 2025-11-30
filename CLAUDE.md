@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## MANDATORY: Progress Log Updates
+
+**IMPORTANT:** After completing ANY task (code changes, bug fixes, feature implementations, research), you MUST update `docs/progress_log.md` with:
+
+1. **Timestamp** - Current date in `## YYYY-MM-DD` format
+2. **Task summary** - What was accomplished
+3. **Files changed** - List of modified/created files
+4. **Next steps** - If applicable
+
+A Stop hook will block if this file is not updated. Do this BEFORE finishing your response.
+
 ## Project Overview
 
 **iofold.com** is an automated evaluation generation platform for AI agents. The platform integrates with existing observability tools (Langfuse, Langsmith, OpenAI) to bootstrap high-quality eval functions through human feedback and meta-prompting.

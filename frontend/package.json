@@ -12,19 +12,25 @@
     "pages:deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static"
   },
   "dependencies": {
-    "@clerk/nextjs": "^5.7.0",
+    "@clerk/nextjs": "^6.35.5",
     "@monaco-editor/react": "^4.6.0",
     "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "@tailwindcss/postcss": "^4.1.17",
     "@tanstack/react-query": "^5.59.0",
+    "@types/react-window": "^1.8.8",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.23.24",
-    "lucide-react": "^0.454.0",
-    "next": "^14.2.15",
+    "lucide-react": "^0.555.0",
+    "next": "^15.5.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "sonner": "^1.5.0",
-    "tailwind-merge": "^2.5.4",
+    "react-window": "^2.2.3",
+    "recharts": "^3.5.1",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.4.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
@@ -34,9 +40,9 @@
     "@types/react-dom": "^18.3.1",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
-    "eslint-config-next": "^14.2.15",
+    "eslint-config-next": "15.5",
     "postcss": "^8.4.47",
-    "tailwindcss": "^3.4.14",
+    "tailwindcss": "^4.1.17",
     "typescript": "^5.6.3",
     "wrangler": "^3.84.1"
   }

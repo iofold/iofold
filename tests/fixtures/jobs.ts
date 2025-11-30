@@ -39,12 +39,12 @@ export async function startTraceImportJob(
 }
 
 /**
- * Create an eval set with feedback for eval generation
+ * Create an agent with feedback for eval generation
  */
-export async function seedEvalSetWithFeedback(
+export async function seedAgentWithFeedback(
   apiClient: TestAPIClient,
   integrationId: string
-): Promise<{ evalSetId: string; traceIds: string[] }> {
+): Promise<{ agentId: string; traceIds: string[] }> {
   // Import traces
   const jobResponse = await apiClient.importTraces({
     integration_id: integrationId,
@@ -58,42 +58,42 @@ export async function seedEvalSetWithFeedback(
   const tracesResponse = await apiClient.listTraces({ limit: 5 });
   const traceIds = tracesResponse.traces.map((t: any) => t.id);
 
-  // Create eval set
-  const evalSet = await apiClient.createEvalSet({
-    name: `Test Eval Set ${Date.now()}`,
-    description: 'Test eval set for job monitoring',
+  // Create agent
+  const agent = await apiClient.createAgent({
+    name: `Test Agent ${Date.now()}`,
+    description: 'Test agent for job monitoring',
   });
 
   // Submit feedback for traces
   await Promise.all([
     apiClient.submitFeedback({
       trace_id: traceIds[0],
-      eval_set_id: evalSet.id,
+      agent_id: agent.id,
       rating: 'positive',
     }),
     apiClient.submitFeedback({
       trace_id: traceIds[1],
-      eval_set_id: evalSet.id,
+      agent_id: agent.id,
       rating: 'positive',
     }),
     apiClient.submitFeedback({
       trace_id: traceIds[2],
-      eval_set_id: evalSet.id,
+      agent_id: agent.id,
       rating: 'positive',
     }),
     apiClient.submitFeedback({
       trace_id: traceIds[3],
-      eval_set_id: evalSet.id,
+      agent_id: agent.id,
       rating: 'negative',
     }),
     apiClient.submitFeedback({
       trace_id: traceIds[4],
-      eval_set_id: evalSet.id,
+      agent_id: agent.id,
       rating: 'negative',
     }),
   ]);
 
-  return { evalSetId: evalSet.id, traceIds };
+  return { agentId: agent.id, traceIds };
 }
 
 /**
@@ -101,9 +101,9 @@ export async function seedEvalSetWithFeedback(
  */
 export async function startEvalGenerationJob(
   apiClient: TestAPIClient,
-  evalSetId: string
+  agentId: string
 ): Promise<string> {
-  const response = await apiClient.generateEval(evalSetId, {
+  const response = await apiClient.generateEval(agentId, {
     name: `Test Eval ${Date.now()}`,
     description: 'Test eval for job monitoring',
     model: 'claude-3-haiku-20240307',

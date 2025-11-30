@@ -58,6 +58,19 @@ export interface UseJobMonitorOptions {
   apiBaseUrl?: string
 }
 
+/**
+ * Store callbacks in refs to avoid recreating start/stop functions
+ * when callbacks change. This prevents the infinite loop caused by
+ * useEffect re-running when callbacks are not memoized by the parent.
+ */
+interface CallbackRefs {
+  onProgress?: (update: SSEJobUpdate) => void
+  onCompleted?: (result: any) => void
+  onFailed?: (error: string, details?: string) => void
+  onError?: (error: Event) => void
+  onOpen?: () => void
+}
+
 export interface UseJobMonitorReturn {
   /**
    * Current job state
@@ -126,6 +139,11 @@ export function useJobMonitor(
   const sseClientRef = useRef<SSEClient | null>(null)
   const isMonitoringRef = useRef(false)
 
+  // Store callbacks in refs to prevent start/stop from being recreated
+  // when callbacks change (which would cause infinite useEffect loops)
+  const callbacksRef = useRef<CallbackRefs>({})
+  callbacksRef.current = { onProgress, onCompleted, onFailed, onError, onOpen }
+
   /**
    * Stop monitoring and clean up
    */
@@ -155,7 +173,7 @@ export function useJobMonitor(
       // Create EventSource for SSE connection
       const eventSource = apiClient.streamJob(jobId)
 
-      // Create SSE client with callbacks
+      // Create SSE client with callbacks (using refs to avoid recreating on callback changes)
       const client = new SSEClient(eventSource, {
         jobId,
         apiBaseUrl,
@@ -163,32 +181,32 @@ export function useJobMonitor(
           setIsSSEActive(true)
           setIsPolling(false)
           setJob((prev) => (prev ? { ...prev, ...update } : null))
-          onProgress?.(update)
+          callbacksRef.current.onProgress?.(update)
         },
         onCompleted: (result) => {
           setJob((prev) => (prev ? { ...prev, status: 'completed', result } : null))
           setIsStreaming(false)
           setIsSSEActive(false)
-          onCompleted?.(result)
+          callbacksRef.current.onCompleted?.(result)
         },
         onFailed: (errorMsg, details) => {
           setJob((prev) => (prev ? { ...prev, status: 'failed', error: errorMsg } : null))
           setIsStreaming(false)
           setIsSSEActive(false)
           setError(errorMsg)
-          onFailed?.(errorMsg, details)
+          callbacksRef.current.onFailed?.(errorMsg, details)
         },
         onError: (err) => {
           console.warn('[useJobMonitor] SSE connection error, may fall back to polling')
           setIsSSEActive(false)
           setIsPolling(true)
-          onError?.(err)
+          callbacksRef.current.onError?.(err)
         },
         onOpen: () => {
           console.log('[useJobMonitor] SSE connection established')
           setIsSSEActive(true)
           setIsPolling(false)
-          onOpen?.()
+          callbacksRef.current.onOpen?.()
         },
       })
 
@@ -206,7 +224,7 @@ export function useJobMonitor(
       setIsStreaming(false)
       isMonitoringRef.current = false
     }
-  }, [jobId, apiBaseUrl, onProgress, onCompleted, onFailed, onError, onOpen, isSSEActive])
+  }, [jobId, apiBaseUrl]) // Removed callback dependencies - using refs instead
 
   /**
    * Restart monitoring

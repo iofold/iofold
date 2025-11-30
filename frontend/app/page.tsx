@@ -28,7 +28,7 @@ export default function HomePage() {
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg">
-              <Link href="/eval-sets">View Eval Sets</Link>
+              <Link href="/agents">View Agents</Link>
             </Button>
           </div>
         </div>
@@ -100,15 +100,15 @@ export default function HomePage() {
               </Card>
             </Link>
 
-            <Link href="/eval-sets">
+            <Link href="/agents">
               <Card interactive className="p-4 flex items-center gap-4 group">
                 <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center group-hover:bg-primary/10 transition-colors">
                   <FolderOpen className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-semibold group-hover:text-primary transition-colors">Eval Sets</h3>
+                  <h3 className="font-semibold group-hover:text-primary transition-colors">Agents</h3>
                   <p className="text-sm text-muted-foreground">
-                    Organize feedback collections
+                    Manage agents and feedback
                   </p>
                 </div>
                 <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />

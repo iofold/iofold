@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { useParams } from 'next/navigation'
 import { apiClient } from '@/lib/api-client'
 import { CodeViewer } from '@/components/code-viewer'
 import { Button } from '@/components/ui/button'
@@ -11,16 +12,19 @@ import { ArrowLeft, Play, RefreshCw, CheckCircle, XCircle, AlertTriangle } from 
 import Link from 'next/link'
 import { formatPercentage, formatRelativeTime } from '@/lib/utils'
 
-export default function EvalDetailPage({ params }: { params: { id: string } }) {
+export default function EvalDetailPage() {
+  const params = useParams()
+  const evalId = params.id as string
+
   const { data: evalData, isLoading, error, refetch } = useQuery({
-    queryKey: ['eval', params.id],
-    queryFn: () => apiClient.getEval(params.id),
+    queryKey: ['eval', evalId],
+    queryFn: () => apiClient.getEval(evalId),
   })
 
   // Fetch execution results
   const { data: executionsData, isLoading: loadingExecutions } = useQuery({
-    queryKey: ['eval-executions', params.id],
-    queryFn: () => apiClient.getEvalExecutions(params.id, { limit: 100 }),
+    queryKey: ['eval-executions', evalId],
+    queryFn: () => apiClient.getEvalExecutions(evalId, { limit: 100 }),
     enabled: !!evalData,
   })
 
@@ -63,7 +67,7 @@ export default function EvalDetailPage({ params }: { params: { id: string } }) {
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Refine
               </Button>
-              <ExecuteEvalModal evalId={params.id} evalSetId={evalData.eval_set_id}>
+              <ExecuteEvalModal evalId={evalId} agentId={evalData.agent_id}>
                 <Button>
                   <Play className="w-4 h-4 mr-2" />
                   Execute

@@ -24,10 +24,10 @@ import type { JobResponse, Job } from '@/types/api'
 interface GenerateEvalModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  evalSetId: string
+  agentId: string
 }
 
-export function GenerateEvalModal({ open, onOpenChange, evalSetId }: GenerateEvalModalProps) {
+export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalModalProps) {
   const queryClient = useQueryClient()
   const router = useRouter()
   const [name, setName] = useState('')
@@ -47,7 +47,7 @@ export function GenerateEvalModal({ open, onOpenChange, evalSetId }: GenerateEva
         throw new Error('Name is required')
       }
 
-      const result: JobResponse = await apiClient.generateEval(evalSetId, {
+      const result: JobResponse = await apiClient.generateEval(agentId, {
         name: name.trim(),
         description: description.trim() || undefined,
         model: model || undefined,
@@ -99,8 +99,8 @@ export function GenerateEvalModal({ open, onOpenChange, evalSetId }: GenerateEva
             setGeneratedEvalId(result.eval_id)
           }
 
-          // Refetch eval set to show the new eval
-          queryClient.invalidateQueries({ queryKey: ['eval-set', evalSetId] })
+          // Refetch agent to show the new eval
+          queryClient.invalidateQueries({ queryKey: ['agent', agentId] })
           queryClient.invalidateQueries({ queryKey: ['evals'] })
         },
         onFailed: (error, details) => {

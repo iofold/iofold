@@ -125,8 +125,10 @@ test.describe('Integration Management - Add Integration', () => {
     // Wait for integration name to appear first
     await expect(page.getByText(integrationName)).toBeVisible({ timeout: 10000 })
 
-    // Click delete button for this integration
-    const deleteButton = page.locator('[data-testid="delete-integration-button"]').first()
+    // Find the integration card that contains our specific integration name and click its delete button
+    // The card has data-testid like "integration-card-{id}" so we use attribute starts-with selector
+    const integrationCard = page.locator('[data-testid^="integration-card-"]').filter({ hasText: integrationName })
+    const deleteButton = integrationCard.locator('[data-testid="delete-integration-button"]')
     await deleteButton.click()
 
     // Wait for the integration name to disappear

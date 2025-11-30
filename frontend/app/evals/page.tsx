@@ -40,11 +40,11 @@ export default function EvalsPage() {
           </div>
           <h3 className="text-lg font-semibold mb-2">No evals yet</h3>
           <p className="text-muted-foreground text-center mb-6 max-w-sm">
-            Create an eval set, add feedback to traces, and generate your first evaluation function.
+            Create an agent, add feedback to traces, and generate your first evaluation function.
           </p>
-          <Link href="/eval-sets">
+          <Link href="/agents">
             <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
-              Go to Eval Sets
+              Go to Agents
             </button>
           </Link>
         </div>

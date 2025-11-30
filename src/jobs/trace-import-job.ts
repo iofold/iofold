@@ -190,11 +190,10 @@ export class TraceImportJob {
       await this.deps.db
         .prepare(
           `UPDATE integrations
-           SET last_synced_at = ?, updated_at = ?
+           SET last_synced_at = ?
            WHERE id = ?`
         )
         .bind(
-          new Date().toISOString(),
           new Date().toISOString(),
           this.config.integrationId
         )

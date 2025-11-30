@@ -5,7 +5,7 @@ import {
 } from '../utils/helpers';
 import { createTestIntegration, deleteTestIntegration } from '../../fixtures/integrations';
 import { createTestTrace, deleteTestTrace } from '../../fixtures/traces';
-import { createTestEvalSet, deleteTestEvalSet, addTracesToEvalSet } from '../../fixtures/eval-sets';
+import { createTestAgent, deleteTestAgent, addTracesToAgent } from '../../fixtures/agents';
 import {
   setupEvalGenerationMocks,
   setupEvalExecutionMocks,
@@ -24,7 +24,7 @@ import {
 test.describe('Eval Execution', () => {
   let integrationId: string;
   let traceIds: string[] = [];
-  let evalSetId: string;
+  let agentId: string;
   let mockEvalId: string;
 
   test.beforeEach(async ({ page }) => {
@@ -49,9 +49,9 @@ test.describe('Eval Execution', () => {
       traceIds.push(trace.id);
     }
 
-    // Create eval set
-    const evalSet = await createTestEvalSet(page);
-    evalSetId = evalSet.id;
+    // Create agent
+    const agent = await createTestAgent(page);
+    agentId = agent.id;
 
     // Add feedback
     const ratings: ('positive' | 'negative')[] = [
@@ -64,11 +64,11 @@ test.describe('Eval Execution', () => {
       'negative',
       'negative',
     ];
-    await addTracesToEvalSet(page, evalSetId, traceIds, ratings);
+    await addTracesToAgent(page, agentId, traceIds, ratings);
 
     // Setup mocks for eval generation - this "creates" a mock eval
     const { evalId } = await setupEvalGenerationMocks(page, {
-      evalSetId,
+      agentId,
       evalName: uniqueName('Test Eval'),
       traceIds,
     });
@@ -84,8 +84,8 @@ test.describe('Eval Execution', () => {
       for (const traceId of traceIds) {
         await deleteTestTrace(page, traceId);
       }
-      if (evalSetId) {
-        await deleteTestEvalSet(page, evalSetId);
+      if (agentId) {
+        await deleteTestAgent(page, agentId);
       }
       if (integrationId) {
         await deleteTestIntegration(page, integrationId);
@@ -136,7 +136,7 @@ test.describe('Eval Execution', () => {
     // Setup execution mocks
     await setupEvalExecutionMocks(page, {
       evalId: mockEvalId,
-      evalSetId,
+      agentId,
       evalName: 'Test Eval',
     });
 

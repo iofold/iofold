@@ -10,13 +10,13 @@ import { cn } from '@/lib/utils'
 
 interface TraceFeedbackProps {
   traceId: string
-  evalSetId: string
+  agentId: string
   currentRating?: 'positive' | 'negative' | 'neutral' | null
   feedbackId?: string
   onFeedbackChange?: () => void
 }
 
-export function TraceFeedback({ traceId, evalSetId, currentRating, feedbackId, onFeedbackChange }: TraceFeedbackProps) {
+export function TraceFeedback({ traceId, agentId, currentRating, feedbackId, onFeedbackChange }: TraceFeedbackProps) {
   const [rating, setRating] = useState<'positive' | 'negative' | 'neutral' | null>(currentRating || null)
   const queryClient = useQueryClient()
 
@@ -28,7 +28,7 @@ export function TraceFeedback({ traceId, evalSetId, currentRating, feedbackId, o
       }
       return apiClient.submitFeedback({
         trace_id: traceId,
-        eval_set_id: evalSetId,
+        agent_id: agentId,
         rating,
       })
     },
@@ -36,7 +36,7 @@ export function TraceFeedback({ traceId, evalSetId, currentRating, feedbackId, o
       setRating(rating)
       queryClient.invalidateQueries({ queryKey: ['traces'] })
       queryClient.invalidateQueries({ queryKey: ['trace', traceId] })
-      queryClient.invalidateQueries({ queryKey: ['eval-sets', evalSetId] })
+      queryClient.invalidateQueries({ queryKey: ['agents', agentId] })
       toast.success(`Marked as ${rating}`)
       onFeedbackChange?.()
     },

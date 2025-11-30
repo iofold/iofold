@@ -5,20 +5,20 @@ import {
 } from '../utils/helpers';
 import { createTestIntegration, deleteTestIntegration } from '../../fixtures/integrations';
 import { createTestTrace, deleteTestTrace } from '../../fixtures/traces';
-import { createTestEvalSet, deleteTestEvalSet, addTracesToEvalSet } from '../../fixtures/eval-sets';
+import { createTestAgent, deleteTestAgent, addTracesToAgent } from '../../fixtures/agents';
 import { setupEvalGenerationMocks, clearEvalMocks, MOCK_EVAL_CODE } from '../../fixtures/evals-mock';
 
 /**
  * TEST-E01: Generate Eval (Happy Path)
  * TEST-E02: Generate Eval with Insufficient Feedback
  *
- * Tests the ability to generate an eval from an eval set with feedback.
+ * Tests the ability to generate an eval from an agent with feedback.
  * Uses Playwright route mocking to simulate LLM responses.
  */
 test.describe('Eval Generation', () => {
   let integrationId: string;
   let traceIds: string[] = [];
-  let evalSetId: string;
+  let agentId: string;
 
   test.beforeEach(async ({ page }) => {
     // Setup: Create integration and traces directly (no external API needed)
@@ -42,9 +42,9 @@ test.describe('Eval Generation', () => {
       traceIds.push(trace.id);
     }
 
-    // Create eval set
-    const evalSet = await createTestEvalSet(page);
-    evalSetId = evalSet.id;
+    // Create agent
+    const agent = await createTestAgent(page);
+    agentId = agent.id;
 
     // Add feedback: 5 positive, 5 negative (meet minimum requirements)
     const ratings: ('positive' | 'negative')[] = [
@@ -59,7 +59,7 @@ test.describe('Eval Generation', () => {
       'negative',
       'negative',
     ];
-    await addTracesToEvalSet(page, evalSetId, traceIds, ratings);
+    await addTracesToAgent(page, agentId, traceIds, ratings);
   });
 
   test.afterEach(async ({ page }) => {
@@ -71,8 +71,8 @@ test.describe('Eval Generation', () => {
       for (const traceId of traceIds) {
         await deleteTestTrace(page, traceId);
       }
-      if (evalSetId) {
-        await deleteTestEvalSet(page, evalSetId);
+      if (agentId) {
+        await deleteTestAgent(page, agentId);
       }
       if (integrationId) {
         await deleteTestIntegration(page, integrationId);
@@ -88,13 +88,13 @@ test.describe('Eval Generation', () => {
 
     // Setup mocks to intercept LLM generation calls
     const { evalId, jobId } = await setupEvalGenerationMocks(page, {
-      evalSetId,
+      agentId,
       evalName,
       traceIds,
     });
 
-    // Navigate to eval set detail page
-    await page.goto(`/eval-sets/${evalSetId}`);
+    // Navigate to agent detail page
+    await page.goto(`/agents/${agentId}`);
     await page.waitForLoadState('networkidle');
 
     // Click "Generate Eval" button
@@ -174,19 +174,19 @@ test.describe('Eval Generation', () => {
   test('TEST-E02: should show error when generating with insufficient feedback', async ({
     page,
   }) => {
-    // Create a new eval set with insufficient feedback (only positive)
-    const insufficientEvalSet = await createTestEvalSet(page, {
-      name: uniqueName('Insufficient Eval Set'),
+    // Create a new agent with insufficient feedback (only positive)
+    const insufficientAgent = await createTestAgent(page, {
+      name: uniqueName('Insufficient Agent'),
     });
 
     // Add only 2 positive traces (not enough for generation)
-    await addTracesToEvalSet(page, insufficientEvalSet.id, traceIds.slice(0, 2), [
+    await addTracesToAgent(page, insufficientAgent.id, traceIds.slice(0, 2), [
       'positive',
       'positive',
     ]);
 
-    // Navigate to eval set detail page
-    await page.goto(`/eval-sets/${insufficientEvalSet.id}`);
+    // Navigate to agent detail page
+    await page.goto(`/agents/${insufficientAgent.id}`);
     await page.waitForLoadState('networkidle');
 
     // The button should show "Need X more feedback" and be disabled
@@ -225,6 +225,6 @@ test.describe('Eval Generation', () => {
     }
 
     // Cleanup
-    await deleteTestEvalSet(page, insufficientEvalSet.id);
+    await deleteTestAgent(page, insufficientAgent.id);
   });
 });

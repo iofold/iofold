@@ -19,14 +19,6 @@ import {
 } from './traces';
 
 import {
-  createEvalSet,
-  listEvalSets,
-  getEvalSetById,
-  updateEvalSet,
-  deleteEvalSet,
-} from './eval-sets';
-
-import {
   submitFeedback,
   updateFeedback,
   deleteFeedback,
@@ -113,36 +105,6 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   // DELETE /api/traces/:id
   if (traceMatch && method === 'DELETE') {
     return deleteTrace(request, env, traceMatch[1]);
-  }
-
-  // ============================================================================
-  // Eval Sets Endpoints
-  // ============================================================================
-
-  // POST /api/eval-sets
-  if (path === '/api/eval-sets' && method === 'POST') {
-    return createEvalSet(request, env);
-  }
-
-  // GET /api/eval-sets
-  if (path === '/api/eval-sets' && method === 'GET') {
-    return listEvalSets(request, env);
-  }
-
-  // GET /api/eval-sets/:id
-  const evalSetMatch = path.match(/^\/api\/eval-sets\/([^\/]+)$/);
-  if (evalSetMatch && method === 'GET') {
-    return getEvalSetById(request, env, evalSetMatch[1]);
-  }
-
-  // PATCH /api/eval-sets/:id
-  if (evalSetMatch && method === 'PATCH') {
-    return updateEvalSet(request, env, evalSetMatch[1]);
-  }
-
-  // DELETE /api/eval-sets/:id
-  if (evalSetMatch && method === 'DELETE') {
-    return deleteEvalSet(request, env, evalSetMatch[1]);
   }
 
   // ============================================================================
@@ -268,12 +230,12 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return evalsAPI.executeEval(evalExecuteMatch[1], workspaceId, body);
   }
 
-  // POST /api/eval-sets/:id/generate - Generate eval from eval set
-  const generateMatch = path.match(/^\/api\/eval-sets\/([^\/]+)\/generate$/);
-  if (generateMatch && method === 'POST') {
+  // POST /api/agents/:id/generate-eval - Generate eval from agent traces
+  const generateEvalMatch = path.match(/^\/api\/agents\/([^\/]+)\/generate-eval$/);
+  if (generateEvalMatch && method === 'POST') {
     const body = await request.json();
     const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
-    return evalsAPI.generateEval(generateMatch[1], workspaceId, body);
+    return evalsAPI.generateEval(generateEvalMatch[1], workspaceId, body);
   }
 
   // ============================================================================

@@ -230,7 +230,7 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
     const { cursor, limit } = parsePaginationParams(url, 50, 200);
 
     // Parse filters
-    const evalSetId = url.searchParams.get('eval_set_id');
+    const agentId = url.searchParams.get('agent_id');
     const source = url.searchParams.get('source');
     const ratingFilter = url.searchParams.get('rating');
     const hasFeedback = url.searchParams.get('has_feedback');
@@ -251,8 +251,8 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
         t.has_errors,
         f.id as feedback_id,
         f.rating,
-        f.notes as notes,
-        f.eval_set_id
+        f.rating_detail as notes,
+        f.agent_id
       FROM traces t
       LEFT JOIN integrations i ON t.integration_id = i.id
       LEFT JOIN feedback f ON t.id = f.trace_id
@@ -262,9 +262,9 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
     const params: any[] = [workspaceId];
 
     // Apply filters
-    if (evalSetId) {
-      query += ' AND f.eval_set_id = ?';
-      params.push(evalSetId);
+    if (agentId) {
+      query += ' AND f.agent_id = ?';
+      params.push(agentId);
     }
 
     if (source) {
@@ -333,7 +333,7 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
         trace.feedback = {
           rating: row.rating,
           notes: row.notes,
-          eval_set_id: row.eval_set_id,
+          agent_id: row.agent_id,
         };
       }
 
@@ -351,9 +351,9 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
     `;
     const countParams: any[] = [workspaceId];
 
-    if (evalSetId) {
-      countQuery += ' AND f.eval_set_id = ?';
-      countParams.push(evalSetId);
+    if (agentId) {
+      countQuery += ' AND f.agent_id = ?';
+      countParams.push(agentId);
     }
     if (source) {
       countQuery += ' AND i.platform = ?';
@@ -425,8 +425,8 @@ export async function getTraceById(request: Request, env: Env, traceId: string):
         t.steps,
         f.id as feedback_id,
         f.rating,
-        f.notes as notes,
-        f.eval_set_id,
+        f.rating_detail as notes,
+        f.agent_id,
         f.created_at as feedback_created_at
       FROM traces t
       LEFT JOIN integrations i ON t.integration_id = i.id
@@ -457,7 +457,7 @@ export async function getTraceById(request: Request, env: Env, traceId: string):
         id: result.feedback_id,
         rating: result.rating,
         notes: result.notes,
-        eval_set_id: result.eval_set_id,
+        agent_id: result.agent_id,
         created_at: result.feedback_created_at,
       };
     }

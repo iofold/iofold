@@ -22,10 +22,10 @@ import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
 
 interface GenerateEvalModalProps {
   children: React.ReactNode
-  evalSetId: string
+  agentId: string
 }
 
-export function GenerateEvalModal({ children, evalSetId }: GenerateEvalModalProps) {
+export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps) {
   const [open, setOpen] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [formData, setFormData] = useState<GenerateEvalRequest>({
@@ -47,7 +47,7 @@ export function GenerateEvalModal({ children, evalSetId }: GenerateEvalModalProp
     onCompleted: (result) => {
       console.log('[GenerateEvalModal] Generation completed:', result)
       // Invalidate queries to refresh eval list
-      queryClient.invalidateQueries({ queryKey: ['eval-set', evalSetId] })
+      queryClient.invalidateQueries({ queryKey: ['agent', agentId] })
       queryClient.invalidateQueries({ queryKey: ['evals'] })
     },
     onFailed: (errorMsg, details) => {
@@ -66,7 +66,7 @@ export function GenerateEvalModal({ children, evalSetId }: GenerateEvalModalProp
   }, [open, stopMonitoring])
 
   const mutation = useMutation({
-    mutationFn: (data: GenerateEvalRequest) => apiClient.generateEval(evalSetId, data),
+    mutationFn: (data: GenerateEvalRequest) => apiClient.generateEval(agentId, data),
     onSuccess: (response) => {
       // Set job ID to trigger monitoring
       setJobId(response.job_id)

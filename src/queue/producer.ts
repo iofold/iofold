@@ -64,7 +64,7 @@ export class QueueProducer {
    */
   async enqueueGenerateJob(
     workspaceId: string,
-    evalSetId: string,
+    agentId: string,
     name: string,
     options?: {
       description?: string;
@@ -76,7 +76,7 @@ export class QueueProducer {
   ): Promise<EnqueueResult> {
     const payload: GenerateJobPayload = {
       type: 'generate',
-      eval_set_id: evalSetId,
+      agent_id: agentId,
       name,
       description: options?.description,
       model: options?.model,

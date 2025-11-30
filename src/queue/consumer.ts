@@ -12,12 +12,18 @@ import type {
   GenerateJobPayload,
   ExecuteJobPayload,
   MonitorJobPayload,
-  AutoRefineJobPayload
+  AutoRefineJobPayload,
+  AgentDiscoveryJobPayload,
+  PromptImprovementJobPayload,
+  PromptEvaluationJobPayload
 } from '../types/queue';
 import { JobManager } from '../jobs/job-manager';
 import { TraceImportJob } from '../jobs/trace-import-job';
 import { EvalGenerationJob } from '../jobs/eval-generation-job';
 import { EvalExecutionJob } from '../jobs/eval-execution-job';
+import { AgentDiscoveryJob } from '../jobs/agent-discovery-job';
+import { PromptImprovementJob } from '../jobs/prompt-improvement-job';
+import { PromptEvaluationJob } from '../jobs/prompt-evaluation-job';
 
 /**
  * Cloudflare Queue message batch type
@@ -53,6 +59,10 @@ export interface QueueConsumerDeps {
   sandboxBinding?: DurableObjectNamespace<Sandbox>;
   encryptionKey: string;
   deadLetterQueue?: DeadLetterQueue;
+  /** Workers AI binding for embeddings */
+  ai?: Ai;
+  /** Vectorize binding for vector storage */
+  vectorize?: VectorizeIndex;
 }
 
 /**
@@ -64,6 +74,8 @@ export class QueueConsumer {
   private sandboxBinding?: DurableObjectNamespace<Sandbox>;
   private encryptionKey: string;
   private deadLetterQueue?: DeadLetterQueue;
+  private ai?: Ai;
+  private vectorize?: VectorizeIndex;
   private jobManager: JobManager;
 
   constructor(deps: QueueConsumerDeps) {
@@ -72,6 +84,8 @@ export class QueueConsumer {
     this.sandboxBinding = deps.sandboxBinding;
     this.encryptionKey = deps.encryptionKey;
     this.deadLetterQueue = deps.deadLetterQueue;
+    this.ai = deps.ai;
+    this.vectorize = deps.vectorize;
     this.jobManager = new JobManager(deps.db);
   }
 
@@ -153,6 +167,15 @@ export class QueueConsumer {
         case 'auto_refine':
           await this.processAutoRefineJob(job_id, workspace_id, payload as AutoRefineJobPayload);
           break;
+        case 'agent_discovery':
+          await this.processAgentDiscoveryJob(job_id, workspace_id, payload as AgentDiscoveryJobPayload);
+          break;
+        case 'prompt_improvement':
+          await this.processPromptImprovementJob(job_id, workspace_id, payload as PromptImprovementJobPayload);
+          break;
+        case 'prompt_evaluation':
+          await this.processPromptEvaluationJob(job_id, workspace_id, payload as PromptEvaluationJobPayload);
+          break;
         default:
           throw new Error(`Unknown job type: ${type}`);
       }
@@ -206,7 +229,7 @@ export class QueueConsumer {
     const genJob = new EvalGenerationJob(
       {
         jobId,
-        evalSetId: payload.eval_set_id,
+        agentId: payload.agent_id,
         name: payload.name,
         description: payload.description,
         model: payload.model,
@@ -301,6 +324,95 @@ export class QueueConsumer {
     // await refiner.refineEval(payload.eval_id, payload.alert_id, payload.trigger_metrics);
 
     await this.jobManager.updateJobStatus(jobId, 'running', 100);
+  }
+
+  /**
+   * Process agent discovery job
+   */
+  private async processAgentDiscoveryJob(
+    jobId: string,
+    workspaceId: string,
+    payload: AgentDiscoveryJobPayload
+  ): Promise<void> {
+    if (!this.anthropicApiKey) {
+      throw new Error('ANTHROPIC_API_KEY not configured');
+    }
+    if (!this.ai) {
+      throw new Error('Workers AI binding not configured');
+    }
+    if (!this.vectorize) {
+      throw new Error('Vectorize binding not configured');
+    }
+
+    const discoveryJob = new AgentDiscoveryJob(
+      {
+        jobId,
+        workspaceId,
+        similarityThreshold: payload.similarity_threshold,
+        minClusterSize: payload.min_cluster_size,
+        maxTracesToProcess: payload.max_traces
+      },
+      {
+        db: this.db,
+        ai: this.ai,
+        vectorize: this.vectorize,
+        anthropicApiKey: this.anthropicApiKey
+      }
+    );
+
+    await discoveryJob.execute();
+  }
+
+  /**
+   * Process prompt improvement job
+   */
+  private async processPromptImprovementJob(
+    jobId: string,
+    workspaceId: string,
+    payload: PromptImprovementJobPayload
+  ): Promise<void> {
+    if (!this.anthropicApiKey) {
+      throw new Error('ANTHROPIC_API_KEY not configured');
+    }
+
+    const improvementJob = new PromptImprovementJob(
+      {
+        jobId,
+        agentId: payload.agent_id,
+        workspaceId,
+        maxContradictions: payload.max_contradictions
+      },
+      {
+        db: this.db,
+        anthropicApiKey: this.anthropicApiKey
+      }
+    );
+
+    await improvementJob.execute();
+  }
+
+  /**
+   * Process prompt evaluation job
+   */
+  private async processPromptEvaluationJob(
+    jobId: string,
+    workspaceId: string,
+    payload: PromptEvaluationJobPayload
+  ): Promise<void> {
+    const evaluationJob = new PromptEvaluationJob(
+      {
+        jobId,
+        agentVersionId: payload.agent_version_id,
+        workspaceId,
+        maxTraces: payload.max_traces
+      },
+      {
+        db: this.db,
+        sandboxBinding: this.sandboxBinding
+      }
+    );
+
+    await evaluationJob.execute();
   }
 
   /**

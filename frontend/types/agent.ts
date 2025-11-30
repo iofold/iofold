@@ -38,6 +38,8 @@ export interface AgentWithDetails extends AgentWithVersion {
   metrics: {
     trace_count: number;
     feedback_count: number;
+    positive_feedback_count: number;
+    negative_feedback_count: number;
     eval_count: number;
     accuracy: number | null;
     contradiction_rate: number | null;

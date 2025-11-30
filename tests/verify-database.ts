@@ -43,7 +43,7 @@ async function verifyDatabase(db: D1Database): Promise<VerificationResult[]> {
     const tableNames = tables.results.map((r: any) => r.name);
     const requiredTables = [
       'users', 'workspaces', 'workspace_members', 'integrations', 'traces',
-      'eval_sets', 'feedback', 'evals', 'eval_executions', 'jobs'
+      'agents', 'feedback', 'evals', 'eval_executions', 'jobs'
     ];
 
     const missingTables = requiredTables.filter(t => !tableNames.includes(t));
@@ -108,7 +108,7 @@ async function verifyDatabase(db: D1Database): Promise<VerificationResult[]> {
     const criticalIndexes = [
       'idx_traces_workspace',
       'idx_traces_integration',
-      'idx_feedback_eval_set',
+      'idx_feedback_agent',
       'idx_executions_eval_trace',
       'idx_jobs_workspace_status',
     ];

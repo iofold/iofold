@@ -18,23 +18,23 @@ export default function TraceDetailPage() {
   const searchParams = useSearchParams()
   const traceId = params.id as string
 
-  // Get eval_set_id from URL or existing feedback
-  const urlEvalSetId = searchParams?.get('eval_set_id')
-  const [selectedEvalSetId, setSelectedEvalSetId] = useState<string | null>(urlEvalSetId || null)
+  // Get agent_id from URL or existing feedback
+  const urlAgentId = searchParams?.get('agent_id')
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(urlAgentId || null)
 
   const { data: trace, isLoading, error } = useQuery({
     queryKey: ['trace', traceId],
     queryFn: () => apiClient.getTrace(traceId),
   })
 
-  // Fetch eval sets for the dropdown
-  const { data: evalSetsData } = useQuery({
-    queryKey: ['eval-sets'],
-    queryFn: () => apiClient.listEvalSets(),
+  // Fetch agents for the dropdown
+  const { data: agentsData } = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => apiClient.listAgents(),
   })
 
-  // Auto-select first eval set if none is selected and no feedback exists
-  const effectiveEvalSetId = selectedEvalSetId || trace?.feedback?.eval_set_id || evalSetsData?.eval_sets?.[0]?.id
+  // Auto-select first agent if none is selected and no feedback exists
+  const effectiveAgentId = selectedAgentId || trace?.feedback?.agent_id || agentsData?.agents?.[0]?.id
 
   if (isLoading) {
     return (
@@ -201,48 +201,48 @@ export default function TraceDetailPage() {
           {trace.feedback ? 'Update Feedback' : 'Add Feedback'}
         </h2>
 
-        {/* Eval Set Selector - only show if no existing feedback */}
+        {/* Agent Selector - only show if no existing feedback */}
         {!trace.feedback && (
           <div className="mb-4">
             <label className="block text-sm font-medium text-muted-foreground mb-2">
-              Select Eval Set
+              Select Agent
             </label>
             <Select
-              value={selectedEvalSetId || ''}
-              onValueChange={(value) => setSelectedEvalSetId(value)}
+              value={selectedAgentId || ''}
+              onValueChange={(value) => setSelectedAgentId(value)}
             >
               <SelectTrigger className="w-full max-w-xs">
-                <SelectValue placeholder="Select an eval set..." />
+                <SelectValue placeholder="Select an agent..." />
               </SelectTrigger>
               <SelectContent>
-                {evalSetsData?.eval_sets?.map((evalSet) => (
-                  <SelectItem key={evalSet.id} value={evalSet.id}>
-                    {evalSet.name}
+                {agentsData?.agents?.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>
+                    {agent.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {!selectedEvalSetId && (
+            {!selectedAgentId && (
               <p className="text-sm text-muted-foreground mt-2">
-                Please select an eval set before providing feedback.
+                Please select an agent before providing feedback.
               </p>
             )}
           </div>
         )}
 
-        {/* Show feedback buttons only if eval set is available */}
-        {effectiveEvalSetId ? (
+        {/* Show feedback buttons only if agent is available */}
+        {effectiveAgentId ? (
           <TraceFeedback
             traceId={trace.id}
-            evalSetId={effectiveEvalSetId}
+            agentId={effectiveAgentId}
             currentRating={trace.feedback?.rating}
             feedbackId={trace.feedback?.id}
           />
         ) : (
           <div className="text-sm text-muted-foreground">
-            {evalSetsData?.eval_sets?.length === 0
-              ? 'Create an eval set first to enable feedback.'
-              : 'Select an eval set above to enable feedback buttons.'}
+            {agentsData?.agents?.length === 0
+              ? 'Create an agent first to enable feedback.'
+              : 'Select an agent above to enable feedback buttons.'}
           </div>
         )}
       </Card>

@@ -314,18 +314,24 @@ test.describe('Agent Version Management', () => {
     await page.goto(`/agents/${agent.id}`);
     await page.waitForLoadState('networkidle');
 
+    // Wait for versions section to load
+    await expect(page.locator('h2:has-text("Versions")')).toBeVisible();
+    await expect(page.locator('text=Version 1')).toBeVisible({ timeout: 10000 });
+
     // Verify prompt is not visible initially
-    await expect(page.locator('pre').filter({ hasText: promptTemplate })).not.toBeVisible();
+    await expect(page.locator('text=Prompt Template:')).not.toBeVisible();
 
-    // Click expand button (chevron down)
-    await page.locator('button:has(svg)').filter({ hasText: '' }).last().click();
+    // Find and click the expand/collapse button (chevron) for Version 1
+    // The button with the chevron icon is in the same container as "Version 1" text
+    const versionSection = page.locator('div').filter({ hasText: /^Version 1/ }).first();
+    await versionSection.locator('button').last().click();
 
-    // Wait for expansion
-    await page.waitForTimeout(300);
+    // Wait for expansion animation
+    await page.waitForTimeout(500);
 
     // Verify prompt template is now visible
-    await expect(page.locator('pre').filter({ hasText: promptTemplate })).toBeVisible();
-    await expect(page.locator('text=Prompt Template:')).toBeVisible();
+    await expect(page.locator('text=Prompt Template:')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('pre').filter({ hasText: 'helpful assistant' })).toBeVisible();
   });
 
   test('TEST-A09: should show metrics on agent detail page', async ({ page }) => {

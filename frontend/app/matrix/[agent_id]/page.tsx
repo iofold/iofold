@@ -2,21 +2,24 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useParams } from 'next/navigation'
 import { apiClient } from '@/lib/api-client'
 import { MatrixTable } from '@/components/matrix-table'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
-export default function MatrixPage({ params }: { params: { eval_set_id: string } }) {
+export default function MatrixPage() {
+  const params = useParams()
+  const agentId = params.agent_id as string
   const [selectedEvalIds, setSelectedEvalIds] = useState<string[]>([])
   const [filter, setFilter] = useState<'all' | 'contradictions_only' | 'errors_only'>('all')
 
   const { data, isLoading } = useQuery({
-    queryKey: ['matrix', params.eval_set_id, selectedEvalIds.join(','), filter],
+    queryKey: ['matrix', agentId, selectedEvalIds.join(','), filter],
     queryFn: () => {
       if (selectedEvalIds.length === 0) return null
-      return apiClient.getMatrix(params.eval_set_id, {
+      return apiClient.getMatrix(agentId, {
         eval_ids: selectedEvalIds.join(','),
         filter,
         limit: 50,
@@ -28,10 +31,10 @@ export default function MatrixPage({ params }: { params: { eval_set_id: string }
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-6">
-        <Link href={`/eval-sets/${params.eval_set_id}`}>
+        <Link href={`/agents/${agentId}`}>
           <Button variant="ghost" size="sm">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Eval Set
+            Back to Agent
           </Button>
         </Link>
       </div>

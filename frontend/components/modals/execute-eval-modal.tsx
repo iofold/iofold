@@ -21,10 +21,10 @@ import { Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
 interface ExecuteEvalModalProps {
   children: React.ReactNode
   evalId: string
-  evalSetId: string
+  agentId: string
 }
 
-export function ExecuteEvalModal({ children, evalId, evalSetId }: ExecuteEvalModalProps) {
+export function ExecuteEvalModal({ children, evalId, agentId }: ExecuteEvalModalProps) {
   const [open, setOpen] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobData, setJobData] = useState<Job | null>(null)
@@ -38,8 +38,8 @@ export function ExecuteEvalModal({ children, evalId, evalSetId }: ExecuteEvalMod
 
   // Fetch traces for selection (only when modal is open and not using all traces)
   const { data: tracesData, isLoading: loadingTraces } = useQuery({
-    queryKey: ['traces', evalSetId],
-    queryFn: () => apiClient.listTraces({ eval_set_id: evalSetId, limit: 100 }),
+    queryKey: ['traces', agentId],
+    queryFn: () => apiClient.listTraces({ agent_id: agentId, limit: 100 }),
     enabled: open && !useAllTraces,
   })
 
@@ -217,7 +217,7 @@ export function ExecuteEvalModal({ children, evalId, evalSetId }: ExecuteEvalMod
                       disabled={isProcessing}
                     />
                     <span className="text-sm">
-                      Execute on all traces in eval set
+                      Execute on all traces for this agent
                     </span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -240,7 +240,7 @@ export function ExecuteEvalModal({ children, evalId, evalSetId }: ExecuteEvalMod
                     <div className="text-sm text-muted-foreground">Loading traces...</div>
                   ) : tracesData?.traces.length === 0 ? (
                     <div className="text-sm text-muted-foreground">
-                      No traces found in this eval set
+                      No traces found for this agent
                     </div>
                   ) : (
                     <div className="space-y-2">

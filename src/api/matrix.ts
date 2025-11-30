@@ -192,7 +192,7 @@ function extractTraceSummary(traceData: string): { input_preview: string; output
 }
 
 /**
- * GET /api/eval-sets/:id/matrix
+ * GET /api/agents/:id/matrix
  *
  * Returns paginated comparison matrix showing eval predictions vs human feedback.
  *
@@ -207,12 +207,12 @@ function extractTraceSummary(traceData: string): { input_preview: string; output
  * Performance optimizations:
  * - Single query with JOINs to minimize database round trips
  * - Cursor-based pagination for consistent performance
- * - Index usage on (eval_set_id, created_at, trace_id)
+ * - Index usage on (agent_id, created_at, trace_id)
  * - Stats computed only for filtered subset
  */
 export async function getComparisonMatrix(
   db: D1Database,
-  evalSetId: string,
+  agentId: string,
   queryParams: URLSearchParams
 ): Promise<Response> {
   try {
@@ -244,8 +244,8 @@ export async function getComparisonMatrix(
     }
 
     // Build filter conditions
-    const conditions: string[] = ['f.eval_set_id = ?'];
-    const filterParams: any[] = [evalSetId];
+    const conditions: string[] = ['f.agent_id = ?'];
+    const filterParams: any[] = [agentId];
 
     if (params.rating) {
       conditions.push('f.rating = ?');
