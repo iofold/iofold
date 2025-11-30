@@ -6,6 +6,67 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### Frontend Job Queue Dashboard Component
+
+**Time:** 23:45 UTC
+
+**Task:** Created frontend job queue dashboard components with retry support (Task 8 of job queue enhancements plan).
+
+**Changes Made:**
+
+1. **Created frontend/components/ui/badge.tsx:**
+   - Added Badge component using class-variance-authority
+   - Variants: default, secondary, destructive, outline, success, warning, error
+   - Styled using Tailwind CSS and HSL color variables
+   - Supports custom className and variant props
+
+2. **Created frontend/components/jobs/job-retry-badge.tsx:**
+   - JobRetryBadge component displaying job status with icons
+   - Shows retry count (e.g., "Retry 2/5") for queued jobs
+   - Status icons: CheckCircle, XCircle, RefreshCw, Clock, AlertTriangle
+   - Tooltip showing detailed status, retry count, and error category
+   - Error category mapping (transient_network, transient_rate_limit, etc.)
+   - Color-coded by status (success, error, warning, primary, muted)
+
+3. **Created frontend/components/jobs/job-queue-dashboard.tsx:**
+   - Full dashboard component with stats and job list
+   - Auto-refresh every 5 seconds (configurable via refreshInterval prop)
+   - Stats overview grid showing queued, running, completed, failed counts
+   - Animated icons for each status category
+   - Job list with detailed information:
+     - Job type labels (Import Traces, Generate Eval, etc.)
+     - Status badges with retry info
+     - Created timestamp using date-fns formatDistanceToNow
+     - Progress bar for running jobs
+     - Error messages for failed jobs
+     - Manual retry button for failed jobs
+   - Fetches from `/api/jobs?limit=20` endpoint
+   - Handles retry via `/api/jobs/:id/retry` endpoint
+
+4. **Created frontend/components/jobs/index.ts:**
+   - Export file for JobQueueDashboard and JobRetryBadge
+
+**Files Created:**
+- `frontend/components/ui/badge.tsx`
+- `frontend/components/jobs/job-retry-badge.tsx`
+- `frontend/components/jobs/job-queue-dashboard.tsx`
+- `frontend/components/jobs/index.ts`
+
+**TypeScript Check:**
+- No errors in newly created components
+- Pre-existing e2e test errors remain (not related to this task)
+
+**Dependencies Used:**
+- lucide-react (already installed)
+- date-fns v4.1.0 (already installed)
+- class-variance-authority v0.7.1 (already installed)
+
+**Next Steps:**
+- Task 9: Add job queue section to system page
+- Task 10: Update progress log and run tests
+
+---
+
 ### API Endpoints: Job Retry History and Manual Retry
 
 **Time:** 22:30 UTC
