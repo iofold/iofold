@@ -51,6 +51,62 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ---
 
+### JobManager Retry Tracking Implementation
+
+**Time:** 19:42 UTC
+
+**Task:** Enhanced JobManager with retry tracking capabilities (Task 6 of job queue enhancements plan).
+
+**Changes Made:**
+
+1. **Updated src/jobs/job-manager.ts:**
+   - Added `ErrorCategory` import from `../errors/classifier`
+   - Updated `createJob()` method signature:
+     - Added `maxRetries?: number` option (defaults to 5)
+     - Added `priority?: number` option (defaults to 0)
+     - Updated INSERT query to include `max_retries` and `priority` columns
+   - Added `getJobRetryHistory(jobId: string)` method:
+     - Queries `job_retry_history` table for all retry attempts
+     - Returns array of retry records with attempt, error, category, delay, and timestamp
+     - Orders by attempt number ascending
+   - Added `listJobsPendingRetry(workspaceId: string, limit = 50)` method:
+     - Queries jobs with `next_retry_at IS NOT NULL`
+     - Filters for queued jobs where retry time has arrived
+     - Orders by priority DESC, next_retry_at ASC
+     - Returns Job[] array
+   - Added `updateJobErrorCategory(id: string, category: ErrorCategory)` method:
+     - Updates error_category field for a job
+   - Added `getJobsByErrorCategory(workspaceId: string, category: ErrorCategory, limit = 50)` method:
+     - Retrieves jobs filtered by error category
+     - Orders by created_at DESC
+     - Useful for error pattern analysis
+
+2. **Created src/jobs/job-manager.test.ts:**
+   - Test coverage for creating jobs with retry configuration
+   - Test coverage for creating jobs with default retry values
+   - Test coverage for getJobRetryHistory()
+   - Test coverage for listJobsPendingRetry() with default and custom limit
+   - Test coverage for updateJobErrorCategory()
+   - Test coverage for getJobsByErrorCategory() with default and custom limit
+   - All tests passing (8/8)
+
+**Files Changed:**
+- `src/jobs/job-manager.ts`
+- `src/jobs/job-manager.test.ts` (new)
+
+**Verification:**
+- All 8 tests passing
+- Methods correctly interact with new database schema (retry_count, max_retries, error_category, next_retry_at, priority columns)
+- Integrates with job_retry_history table from migration 006
+
+**Commit:** 7398bb7
+
+**Next Steps:**
+- Task 7: Add API endpoint for job retry history
+- Task 8: Create frontend job queue dashboard component
+
+---
+
 ### Queue Consumer: Exponential Backoff and Error Classification
 
 **Time:** 21:37 UTC
