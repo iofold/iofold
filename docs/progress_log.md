@@ -6,6 +6,45 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### Refactored Components to Use Semantic Color Variables (Task 5)
+
+**Time:** 22:45 UTC
+
+**Summary:** Systematically replaced hardcoded Tailwind color classes with semantic CSS variable-based classes across all specified components. Applied consistent color mappings while preserving intentionally differentiated colors (like trace timeline span types).
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/frontend/components/feedback-buttons.tsx`
+- `/home/ygupta/workspace/iofold/frontend/components/feedback-history.tsx`
+- `/home/ygupta/workspace/iofold/frontend/components/swipable-trace-card.tsx`
+- `/home/ygupta/workspace/iofold/frontend/components/traces/trace-timeline.tsx`
+- `/home/ygupta/workspace/iofold/frontend/app/agents/page.tsx`
+- `/home/ygupta/workspace/iofold/frontend/app/agents/[id]/page.tsx`
+- `/home/ygupta/workspace/iofold/frontend/components/matrix/resolution-actions.tsx`
+- `/home/ygupta/workspace/iofold/frontend/components/matrix/agent-version-overview.tsx`
+
+**Color Mappings Applied:**
+- `green-50` → `bg-success/10`
+- `green-500/600/700` → `text-success` or `bg-success`
+- `red-50` → `bg-destructive/10`
+- `red-500/600/700` → `text-destructive` or `bg-destructive`
+- `yellow-50` → `bg-warning/10`
+- `yellow-500/600/700` → `text-warning` or `bg-warning`
+- `blue-50` → `bg-info/10`
+- `blue-500/600/700` → `text-info` or `bg-info`
+- `gray-*` → `text-muted-foreground`, `bg-muted`, `border-border`
+- `slate-*` → `text-foreground`, `text-muted-foreground`
+
+**Special Considerations:**
+- Preserved differentiated colors in trace-timeline.tsx for span types (blue/purple/green/orange/cyan) as they serve a functional purpose for visual distinction
+- Maintained role colors in swipable-trace-card.tsx (user/assistant/system) for message differentiation
+- Updated all feedback states, loading states, error states, and status badges consistently
+
+**Next Steps:**
+- Test the changes visually to ensure color consistency
+- Verify that the semantic colors are properly defined in the CSS variables
+
+---
+
 ### Verified Sidebar Component Already Uses CSS Variables (Task 7)
 
 **Time:** 21:15 UTC
