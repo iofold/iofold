@@ -1,20 +1,28 @@
 /**
- * SwipableTraceCard - Card-swiping interface with gesture detection
+ * SwipableTraceCard - Enhanced card-swiping interface with gesture detection
  * Features:
  * - Swipe right (>100px): Positive feedback (green glow)
  * - Swipe left (>100px): Negative feedback (red glow)
  * - Swipe down (>100px): Neutral feedback (gray glow)
  * - Keyboard shortcuts: 1/2/3 for positive/neutral/negative
+ * - Message rendering by role with color coding
+ * - Tool call visualization with expandable sections
+ * - Compact feedback buttons with selection state
+ * - Loading state during feedback submission
+ * - Optional notes field for detailed feedback
  * - Smooth animations with framer-motion
  * - Mobile haptic feedback
  */
 
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
-import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion'
+import { useEffect, useRef, useCallback, useState } from 'react'
+import { motion, useMotionValue, useTransform, PanInfo, AnimatePresence } from 'framer-motion'
 import { parseTrace, getStatusEmoji, formatRelativeTime, formatDuration } from '@/lib/trace-parser'
-import type { Trace } from '@/types/api'
+import { ThumbsUp, ThumbsDown, Minus, ChevronDown, ChevronUp, Clock, Calendar, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import type { Trace, Message, ToolCall } from '@/types/api'
 import type { ParsedTrace } from '@/types/trace'
 
 // ============================================================================
@@ -52,10 +60,134 @@ const GLOW_COLORS = {
 interface SwipableTraceCardProps {
   trace: Trace
   index: number
-  onFeedback: (rating: 'positive' | 'negative' | 'neutral') => void
+  onFeedback: (rating: 'positive' | 'negative' | 'neutral', notes?: string) => void
   onSkip?: () => void
   isTop?: boolean // Whether this card is on top of the stack
+  isLoading?: boolean // Whether feedback is being submitted
   className?: string
+}
+
+// ============================================================================
+// Helper Components
+// ============================================================================
+
+function MessageByRole({ message }: { message: Message }) {
+  const roleColors = {
+    user: {
+      bg: 'bg-blue-50',
+      border: 'border-blue-200',
+      text: 'text-blue-900',
+      label: 'text-blue-700',
+      icon: '👤',
+    },
+    assistant: {
+      bg: 'bg-green-50',
+      border: 'border-green-200',
+      text: 'text-green-900',
+      label: 'text-green-700',
+      icon: '🤖',
+    },
+    system: {
+      bg: 'bg-gray-50',
+      border: 'border-gray-200',
+      text: 'text-gray-900',
+      label: 'text-gray-700',
+      icon: '⚙️',
+    },
+  }
+
+  const colors = roleColors[message.role]
+
+  return (
+    <div className={cn('rounded-lg border p-3', colors.bg, colors.border)}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm">{colors.icon}</span>
+        <span className={cn('text-xs font-bold uppercase tracking-wide', colors.label)}>
+          {message.role}
+        </span>
+      </div>
+      <p className={cn('text-sm leading-relaxed whitespace-pre-wrap', colors.text)}>
+        {message.content}
+      </p>
+    </div>
+  )
+}
+
+function ToolCallItem({ tool, index, isExpanded, onToggle }: {
+  tool: ToolCall
+  index: number
+  isExpanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm">🔧</span>
+          <span className="text-sm font-medium text-gray-900">
+            {tool.tool_name}
+          </span>
+          {tool.error && (
+            <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded">
+              Error
+            </span>
+          )}
+        </div>
+        {isExpanded ? (
+          <ChevronUp className="w-4 h-4 text-gray-500" />
+        ) : (
+          <ChevronDown className="w-4 h-4 text-gray-500" />
+        )}
+      </button>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="border-t border-gray-200 bg-gray-50"
+          >
+            <div className="p-3 space-y-3">
+              {/* Arguments */}
+              {tool.arguments && Object.keys(tool.arguments).length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 mb-1">Arguments:</div>
+                  <pre className="text-xs bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                    {JSON.stringify(tool.arguments, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {/* Result */}
+              {tool.result !== undefined && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-600 mb-1">Result:</div>
+                  <pre className="text-xs bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                    {JSON.stringify(tool.result, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {/* Error */}
+              {tool.error && (
+                <div>
+                  <div className="text-xs font-semibold text-red-600 mb-1">Error:</div>
+                  <div className="text-xs text-red-700 bg-red-50 p-2 rounded border border-red-200">
+                    {tool.error}
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
 }
 
 // ============================================================================
@@ -68,13 +200,20 @@ export function SwipableTraceCard({
   onFeedback,
   onSkip,
   isTop = true,
+  isLoading = false,
   className = '',
 }: SwipableTraceCardProps) {
   const cardRef = useRef<HTMLDivElement>(null)
 
+  // Local state
+  const [notes, setNotes] = useState('')
+  const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set())
+  const [selectedRating, setSelectedRating] = useState<'positive' | 'negative' | 'neutral' | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+
   // Parse trace data
   const parsed: ParsedTrace = parseTrace(trace, index + 1, {
-    maxMessageLength: 200,
+    maxMessageLength: 500,
     includeMetadata: false,
   })
 
@@ -149,7 +288,26 @@ export function SwipableTraceCard({
     }
   }
 
+  const toggleToolExpansion = (index: number) => {
+    setExpandedTools((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(index)) {
+        newSet.delete(index)
+      } else {
+        newSet.add(index)
+      }
+      return newSet
+    })
+  }
+
+  const handleFeedbackSubmit = (rating: 'positive' | 'negative' | 'neutral') => {
+    setSelectedRating(rating)
+    triggerHapticFeedback('medium')
+    onFeedback(rating, notes.trim() || undefined)
+  }
+
   const handleDragEnd = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    setIsDragging(false)
     const { offset, velocity } = info
     const swipeX = offset.x
     const swipeY = offset.y
@@ -175,50 +333,45 @@ export function SwipableTraceCard({
       // Horizontal swipe
       if (swipeX > 0) {
         // Right swipe - Positive
-        triggerHapticFeedback('medium')
-        onFeedback('positive')
+        handleFeedbackSubmit('positive')
       } else {
         // Left swipe - Negative
-        triggerHapticFeedback('medium')
-        onFeedback('negative')
+        handleFeedbackSubmit('negative')
       }
     } else if (absY > SWIPE_THRESHOLD && swipeY > 0) {
       // Down swipe - Neutral
-      triggerHapticFeedback('light')
-      onFeedback('neutral')
+      handleFeedbackSubmit('neutral')
     }
   }
 
   const handleDragStart = () => {
+    setIsDragging(true)
     triggerHapticFeedback('light')
   }
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    // Only handle keys if this is the top card
-    if (!isTop) return
+    // Only handle keys if this is the top card and not in textarea
+    if (!isTop || (e.target as HTMLElement).tagName === 'TEXTAREA') return
 
     switch (e.key) {
       case '1':
         e.preventDefault()
-        triggerHapticFeedback('medium')
-        onFeedback('positive')
+        handleFeedbackSubmit('positive')
         break
       case '2':
         e.preventDefault()
-        triggerHapticFeedback('light')
-        onFeedback('neutral')
+        handleFeedbackSubmit('neutral')
         break
       case '3':
         e.preventDefault()
-        triggerHapticFeedback('medium')
-        onFeedback('negative')
+        handleFeedbackSubmit('negative')
         break
       case ' ':
         e.preventDefault()
         onSkip?.()
         break
     }
-  }, [isTop, onFeedback, onSkip])
+  }, [isTop, onSkip, notes])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -270,15 +423,30 @@ export function SwipableTraceCard({
         duration: ENTER_DURATION / 1000,
       }}
       // Drag configuration
-      drag={isTop}
+      drag={isTop && !isLoading}
       dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
       dragElastic={DRAG_ELASTIC}
       dragSnapToOrigin
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
-      whileHover={isTop ? { scale: 1.02, y: -4 } : {}}
-      whileTap={isTop ? { cursor: 'grabbing', scale: 1.0 } : {}}
+      whileHover={isTop && !isLoading ? { scale: 1.02, y: -4 } : {}}
+      whileTap={isTop && !isLoading ? { cursor: 'grabbing', scale: 1.0 } : {}}
     >
+      {/* Loading Overlay */}
+      {isLoading && (
+        <motion.div
+          className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-3" />
+            <p className="text-sm font-medium text-gray-700">Submitting feedback...</p>
+          </div>
+        </motion.div>
+      )}
+
       <div className="p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-200">
@@ -305,96 +473,125 @@ export function SwipableTraceCard({
 
         {/* Main Content */}
         <div className="space-y-4 mb-6 max-h-[45vh] overflow-y-auto">
-          {/* Last Exchange */}
-          {lastExchange.human && (
-            <div className="space-y-1">
-              <div className="flex items-start gap-2">
-                <span className="text-lg" role="img" aria-label="Human">
-                  👤
-                </span>
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-gray-700 mb-1">Human:</div>
-                  <div className="text-sm text-gray-900 leading-relaxed">
-                    {lastExchange.human.content}
-                  </div>
-                  {lastExchange.human.truncated && (
-                    <button
-                      className="text-xs text-blue-600 hover:text-blue-700 mt-1"
-                      title={lastExchange.human.fullContent}
-                    >
-                      Show more...
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {lastExchange.assistant && (
-            <div className="space-y-1">
-              <div className="flex items-start gap-2">
-                <span className="text-lg" role="img" aria-label="Assistant">
-                  🤖
-                </span>
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-gray-700 mb-1">Assistant:</div>
-                  <div className="text-sm text-gray-900 leading-relaxed">
-                    {lastExchange.assistant.content}
-                  </div>
-                  {lastExchange.assistant.truncated && (
-                    <button
-                      className="text-xs text-blue-600 hover:text-blue-700 mt-1"
-                      title={lastExchange.assistant.fullContent}
-                    >
-                      Show more...
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Tool Calls */}
-          {toolCalls.length > 0 && (
-            <div className="space-y-2 pt-2 border-t border-gray-100">
-              {toolCalls.map((tool, i) => (
-                <div key={i} className="flex items-start gap-2 text-sm">
-                  <span className="text-base" role="img" aria-label="Tool">
-                    🔧
-                  </span>
-                  <div className="flex-1 font-mono">
-                    <div className="text-gray-700">
-                      <span className="font-medium">Used tool:</span>{' '}
-                      {tool.module && <span className="text-gray-500">{tool.module}.</span>}
-                      {tool.name}
-                    </div>
-                    {tool.result !== undefined && (
-                      <div className="text-xs text-gray-600 mt-1 pl-4">
-                        → Result: {JSON.stringify(tool.result).substring(0, 100)}
-                        {JSON.stringify(tool.result).length > 100 && '...'}
-                      </div>
-                    )}
-                    {tool.error && (
-                      <div className="text-xs text-red-600 mt-1 pl-4 flex items-center gap-1">
-                        <span role="img" aria-label="Error">
-                          ⚠️
-                        </span>
-                        Error: {tool.error}
-                      </div>
-                    )}
-                  </div>
+          {/* Messages by Role */}
+          {trace.steps.length > 0 && (
+            <div className="space-y-3">
+              {trace.steps.map((step, stepIdx) => (
+                <div key={stepIdx} className="space-y-2">
+                  {step.messages_added?.map((message, msgIdx) => (
+                    <MessageByRole key={`${stepIdx}-${msgIdx}`} message={message} />
+                  ))}
                 </div>
               ))}
             </div>
           )}
 
+          {/* Tool Calls */}
+          {trace.steps.some(s => s.tool_calls?.length > 0) && (
+            <div className="space-y-2 pt-2 border-t border-gray-100">
+              <div className="text-xs font-semibold text-gray-600 mb-2">Tool Calls:</div>
+              {trace.steps.map((step, stepIdx) =>
+                step.tool_calls?.map((tool, toolIdx) => {
+                  const globalIdx = stepIdx * 100 + toolIdx
+                  return (
+                    <ToolCallItem
+                      key={globalIdx}
+                      tool={tool}
+                      index={globalIdx}
+                      isExpanded={expandedTools.has(globalIdx)}
+                      onToggle={() => toggleToolExpansion(globalIdx)}
+                    />
+                  )
+                })
+              )}
+            </div>
+          )}
+
           {/* Empty state */}
-          {!lastExchange.human && !lastExchange.assistant && toolCalls.length === 0 && (
+          {trace.steps.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               <p className="text-sm">No messages or tool calls in this trace</p>
               <p className="text-xs mt-1">This trace may be incomplete or still processing</p>
             </div>
           )}
+        </div>
+
+        {/* Notes Section */}
+        <div className="mb-4 border-t border-gray-200 pt-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Notes (Optional)
+          </label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Add any observations or context..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all"
+            rows={2}
+            maxLength={500}
+            disabled={isLoading}
+          />
+          <div className="flex justify-between items-center mt-1">
+            <div className="text-xs text-gray-500">
+              {notes.length} / 500 characters
+            </div>
+            {notes.length > 0 && (
+              <button
+                onClick={() => setNotes('')}
+                className="text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                disabled={isLoading}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Compact Feedback Buttons */}
+        <div className="flex justify-center gap-3 mb-4">
+          <Button
+            onClick={() => handleFeedbackSubmit('positive')}
+            variant={selectedRating === 'positive' ? 'success' : 'outline'}
+            size="lg"
+            disabled={isLoading}
+            loading={isLoading && selectedRating === 'positive'}
+            className={cn(
+              'flex-1 max-w-[140px]',
+              selectedRating === 'positive' && 'ring-2 ring-green-500 ring-offset-2'
+            )}
+          >
+            <ThumbsUp className="w-4 h-4" />
+            Good
+          </Button>
+
+          <Button
+            onClick={() => handleFeedbackSubmit('neutral')}
+            variant={selectedRating === 'neutral' ? 'secondary' : 'outline'}
+            size="lg"
+            disabled={isLoading}
+            loading={isLoading && selectedRating === 'neutral'}
+            className={cn(
+              'flex-1 max-w-[140px]',
+              selectedRating === 'neutral' && 'ring-2 ring-gray-500 ring-offset-2'
+            )}
+          >
+            <Minus className="w-4 h-4" />
+            Okay
+          </Button>
+
+          <Button
+            onClick={() => handleFeedbackSubmit('negative')}
+            variant={selectedRating === 'negative' ? 'danger' : 'outline'}
+            size="lg"
+            disabled={isLoading}
+            loading={isLoading && selectedRating === 'negative'}
+            className={cn(
+              'flex-1 max-w-[140px]',
+              selectedRating === 'negative' && 'ring-2 ring-red-500 ring-offset-2'
+            )}
+          >
+            <ThumbsDown className="w-4 h-4" />
+            Bad
+          </Button>
         </div>
 
         {/* Action Hints */}
