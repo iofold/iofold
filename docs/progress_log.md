@@ -16301,3 +16301,100 @@ Tests were failing because:
 **Next Steps:** Task 3 - Create database migration for job retry tracking (retry_count, max_retries, error_category)
 
 ---
+
+### Job Queue Enhancements - Continued (Tasks 3-10)
+
+**Time:** 2025-11-30 (continued session)
+
+**Task:** Completed the remaining 8 tasks of the job queue enhancement implementation following subagent-driven development pattern.
+
+#### Task 3: Database Migration for Job Retry Tracking
+- Created `migrations/006_job_retry_tracking.sql`
+- Expanded job type CHECK constraint to include all 10 job types
+- Added columns: `retry_count`, `max_retries`, `error_category`, `last_error_at`, `next_retry_at`, `priority`
+- Created `job_retry_history` table for audit trail
+- Added indexes for retry scheduling and error category analysis
+- **Commit:** `8dc4283`
+
+#### Task 4: Update QueueMessage and DeadLetterMessage Types
+- Added `RetryAttempt` interface for retry history tracking
+- Enhanced `QueueMessage` with error_category, last_error_at, retry_history fields
+- Enhanced `DeadLetterMessage` with error_category, retry_history, requires_user_action, suggested_action
+- **Commits:** `bd5f821`, `8b7c10c`
+
+#### Task 5: Update Queue Consumer with Retry Logic
+- Added `handleMessageError()` method for error classification and retry decisions
+- Added `recordRetryAttempt()` for database audit trail
+- Added `moveToDeadLetterQueueEnhanced()` with rich error context
+- Updated `processBatch()` with new error handling flow
+- All 4 tests passed
+- **Commits:** `58c2d54`, `447dfb2`
+
+#### Task 6: Update JobManager with Retry Tracking
+- Enhanced `createJob()` with maxRetries and priority options
+- Added `getJobRetryHistory(jobId)` method
+- Added `listJobsPendingRetry(workspaceId, limit)` method
+- Added `updateJobErrorCategory(id, category)` method
+- Added `getJobsByErrorCategory(workspaceId, category, limit)` method
+- All 8 tests passed
+- **Commits:** `7398bb7`, `31037e1`
+
+#### Task 7: Add API Endpoint for Job Retry History
+- Added `GET /api/jobs/:id/retries` - Returns retry history for a job
+- Added `POST /api/jobs/:id/retry` - Manual retry for failed jobs
+- **Commits:** `a566408`, `34e71a1`
+
+#### Task 8: Create Frontend Job Queue Dashboard Component
+- Created `frontend/components/jobs/job-retry-badge.tsx` - Status badge with retry info
+- Created `frontend/components/jobs/job-queue-dashboard.tsx` - Full dashboard with:
+  - Stats overview (queued, running, completed, failed counts)
+  - Auto-refresh polling (5s default)
+  - Job list with type labels, status badges, timestamps
+  - Progress bars for running jobs
+  - Manual retry button for failed jobs
+- Created `frontend/components/jobs/index.ts` - Clean exports
+- Created `frontend/components/ui/badge.tsx` - Reusable badge component
+- **Commit:** `7f60c7f`
+
+#### Task 9: Add Job Queue Section to System Page
+- Imported `JobQueueDashboard` into System page
+- Added new section after Performance Metrics
+- **Commit:** `bfdfa9e`
+
+#### Summary of Files Changed
+**Backend (src/):**
+- `src/errors/classifier.ts` - Error classification module
+- `src/errors/classifier.test.ts` - Error classifier tests
+- `src/retry/backoff.ts` - Exponential backoff module
+- `src/retry/backoff.test.ts` - Backoff tests
+- `src/types/queue.ts` - Enhanced queue types
+- `src/queue/consumer.ts` - Queue consumer with retry logic
+- `src/queue/consumer.test.ts` - Consumer tests
+- `src/jobs/job-manager.ts` - JobManager with retry tracking
+- `src/jobs/job-manager.test.ts` - JobManager tests
+- `src/api/jobs.ts` - Job API endpoints
+- `migrations/006_job_retry_tracking.sql` - Database migration
+
+**Frontend (frontend/):**
+- `frontend/components/ui/badge.tsx` - Badge component
+- `frontend/components/jobs/job-retry-badge.tsx` - Job retry badge
+- `frontend/components/jobs/job-queue-dashboard.tsx` - Job dashboard
+- `frontend/components/jobs/index.ts` - Component exports
+- `frontend/app/system/page.tsx` - System page integration
+
+**Test Results:**
+- Error Classifier: 10/10 tests passed
+- Exponential Backoff: 8/8 tests passed
+- Queue Consumer: 4/4 tests passed
+- JobManager: 8/8 tests passed
+- All TypeScript compilation successful
+
+**Architecture Summary:**
+The job queue system now supports:
+1. **Intelligent Error Classification** - Categorizes errors as transient (retryable) or permanent (move to DLQ)
+2. **Exponential Backoff with Jitter** - Prevents thundering herd, respects rate limits
+3. **Full Audit Trail** - Every retry attempt is logged for debugging
+4. **Manual Retry Support** - Users can retry failed jobs from the UI
+5. **Visual Dashboard** - Real-time job queue monitoring on System page
+
+---
