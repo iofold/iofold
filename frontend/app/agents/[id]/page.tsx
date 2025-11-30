@@ -230,12 +230,13 @@ export default function AgentDetailPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <h3 className="font-semibold">Version {version.version}</h3>
-                        <span className={`px-2 py-1 text-xs rounded-full font-medium ${getVersionStatusColor(version.status)}`}>
-                          {version.status}
-                        </span>
-                        {isActive && (
+                        {isActive ? (
                           <span className="px-2 py-1 text-xs rounded-full font-medium text-blue-600 bg-blue-50">
                             Active
+                          </span>
+                        ) : (
+                          <span className={`px-2 py-1 text-xs rounded-full font-medium ${getVersionStatusColor(version.status)}`}>
+                            {version.status}
                           </span>
                         )}
                       </div>

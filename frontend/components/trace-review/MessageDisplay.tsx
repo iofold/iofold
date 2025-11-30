@@ -108,7 +108,7 @@ export function MessageDisplay({ lastExchange, onExpand }: MessageDisplayProps) 
             <span role="img" aria-label="Human" className="text-lg">👤</span>
             <span className="text-sm font-semibold text-gray-500">Human:</span>
           </div>
-          <div className="ml-7 text-sm text-gray-400 italic">
+          <div className="ml-7 text-sm text-gray-600 italic">
             No human message
           </div>
         </div>
@@ -120,7 +120,7 @@ export function MessageDisplay({ lastExchange, onExpand }: MessageDisplayProps) 
             <span role="img" aria-label="Assistant" className="text-lg">🤖</span>
             <span className="text-sm font-semibold text-gray-500">Assistant:</span>
           </div>
-          <div className="ml-7 text-sm text-gray-400 italic">
+          <div className="ml-7 text-sm text-gray-600 italic">
             No assistant response
           </div>
         </div>

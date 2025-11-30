@@ -1,148 +1,343 @@
 'use client'
 
-import { Suspense, useState, useMemo } from 'react'
+import { Suspense, useState, useMemo, useEffect, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { apiClient } from '@/lib/api-client'
-import { TraceFeedback } from '@/components/trace-feedback'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ErrorState } from '@/components/ui/error-state'
-import { Upload, Inbox, Filter, X, Keyboard } from 'lucide-react'
-import { formatRelativeTime, getRatingEmoji, truncate } from '@/lib/utils'
+import {
+  Upload,
+  Filter,
+  X,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Eye,
+  Settings2,
+  Download,
+  RefreshCw,
+  Clock,
+  DollarSign,
+  Activity,
+  ArrowUpRight,
+  ArrowDownRight,
+  ChevronUp,
+  Save,
+  CheckCircle2,
+  XCircle,
+  Clock3,
+  MoreHorizontal
+} from 'lucide-react'
+import { formatRelativeTime, truncate } from '@/lib/utils'
 import { ImportTracesModal } from '@/components/import-traces-modal'
-import { TraceListSkeleton } from '@/components/skeletons/trace-skeleton'
+import { TracesTableSkeleton } from '@/components/skeletons/traces-skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MetricsBar } from '@/components/traces/MetricsBar'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+
+// Trace interface matching API response (TraceSummary)
+interface Trace {
+  id: string
+  trace_id: string
+  source: string
+  timestamp: string
+  imported_at?: string
+  step_count: number
+  summary: {
+    input_preview: string
+    output_preview: string
+    has_errors: boolean
+  }
+  feedback?: {
+    rating: string
+    notes?: string | null
+    agent_id?: string | null
+  }
+}
+
+// KPI Card Component
+function KPICard({
+  title,
+  value,
+  trend,
+  trendValue,
+  icon: Icon,
+  isLoading = false
+}: {
+  title: string
+  value: string | number
+  trend: 'up' | 'down' | 'neutral'
+  trendValue: string
+  icon: any
+  isLoading?: boolean
+}) {
+  const trendColor = trend === 'up' ? 'text-success' : trend === 'down' ? 'text-error' : 'text-muted-foreground'
+  const TrendIcon = trend === 'up' ? ArrowUpRight : trend === 'down' ? ArrowDownRight : null
+
+  return (
+    <Card className="p-6 hover:shadow-elevation-2 transition-shadow">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <p className="text-sm text-muted-foreground mb-1">{title}</p>
+          <p className="text-2xl font-bold mb-2">{isLoading ? '...' : value}</p>
+          <div className="flex items-center gap-1">
+            {TrendIcon && <TrendIcon className={`h-3 w-3 ${trendColor}`} />}
+            <span className={`text-xs font-medium ${trendColor}`}>
+              {trendValue}
+            </span>
+            <span className="text-xs text-muted-foreground">vs last week</span>
+          </div>
+        </div>
+        <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+          <Icon className="h-5 w-5 text-primary" />
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// Status Badge Component
+function StatusBadge({ hasError, feedback }: { hasError: boolean; feedback?: { rating: string } }) {
+  // Determine status based on error and feedback
+  let status: 'success' | 'error' | 'neutral'
+  if (hasError) {
+    status = 'error'
+  } else if (feedback?.rating === 'positive') {
+    status = 'success'
+  } else if (feedback?.rating === 'negative') {
+    status = 'error'
+  } else {
+    status = 'neutral'
+  }
+
+  const variants = {
+    success: 'bg-success/10 text-success border-success/20',
+    error: 'bg-error/10 text-error border-error/20',
+    neutral: 'bg-muted text-muted-foreground border-border',
+  }
+
+  const icons = {
+    success: CheckCircle2,
+    error: XCircle,
+    neutral: Clock3,
+  }
+
+  const labels = {
+    success: hasError ? 'Has Error' : 'Positive',
+    error: hasError ? 'Error' : 'Negative',
+    neutral: 'Pending Review',
+  }
+
+  const Icon = icons[status]
+
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border ${variants[status]}`}>
+      <Icon className="h-3 w-3" />
+      {labels[status]}
+    </span>
+  )
+}
 
 function TracesPageContent() {
   const searchParams = useSearchParams()
-  const urlAgentId = searchParams?.get('agent_id')
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(urlAgentId || null)
   const [importModalOpen, setImportModalOpen] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [sortColumn, setSortColumn] = useState<string>('timestamp')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
 
   // Filter state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('')
   const [sourceFilter, setSourceFilter] = useState<string>('')
-  const [hasFeedbackFilter, setHasFeedbackFilter] = useState<string>('')
-  const [ratingFilter, setRatingFilter] = useState<string>('')
+  const [modelFilter, setModelFilter] = useState<string>('')
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
-  const [showFilters, setShowFilters] = useState(false)
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Only handle if not typing in input
+      if ((e.target as HTMLElement).tagName === 'INPUT') return
+
+      if (e.key === 'f') {
+        e.preventDefault()
+        setShowFilters(prev => !prev)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyPress)
+    return () => window.removeEventListener('keydown', handleKeyPress)
+  }, [])
 
   // Build query params based on filters
   const queryParams = useMemo(() => {
-    const params: {
-      limit: number
-      source?: string
-      has_feedback?: boolean
-      rating?: string
-      date_from?: string
-      date_to?: string
-    } = { limit: 50 }
-
+    const params: any = { limit: 50 }
     if (sourceFilter) params.source = sourceFilter
-    if (hasFeedbackFilter === 'true') params.has_feedback = true
-    if (hasFeedbackFilter === 'false') params.has_feedback = false
-    if (ratingFilter) params.rating = ratingFilter
     if (dateFrom) params.date_from = dateFrom
     if (dateTo) params.date_to = dateTo
-
     return params
-  }, [sourceFilter, hasFeedbackFilter, ratingFilter, dateFrom, dateTo])
+  }, [sourceFilter, dateFrom, dateTo])
 
   // Count active filters
   const activeFilterCount = useMemo(() => {
     let count = 0
+    if (searchQuery) count++
+    if (statusFilter) count++
     if (sourceFilter) count++
-    if (hasFeedbackFilter) count++
-    if (ratingFilter) count++
+    if (modelFilter) count++
     if (dateFrom) count++
     if (dateTo) count++
     return count
-  }, [sourceFilter, hasFeedbackFilter, ratingFilter, dateFrom, dateTo])
+  }, [searchQuery, statusFilter, sourceFilter, modelFilter, dateFrom, dateTo])
 
   // Clear all filters
   const clearFilters = () => {
+    setSearchQuery('')
+    setStatusFilter('')
     setSourceFilter('')
-    setHasFeedbackFilter('')
-    setRatingFilter('')
+    setModelFilter('')
     setDateFrom('')
     setDateTo('')
   }
 
-  // Fetch agents for the selector
-  const { data: agentsData } = useQuery({
-    queryKey: ['agents'],
-    queryFn: () => apiClient.listAgents(),
-  })
-
+  // Real data query using API
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['traces', queryParams],
     queryFn: () => apiClient.listTraces(queryParams),
   })
 
-  // Compute metrics from trace data
-  const metrics = useMemo(() => {
-    if (!data?.traces) return { totalTraces: 0, feedbackCount: 0, errorCount: 0 }
+  // Get traces from API response
+  const traces: Trace[] = data?.traces || []
 
-    const traces = data.traces
-    const totalTraces = data.total_count || traces.length
-    const feedbackCount = traces.filter((t: any) => t.feedback).length
-    const errorCount = traces.filter((t: any) => t.summary?.has_errors).length
+  // Apply client-side filtering
+  const filteredTraces = useMemo(() => {
+    let filtered = [...traces]
 
-    return { totalTraces, feedbackCount, errorCount }
-  }, [data])
+    if (searchQuery) {
+      filtered = filtered.filter(t =>
+        t.summary.input_preview.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.trace_id.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    }
+    if (statusFilter) {
+      if (statusFilter === 'error') {
+        filtered = filtered.filter(t => t.summary.has_errors || t.feedback?.rating === 'negative')
+      } else if (statusFilter === 'success') {
+        filtered = filtered.filter(t => !t.summary.has_errors && t.feedback?.rating === 'positive')
+      } else if (statusFilter === 'pending') {
+        filtered = filtered.filter(t => !t.summary.has_errors && !t.feedback)
+      }
+    }
+    if (sourceFilter) {
+      filtered = filtered.filter(t => t.source === sourceFilter)
+    }
 
-  // Get the effective agent ID (from existing feedback or selected)
-  const getEffectiveAgentId = (trace: any) => {
-    return trace.feedback?.agent_id || selectedAgentId
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let aVal: any
+      let bVal: any
+
+      if (sortColumn === 'timestamp') {
+        aVal = new Date(a.timestamp || a.imported_at || 0).getTime()
+        bVal = new Date(b.timestamp || b.imported_at || 0).getTime()
+      } else if (sortColumn === 'step_count') {
+        aVal = a.step_count
+        bVal = b.step_count
+      } else {
+        aVal = (a as any)[sortColumn]
+        bVal = (b as any)[sortColumn]
+      }
+
+      if (sortDirection === 'asc') {
+        return aVal > bVal ? 1 : -1
+      } else {
+        return aVal < bVal ? 1 : -1
+      }
+    })
+
+    return filtered
+  }, [traces, searchQuery, statusFilter, sourceFilter, sortColumn, sortDirection])
+
+  // KPI data computed from real traces
+  const kpiData = useMemo(() => {
+    const errorCount = traces.filter(t => t.summary.has_errors).length
+    const errorRate = traces.length > 0 ? (errorCount / traces.length) * 100 : 0
+    return {
+      totalTraces: data?.total_count || 0,
+      avgLatency: '-', // Latency not tracked in current schema
+      errorRate: errorRate.toFixed(1),
+      feedbackCount: traces.filter(t => t.feedback).length,
+    }
+  }, [data, traces])
+
+  // Toggle row selection
+  const toggleRowSelection = (id: string) => {
+    const newSelected = new Set(selectedRows)
+    if (newSelected.has(id)) {
+      newSelected.delete(id)
+    } else {
+      newSelected.add(id)
+    }
+    setSelectedRows(newSelected)
+  }
+
+  // Toggle all rows
+  const toggleAllRows = () => {
+    if (selectedRows.size === filteredTraces.length) {
+      setSelectedRows(new Set())
+    } else {
+      setSelectedRows(new Set(filteredTraces.map(t => t.id)))
+    }
+  }
+
+  // Toggle row expansion
+  const toggleRowExpansion = (id: string) => {
+    const newExpanded = new Set(expandedRows)
+    if (newExpanded.has(id)) {
+      newExpanded.delete(id)
+    } else {
+      newExpanded.add(id)
+    }
+    setExpandedRows(newExpanded)
+  }
+
+  // Handle column sort
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortColumn(column)
+      setSortDirection('desc')
+    }
+  }
+
+  // Copy to clipboard
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
   }
 
   return (
-    <TooltipProvider>
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-6">
+      <TooltipProvider>
+      <div className="container mx-auto px-4 py-8 max-w-[1600px]">
+        {/* Header Section */}
+        <div className="flex justify-between items-start mb-6">
           <div>
-            <h1 className="text-3xl font-bold">Traces</h1>
+            <h1 className="text-3xl font-bold mb-2">Traces Explorer</h1>
             <p className="text-muted-foreground">
-              Browse and annotate imported traces
+              Browse, filter, and analyze your AI agent traces
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-muted-foreground">
-                  <Keyboard className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-xs">
-                <div className="text-sm">
-                  <p className="font-semibold mb-2">Keyboard Shortcuts</p>
-                  <div className="space-y-1">
-                    <div className="flex justify-between gap-4">
-                      <span className="text-muted-foreground">Navigate traces</span>
-                      <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">j/k</kbd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-muted-foreground">Open trace</span>
-                      <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">Enter</kbd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-muted-foreground">Toggle filters</span>
-                      <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">f</kbd>
-                    </div>
-                  </div>
-                </div>
-              </TooltipContent>
-            </Tooltip>
             <Button
               variant="outline"
               onClick={() => setShowFilters(!showFilters)}
-              data-testid="toggle-filters-button"
             >
               <Filter className="w-4 h-4 mr-2" />
               Filters
@@ -152,245 +347,463 @@ function TracesPageContent() {
                 </span>
               )}
             </Button>
-            <Button onClick={() => setImportModalOpen(true)} data-testid="import-traces-button">
+            <Select defaultValue="">
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Load saved view..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="recent">Recent Traces</SelectItem>
+                <SelectItem value="errors">Error Traces Only</SelectItem>
+                <SelectItem value="expensive">High Cost Traces</SelectItem>
+                <SelectItem value="slow">Slow Responses</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline">
+              <Save className="w-4 h-4 mr-2" />
+              Save View
+            </Button>
+            <Button onClick={() => setImportModalOpen(true)}>
               <Upload className="w-4 h-4 mr-2" />
               Import Traces
             </Button>
           </div>
         </div>
 
-        {/* Metrics Bar */}
-        <MetricsBar
-          totalTraces={metrics.totalTraces}
-          feedbackCount={metrics.feedbackCount}
-          errorCount={metrics.errorCount}
-          isLoading={isLoading}
-        />
+        {/* KPI Summary Row */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <KPICard
+            title="Total Traces"
+            value={kpiData.totalTraces.toLocaleString()}
+            trend="neutral"
+            trendValue="all time"
+            icon={Activity}
+            isLoading={isLoading}
+          />
+          <KPICard
+            title="Reviewed"
+            value={kpiData.feedbackCount}
+            trend="neutral"
+            trendValue="with feedback"
+            icon={CheckCircle2}
+            isLoading={isLoading}
+          />
+          <KPICard
+            title="Error Rate"
+            value={`${kpiData.errorRate}%`}
+            trend={parseFloat(kpiData.errorRate) > 5 ? 'down' : 'up'}
+            trendValue={parseFloat(kpiData.errorRate) > 5 ? 'high' : 'good'}
+            icon={XCircle}
+            isLoading={isLoading}
+          />
+          <KPICard
+            title="Step Count"
+            value={traces.length > 0 ? Math.round(traces.reduce((sum, t) => sum + t.step_count, 0) / traces.length) : 0}
+            trend="neutral"
+            trendValue="avg per trace"
+            icon={Activity}
+            isLoading={isLoading}
+          />
+        </div>
 
-      {/* Filters Panel */}
-      {showFilters && (
-        <Card className="mb-6 p-4" data-testid="trace-filters-panel">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium">Filter Traces</h3>
-            {activeFilterCount > 0 && (
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                <X className="w-4 h-4 mr-1" />
-                Clear All
-              </Button>
+        {/* Live Data Indicator */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
+            <span className="text-sm text-muted-foreground">
+              Live data - Last updated just now
+            </span>
+            <button className="text-sm text-primary hover:underline">
+              Change range
+            </button>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Showing {filteredTraces.length} of {data?.total_count || 0} traces
+          </div>
+        </div>
+
+        {/* Filters Panel */}
+        {showFilters && (
+          <Card className="mb-6 p-6 animate-slide-in-from-top">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg">Advanced Filters</h3>
+              {activeFilterCount > 0 && (
+                <Button variant="ghost" size="sm" onClick={clearFilters}>
+                  <X className="w-4 h-4 mr-1" />
+                  Clear All
+                </Button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="search-query">Search</Label>
+                <Input
+                  id="search-query"
+                  placeholder="Search by name or trace ID..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="status-filter">Status</Label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger id="status-filter">
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">All statuses</SelectItem>
+                    <SelectItem value="success">Success</SelectItem>
+                    <SelectItem value="error">Error</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="source-filter">Source</Label>
+                <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                  <SelectTrigger id="source-filter">
+                    <SelectValue placeholder="All sources" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">All sources</SelectItem>
+                    <SelectItem value="langfuse">Langfuse</SelectItem>
+                    <SelectItem value="langsmith">Langsmith</SelectItem>
+                    <SelectItem value="openai">OpenAI</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="model-filter">Model</Label>
+                <Select value={modelFilter} onValueChange={setModelFilter}>
+                  <SelectTrigger id="model-filter">
+                    <SelectValue placeholder="All models" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">All models</SelectItem>
+                    <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+                    <SelectItem value="gpt-4o-mini">GPT-4o Mini</SelectItem>
+                    <SelectItem value="claude-4.5-sonnet">Claude 4.5 Sonnet</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="date-from">Date Range</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="date-from"
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Toolbar */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            {selectedRows.size > 0 && (
+              <span className="text-sm text-muted-foreground">
+                {selectedRows.size} row{selectedRows.size > 1 ? 's' : ''} selected
+              </span>
             )}
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="source-filter">Source</Label>
-              <Select
-                value={sourceFilter}
-                onValueChange={setSourceFilter}
-              >
-                <SelectTrigger id="source-filter" data-testid="source-filter">
-                  <SelectValue placeholder="All sources" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">All sources</SelectItem>
-                  <SelectItem value="langfuse">Langfuse</SelectItem>
-                  <SelectItem value="langsmith">Langsmith</SelectItem>
-                  <SelectItem value="openai">OpenAI</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="feedback-filter">Has Feedback</Label>
-              <Select
-                value={hasFeedbackFilter}
-                onValueChange={setHasFeedbackFilter}
-              >
-                <SelectTrigger id="feedback-filter" data-testid="has-feedback-filter">
-                  <SelectValue placeholder="Any" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Any</SelectItem>
-                  <SelectItem value="true">With feedback</SelectItem>
-                  <SelectItem value="false">Without feedback</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="rating-filter">Rating</Label>
-              <Select
-                value={ratingFilter}
-                onValueChange={setRatingFilter}
-              >
-                <SelectTrigger id="rating-filter" data-testid="rating-filter">
-                  <SelectValue placeholder="Any rating" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Any rating</SelectItem>
-                  <SelectItem value="positive">Positive</SelectItem>
-                  <SelectItem value="negative">Negative</SelectItem>
-                  <SelectItem value="neutral">Neutral</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="date-from">From Date</Label>
-              <Input
-                id="date-from"
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                data-testid="date-from-filter"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="date-to">To Date</Label>
-              <Input
-                id="date-to"
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                data-testid="date-to-filter"
-              />
-            </div>
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Settings2 className="w-4 h-4 mr-2" />
+                  Columns
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Configure visible columns</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Download className="w-4 h-4 mr-2" />
+                  Export
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Export traces to CSV</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <RefreshCw className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Refresh data</TooltipContent>
+            </Tooltip>
           </div>
-        </Card>
-      )}
-
-      {/* Agent Selector */}
-      <div className="mb-6 p-4 bg-muted/50 rounded-lg">
-        <div className="flex items-center gap-4">
-          <label className="text-sm font-medium">Agent for Feedback:</label>
-          <Select
-            value={selectedAgentId || ''}
-            onValueChange={(value) => setSelectedAgentId(value || null)}
-          >
-            <SelectTrigger className="w-[280px]">
-              <SelectValue placeholder="Select an agent..." />
-            </SelectTrigger>
-            <SelectContent>
-              {agentsData?.agents?.map((agent) => (
-                <SelectItem key={agent.id} value={agent.id}>
-                  {agent.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {!selectedAgentId && (
-            <span className="text-sm text-muted-foreground">
-              Select an agent to enable quick feedback
-            </span>
-          )}
         </div>
-      </div>
 
-      {/* Results Summary */}
-      {!isLoading && !error && data?.traces && (
-        <div className="mb-4 text-sm text-muted-foreground" data-testid="traces-count">
-          Showing {data.traces.length} of {data.total_count || data.traces.length} traces
-          {activeFilterCount > 0 && ' (filtered)'}
-        </div>
-      )}
-
-      {isLoading ? (
-        <TraceListSkeleton count={5} />
-      ) : error ? (
-        <ErrorState
-          title="Failed to load traces"
-          message="There was an error loading traces. Please try again."
-          error={error as Error}
-          onRetry={() => refetch()}
-        />
-      ) : data?.traces.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-            <Inbox className="w-8 h-8 text-muted-foreground" />
-          </div>
-          <h3 className="text-lg font-semibold mb-2">No traces yet</h3>
-          <p className="text-muted-foreground text-center mb-6 max-w-sm">
-            Import traces from your connected integrations to start reviewing and annotating them.
-          </p>
-          <Button onClick={() => setImportModalOpen(true)}>
-            <Upload className="w-4 h-4 mr-2" />
-            Import Traces
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-4" data-testid="trace-list">
-          {data?.traces.map((trace) => (
-            <Card key={trace.id} className="p-4" data-testid="trace-row">
-              <Link href={`/traces/${trace.id}`} className="block hover:bg-accent/50 transition-colors -m-4 p-4 mb-0">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-mono text-muted-foreground">
-                        {trace.trace_id.slice(0, 8)}
-                      </span>
-                      <span className="text-xs px-2 py-0.5 rounded bg-secondary text-secondary-foreground">
-                        {trace.source}
-                      </span>
-                      {trace.feedback && (
-                        <span className="text-lg">
-                          {getRatingEmoji(trace.feedback.rating)}
-                        </span>
+        {/* Advanced Data Table */}
+        {isLoading ? (
+          <TracesTableSkeleton count={10} />
+        ) : error ? (
+          <ErrorState
+            title="Failed to load traces"
+            message="There was an error loading traces. Please try again."
+            error={error as Error}
+            onRetry={() => window.location.reload()}
+          />
+        ) : (
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-muted/50 border-b">
+                  <tr>
+                    <th className="w-10 px-4 py-3 text-left">
+                      <Checkbox
+                        checked={selectedRows.size === filteredTraces.length && filteredTraces.length > 0}
+                        onCheckedChange={toggleAllRows}
+                      />
+                    </th>
+                    <th className="w-10 px-4 py-3"></th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
+                      onClick={() => handleSort('timestamp')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Timestamp
+                        {sortColumn === 'timestamp' && (
+                          sortDirection === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                        )}
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Trace ID
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider min-w-[200px]">
+                      Input Preview
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th
+                      className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-muted/80 transition-colors"
+                      onClick={() => handleSort('step_count')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Steps
+                        {sortColumn === 'step_count' && (
+                          sortDirection === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                        )}
+                      </div>
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Source
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Feedback
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredTraces.map((trace) => (
+                    <Fragment key={trace.id}>
+                      <tr
+                        className="hover:bg-muted/30 transition-colors cursor-pointer"
+                        onClick={() => toggleRowExpansion(trace.id)}
+                      >
+                        <td className="px-4 py-4">
+                          <Checkbox
+                            checked={selectedRows.has(trace.id)}
+                            onCheckedChange={() => toggleRowSelection(trace.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </td>
+                        <td className="px-4 py-4">
+                          <button
+                            className="text-muted-foreground hover:text-foreground transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleRowExpansion(trace.id)
+                            }}
+                          >
+                            {expandedRows.has(trace.id) ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </button>
+                        </td>
+                        <td className="px-4 py-4 text-sm text-muted-foreground whitespace-nowrap">
+                          {formatRelativeTime(trace.imported_at || trace.timestamp)}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <code className="text-xs bg-muted px-2 py-1 rounded font-mono cursor-help">
+                                  {trace.id.slice(0, 16)}...
+                                </code>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="font-mono text-xs">{trace.id}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  className="text-muted-foreground hover:text-foreground transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    copyToClipboard(trace.id)
+                                  }}
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>Copy trace ID</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-sm max-w-[300px]">
+                          <span className="line-clamp-2" title={trace.summary.input_preview}>
+                            {trace.summary.input_preview || 'No input'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <StatusBadge hasError={trace.summary.has_errors} feedback={trace.feedback} />
+                        </td>
+                        <td className="px-4 py-4 text-sm text-center">
+                          {trace.step_count}
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className="text-xs bg-secondary/50 px-2 py-1 rounded capitalize">
+                            {trace.source}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          {trace.feedback ? (
+                            <span className={`text-xs px-2 py-1 rounded capitalize ${
+                              trace.feedback.rating === 'positive' ? 'bg-success/10 text-success' :
+                              trace.feedback.rating === 'negative' ? 'bg-error/10 text-error' :
+                              'bg-muted text-muted-foreground'
+                            }`}>
+                              {trace.feedback.rating}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-1">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                  }}
+                                  asChild
+                                >
+                                  <Link href={`/traces/${trace.id}`}>
+                                    <Eye className="h-3 w-3" />
+                                  </Link>
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>View details</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    copyToClipboard(trace.id)
+                                  }}
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Copy trace ID</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </td>
+                      </tr>
+                      {expandedRows.has(trace.id) && (
+                        <tr className="bg-muted/20">
+                          <td colSpan={10} className="px-4 py-4">
+                            <div className="grid grid-cols-3 gap-4 text-sm">
+                              <div>
+                                <p className="text-muted-foreground mb-1">Source Platform</p>
+                                <p className="font-medium capitalize">{trace.source}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground mb-1">Full Trace ID</p>
+                                <code className="text-xs bg-muted px-2 py-1 rounded font-mono break-all">
+                                  {trace.id}
+                                </code>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground mb-1">Imported At</p>
+                                <p className="font-medium">{trace.imported_at ? new Date(trace.imported_at).toLocaleString() : 'N/A'}</p>
+                              </div>
+                              <div className="col-span-3">
+                                <p className="text-muted-foreground mb-1">Output Preview</p>
+                                <p className="font-medium text-foreground/80 line-clamp-3">
+                                  {trace.summary.output_preview || 'No output recorded'}
+                                </p>
+                              </div>
+                              {trace.feedback && (
+                                <div className="col-span-3">
+                                  <p className="text-muted-foreground mb-1">Feedback Notes</p>
+                                  <p className="font-medium text-foreground/80">
+                                    {trace.feedback.notes || 'No notes provided'}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {formatRelativeTime(trace.timestamp)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-medium">
-                      {trace.step_count} {trace.step_count === 1 ? 'step' : 'steps'}
-                    </div>
-                    {trace.summary.has_errors && (
-                      <span className="text-xs text-red-600">Has errors</span>
-                    )}
-                  </div>
-                </div>
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
 
-                <div className="space-y-2 mb-4">
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Input</div>
-                    <div className="text-sm">
-                      {truncate(trace.summary.input_preview, 100)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Output</div>
-                    <div className="text-sm">
-                      {truncate(trace.summary.output_preview, 100)}
-                    </div>
-                  </div>
-                </div>
-
-                {trace.feedback?.notes && (
-                  <div className="mb-4 pb-4 border-b">
-                    <div className="text-xs text-muted-foreground mb-1">Notes</div>
-                    <div className="text-sm">{truncate(trace.feedback.notes, 100)}</div>
-                  </div>
-                )}
-              </Link>
-
-              <div className="mt-4" onClick={(e) => e.stopPropagation()}>
-                {getEffectiveAgentId(trace) ? (
-                  <TraceFeedback
-                    traceId={trace.id}
-                    agentId={getEffectiveAgentId(trace)!}
-                    currentRating={trace.feedback?.rating}
-                    feedbackId={trace.feedback?.id}
-                  />
-                ) : (
-                  <div className="text-sm text-muted-foreground">
-                    Select an agent above to provide feedback
-                  </div>
-                )}
+        {/* Keyboard Shortcuts Footer */}
+        <div className="mt-6 p-4 bg-muted/30 rounded-lg border border-border">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-background rounded border border-border font-mono">f</kbd>
+                <span>Toggle filters</span>
               </div>
-            </Card>
-          ))}
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-background rounded border border-border font-mono">j</kbd>
+                <kbd className="px-2 py-1 bg-background rounded border border-border font-mono">k</kbd>
+                <span>Navigate rows</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-background rounded border border-border font-mono">Enter</kbd>
+                <span>Open trace</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-background rounded border border-border font-mono">Space</kbd>
+                <span>Select row</span>
+              </div>
+            </div>
+            <span className="text-muted-foreground">Press ? to see all shortcuts</span>
+          </div>
         </div>
-      )}
 
         <ImportTracesModal
           open={importModalOpen}
@@ -403,7 +816,7 @@ function TracesPageContent() {
 
 export default function TracesPage() {
   return (
-    <Suspense fallback={<div className="container py-8"><TraceListSkeleton count={5} /></div>}>
+    <Suspense fallback={<div className="container py-8"><TracesTableSkeleton count={10} /></div>}>
       <TracesPageContent />
     </Suspense>
   )

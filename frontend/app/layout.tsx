@@ -1,9 +1,11 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { Suspense } from 'react'
 import './globals.css'
 import { Providers } from '@/components/providers'
-import { Navigation } from '@/components/navigation'
+import { MainLayout } from '@/components/layout'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { NProgressProvider } from '@/components/providers/nprogress-provider'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -22,12 +24,13 @@ export default function RootLayout({
       <body className={inter.className}>
         <Providers>
           <ErrorBoundary>
-            <div className="min-h-screen flex flex-col">
-              <Navigation />
-              <main className="flex-1">
-                {children}
-              </main>
-            </div>
+            <Suspense fallback={null}>
+              <NProgressProvider>
+                <MainLayout>
+                  {children}
+                </MainLayout>
+              </NProgressProvider>
+            </Suspense>
           </ErrorBoundary>
         </Providers>
       </body>

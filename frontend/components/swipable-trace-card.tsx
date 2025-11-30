@@ -137,9 +137,9 @@ function ToolCallItem({ tool, index, isExpanded, onToggle }: {
           )}
         </div>
         {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-gray-500" />
+          <ChevronUp className="w-4 h-4 text-gray-600" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-gray-500" />
+          <ChevronDown className="w-4 h-4 text-gray-600" />
         )}
       </button>
 
@@ -459,11 +459,11 @@ export function SwipableTraceCard({
                 <span className="text-sm font-semibold text-gray-900">
                   Trace #{header.traceNumber}
                 </span>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-gray-600">
                   {formatRelativeTime(header.timestamp)}
                 </span>
               </div>
-              <div className="text-xs text-gray-500 mt-0.5">
+              <div className="text-xs text-gray-600 mt-0.5">
                 {header.stepCount} {header.stepCount === 1 ? 'step' : 'steps'}
                 {header.duration && ` · ${formatDuration(header.duration)}`}
               </div>
@@ -509,7 +509,7 @@ export function SwipableTraceCard({
 
           {/* Empty state */}
           {trace.steps.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-gray-600">
               <p className="text-sm">No messages or tool calls in this trace</p>
               <p className="text-xs mt-1">This trace may be incomplete or still processing</p>
             </div>
@@ -531,7 +531,7 @@ export function SwipableTraceCard({
             disabled={isLoading}
           />
           <div className="flex justify-between items-center mt-1">
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-gray-600">
               {notes.length} / 500 characters
             </div>
             {notes.length > 0 && (
@@ -626,7 +626,7 @@ export function SwipableTraceCard({
                 😐
               </span>
             </div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-gray-600">
               Or press: <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border">1</kbd> Positive{' '}
               <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border">2</kbd> Neutral{' '}
               <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border">3</kbd> Negative

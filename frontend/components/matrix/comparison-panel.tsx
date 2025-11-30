@@ -198,7 +198,7 @@ export function ComparisonPanel({
                           >
                             <div className="flex items-center justify-between mb-2">
                               <span className="font-medium text-xs text-foreground">
-                                Version {version.version}
+                                {version.prompt_template || `Eval ${version.version}`}
                               </span>
                               {isContradiction && (
                                 <span className="text-xs text-red-600 bg-red-100 px-2 py-1 rounded flex items-center">

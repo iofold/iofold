@@ -90,14 +90,14 @@ export function TraceEvaluationDetails({
 
   return (
     <div className="space-y-4">
-      {/* Version Info Header */}
+      {/* Eval Info Header */}
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-foreground">Version {version.version}</h3>
+              <h3 className="font-semibold text-foreground">{version.prompt_template || `Eval ${version.version}`}</h3>
               <p className="text-sm text-muted-foreground">
-                Showing {tracesWithEval.length} traces evaluated by this version
+                Showing {tracesWithEval.length} traces evaluated by this eval
               </p>
             </div>
             <div className="text-right">

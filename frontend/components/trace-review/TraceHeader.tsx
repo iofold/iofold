@@ -51,7 +51,7 @@ export function TraceHeader({ header }: TraceHeaderProps) {
 
         {header.duration !== undefined && (
           <>
-            <span className="text-gray-400">·</span>
+            <span className="text-gray-600">·</span>
             <div className="flex items-center gap-1">
               <span role="img" aria-label="Duration">⏱️</span>
               <span>{durationText}</span>

@@ -123,7 +123,7 @@ export function AgentVersionOverview({
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <h3 className="font-semibold text-lg text-foreground mb-1 group-hover:text-primary transition-colors">
-                      Version {version.version}
+                      {version.prompt_template || `Eval ${version.version}`}
                     </h3>
                     <div className="flex items-center space-x-2">
                       <span className="text-xs text-muted-foreground">
@@ -150,13 +150,13 @@ export function AgentVersionOverview({
                 </div>
               </CardHeader>
 
-              <CardContent className="space-y-4 pt-6">
+              <CardContent className="space-y-5 pt-6">
                 {/* Evaluation Distribution */}
                 <div>
                   <div className="text-sm font-medium text-muted-foreground mb-3">
                     Evaluation Distribution
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
                         <ThumbsUp size={14} className="text-green-600" />

@@ -10,6 +10,7 @@ import { Plus, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime, getStatusColor } from '@/lib/utils'
 import { CreateAgentModal } from '@/components/modals/create-agent-modal'
+import { AgentsGridSkeleton } from '@/components/skeletons/agents-skeleton'
 import type { AgentStatus } from '@/types/agent'
 
 function getAgentStatusColor(status: AgentStatus): string {
@@ -35,7 +36,7 @@ export default function AgentsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold">Agents</h1>
           <p className="text-muted-foreground">
@@ -63,11 +64,7 @@ export default function AgentsPage() {
       )}
 
       {isLoading ? (
-        <div className="space-y-4">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse" />
-          ))}
-        </div>
+        <AgentsGridSkeleton count={6} />
       ) : error ? (
         <ErrorState
           title="Failed to load agents"

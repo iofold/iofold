@@ -51,14 +51,24 @@ export default function MatrixPage() {
     enabled: !!agentId
   })
 
-  // Fetch matrix data
+  // Fetch evals for this agent
+  const { data: evalsData } = useQuery({
+    queryKey: ['evals', agentId],
+    queryFn: () => apiClient.listEvals({ agent_id: agentId }),
+    enabled: !!agentId
+  })
+
+  // Fetch matrix data - requires eval_ids as a comma-separated string
+  const evalIds = evalsData?.evals?.map(e => e.id).join(',') || ''
   const { data: matrixData, isLoading: matrixLoading } = useQuery({
-    queryKey: ['matrix', agentId, contradictionFilter],
+    queryKey: ['matrix', agentId, evalIds, contradictionFilter],
     queryFn: () => apiClient.getMatrix(agentId, {
+      eval_ids: evalIds,
       filter: contradictionFilter === 'all' ? undefined :
              contradictionFilter === 'contradictions-only' ? 'contradictions_only' : 'all',
       limit: 100
-    })
+    }),
+    enabled: !!agentId && !!evalIds
   })
 
   // Filter matrix rows based on current filters
@@ -180,7 +190,48 @@ export default function MatrixPage() {
     )
   }
 
+  // Show empty state if no evals exist for this agent
+  if (!evalsData && !matrixLoading && evalIds === '') {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="mb-6">
+          <Link href={`/agents/${agentId}`}>
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Agent
+            </Button>
+          </Link>
+        </div>
+        <div className="text-center py-12">
+          <h2 className="text-2xl font-bold mb-4">No Evaluations Found</h2>
+          <p className="text-muted-foreground mb-6">
+            This agent does not have any evaluations yet. Generate an evaluation from traces with feedback to start using the matrix view.
+          </p>
+          <Link href={`/agents/${agentId}`}>
+            <Button>Go to Agent Details</Button>
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   const versions = versionsData?.versions || []
+  const evals = evalsData?.evals || []
+
+  // Map evals to AgentVersion-like structure for component compatibility
+  // This allows reusing the existing components while the backend uses eval_ids
+  const evalVersions: AgentVersion[] = evals.map((evalRecord, index) => ({
+    id: evalRecord.id,
+    agent_id: agentId,
+    version: index + 1, // Use sequential version numbers for display
+    prompt_template: evalRecord.name, // Use name as identifier
+    variables: [],
+    source: 'manual' as const,
+    parent_version_id: null,
+    accuracy: evalRecord.accuracy,
+    status: 'active' as const,
+    created_at: evalRecord.created_at
+  }))
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -209,12 +260,12 @@ export default function MatrixPage() {
             <div>
               <h1 className="text-3xl font-bold mb-2">
                 {viewMode === 'overview'
-                  ? 'Agent Version Performance Overview'
-                  : `Version ${selectedVersion?.version} - Trace Analysis`}
+                  ? 'Evaluation Performance Matrix'
+                  : `${selectedVersion ? `Eval: ${selectedVersion.version}` : 'Trace Analysis'}`}
               </h1>
               <p className="text-muted-foreground">
                 {viewMode === 'overview'
-                  ? 'Compare evaluation scores across different agent versions'
+                  ? 'Compare evaluation results vs human feedback across traces'
                   : 'Detailed per-trace evaluation outputs and contradictions'}
               </p>
             </div>
@@ -242,9 +293,9 @@ export default function MatrixPage() {
 
       {/* Content Area */}
       {viewMode === 'overview' ? (
-        /* STEP 1: Agent Version Overview */
+        /* STEP 1: Eval Performance Overview */
         <AgentVersionOverview
-          versions={versions}
+          versions={evalVersions}
           matrixData={filteredMatrixRows}
           onVersionClick={handleVersionClick}
         />
@@ -316,7 +367,7 @@ export default function MatrixPage() {
             <div className="lg:col-span-4">
               <ComparisonPanel
                 selectedContradiction={selectedContradiction}
-                versions={versions}
+                versions={evalVersions}
                 onRefineEval={handleRefineEval}
               />
             </div>
