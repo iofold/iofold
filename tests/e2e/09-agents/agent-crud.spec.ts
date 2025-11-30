@@ -663,19 +663,12 @@ test.describe('Agent UI/UX', () => {
 
   test('TEST-A19: should not display description section when agent has no description', async ({ page }) => {
     // Create agent without description via API
-    // Note: Don't pass description at all, so the API sets it to null
+    // Pass null to explicitly omit the description
     const agent = await createTestAgent(page, {
-      name: uniqueName('No Description Agent')
-      // Omit description field entirely
+      name: uniqueName('No Description Agent'),
+      description: null // Explicitly set to null to omit description
     });
     createdAgentId = agent.id;
-
-    // However, the createTestAgent fixture always sets a default description
-    // So we need to override the description to undefined
-    // Let's check the actual response to see what we get
-
-    // For this test, we need to ensure description is actually null/undefined
-    // Since createTestAgent has a default description, let's override it
 
     // Navigate to agents page
     await page.goto('/agents');
@@ -685,16 +678,9 @@ test.describe('Agent UI/UX', () => {
     const agentCard = page.getByTestId(`agent-card-${agent.id}`);
     await expect(agentCard).toBeVisible();
 
-    // The description should not be visible since createTestAgent provides a default description
-    // Let's check if it exists - if the fixture always provides a description,
-    // we need to verify the UI behavior when description IS present
-    // Actually, looking at the fixture, it always sets 'Test agent for automated testing'
-    // So this test is invalid as written. Let's verify description IS shown when present.
+    // Verify description element does not exist (not rendered at all)
     const descriptionElement = agentCard.getByTestId('agent-card-description');
-
-    // Since createTestAgent always provides a description, the element should exist
-    await expect(descriptionElement).toBeVisible();
-    await expect(descriptionElement).toContainText('Test agent for automated testing');
+    await expect(descriptionElement).toHaveCount(0);
   });
 
   test('TEST-A20: should display active version information', async ({ page }) => {
@@ -710,9 +696,9 @@ test.describe('Agent UI/UX', () => {
       variables: ['input'],
     });
 
-    // Promote the version
+    // Promote the version (use version number, not ID)
     const baseURL = process.env.API_URL || 'http://localhost:8787';
-    await page.request.post(`${baseURL}/api/agents/${agent.id}/versions/${version.id}/promote`, {
+    await page.request.post(`${baseURL}/api/agents/${agent.id}/versions/${version.version}/promote`, {
       headers: {
         'X-Workspace-Id': process.env.WORKSPACE_ID || 'workspace_default',
       },
