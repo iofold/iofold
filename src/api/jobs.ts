@@ -1,7 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { z } from 'zod';
 import { JobManager } from '../jobs/job-manager';
-import { handleError, notFoundError } from '../utils/errors';
+import { createAPIError, handleError, notFoundError } from '../utils/errors';
 import { SSEStream, createSSEResponse } from '../utils/sse';
 import type { Job } from '../types/api';
 
@@ -147,6 +147,82 @@ export class JobsAPI {
           headers: { 'Content-Type': 'application/json' }
         }
       );
+    } catch (error) {
+      return handleError(error);
+    }
+  }
+
+  // GET /api/jobs/:id/retries - Get retry history for a job
+  async getJobRetries(jobId: string): Promise<Response> {
+    try {
+      // Verify job exists
+      const job = await this.jobManager.getJob(jobId);
+      if (!job) {
+        return notFoundError('Job', jobId);
+      }
+
+      // Get retry history
+      const retries = await this.jobManager.getJobRetryHistory(jobId);
+
+      return new Response(JSON.stringify({
+        job_id: jobId,
+        total_attempts: retries.length,
+        retries: retries.map(r => ({
+          attempt: r.attempt,
+          error: r.error,
+          error_category: r.error_category,
+          delay_ms: r.delay_ms,
+          timestamp: r.created_at
+        }))
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      return handleError(error);
+    }
+  }
+
+  // POST /api/jobs/:id/retry - Manually retry a failed job
+  async retryJob(jobId: string): Promise<Response> {
+    try {
+      // Verify job exists and is failed
+      const job = await this.jobManager.getJob(jobId);
+      if (!job) {
+        return notFoundError('Job', jobId);
+      }
+
+      if (job.status !== 'failed') {
+        return createAPIError('INVALID_STATE', `Cannot retry job with status ${job.status}`, 400);
+      }
+
+      // Reset job status to queued
+      await this.db
+        .prepare(
+          `UPDATE jobs SET
+           status = 'queued',
+           progress = 0,
+           error = NULL,
+           error_category = NULL,
+           retry_count = retry_count + 1,
+           next_retry_at = datetime('now'),
+           completed_at = NULL
+           WHERE id = ?`
+        )
+        .bind(jobId)
+        .run();
+
+      // Re-enqueue to queue (if queue binding available)
+      // This would typically be done via the producer
+
+      return new Response(JSON.stringify({
+        success: true,
+        job_id: jobId,
+        message: 'Job queued for retry'
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
     } catch (error) {
       return handleError(error);
     }

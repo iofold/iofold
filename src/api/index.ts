@@ -213,6 +213,18 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return jobsAPI.cancelJob(jobCancelMatch[1]);
   }
 
+  // GET /api/jobs/:id/retries - Get retry history for a job
+  const jobRetriesMatch = path.match(/^\/api\/jobs\/([^\/]+)\/retries$/);
+  if (jobRetriesMatch && method === 'GET') {
+    return jobsAPI.getJobRetries(jobRetriesMatch[1]);
+  }
+
+  // POST /api/jobs/:id/retry - Manually retry a failed job
+  const jobRetryMatch = path.match(/^\/api\/jobs\/([^\/]+)\/retry$/);
+  if (jobRetryMatch && method === 'POST') {
+    return jobsAPI.retryJob(jobRetryMatch[1]);
+  }
+
   // GET /api/jobs - List recent jobs
   if (path === '/api/jobs' && method === 'GET') {
     // Get workspace ID from header (for now using default)
