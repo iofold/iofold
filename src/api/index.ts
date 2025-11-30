@@ -23,6 +23,7 @@ import {
   submitFeedback,
   updateFeedback,
   deleteFeedback,
+  listFeedback,
 } from './feedback';
 
 import {
@@ -130,6 +131,11 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   // ============================================================================
   // Feedback Endpoints
   // ============================================================================
+
+  // GET /api/feedback
+  if (path === '/api/feedback' && method === 'GET') {
+    return listFeedback(request, env);
+  }
 
   // POST /api/feedback
   if (path === '/api/feedback' && method === 'POST') {
