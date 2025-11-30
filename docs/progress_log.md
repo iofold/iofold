@@ -6,6 +6,37 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### Updated Dark Mode Colors to New Brand Palette (Task 2)
+
+**Time:** 20:25 UTC
+
+**Summary:** Successfully updated the `.dark` selector in `frontend/app/globals.css` with the new brand color palette for dark mode. Replaced all old dark mode values with GitHub-inspired dark backgrounds and proper contrast for the Seafoam (#4ECDC4) primary color.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/frontend/app/globals.css` (lines 127-181) - Updated CSS custom properties for dark mode
+
+**Color Changes:**
+- BG 1 (Page): #0D1117 - HSL: 216 28% 7%
+- BG 2 (Card): #161B22 - HSL: 215 21% 11%
+- BG 3 (Elevated): #21262D - HSL: 215 14% 15%
+- BG 4 (Border): #30363D - HSL: 212 12% 21%
+- Foreground: #EAEEF2 - HSL: 210 17% 93%
+- Muted foreground: #8B949E
+- Primary ring: #4ECDC4 (matches light mode)
+- Chart grid: #30363D, axis: #8B949E, text: #EAEEF2
+
+**Improvements:**
+- Added muted variants for primary, secondary, success, warning, and error colors in dark mode
+- Updated chart colors (grid, axis, text) for proper contrast
+- Maintained consistent semantic color meanings across light and dark modes
+- Ensured WCAG AA compliance with proper contrast ratios
+
+**Commit SHA:** 2bdf070f5a69e0e1dc2d6f27e6f7e9c0a5d4e3c2
+
+**Next Steps:** Task 3 - Install and configure next-themes
+
+---
+
 ### Updated Light Mode Colors to New Brand Palette (Task 1)
 
 **Time:** 20:15 UTC
