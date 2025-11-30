@@ -6,6 +6,33 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### Fix Column Name Mismatch in matrix.ts
+
+**Time:** 17:26 UTC
+
+**Summary:** Fixed database column reference mismatch in the matrix API endpoint. The code was referencing `trace_data` but the actual database column is `steps`.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/src/api/matrix.ts`
+
+**Changes Made:**
+- Line 383: Changed `trace.trace_data as string` to `trace.steps as string`
+- Line 736: Changed `t.trace_data` to `t.steps` in SQL query
+- Line 757: Changed `row.trace_data as string` to `row.steps as string`
+
+**Impact:**
+- Fixes runtime errors when accessing trace data in comparison matrix endpoint
+- Aligns code with actual database schema where traces table uses `steps` column (not `trace_data`)
+- No new TypeScript compilation errors introduced
+
+**Verification:**
+- All 3 occurrences of `trace_data` replaced successfully
+- TypeScript compilation verified (no new errors from this change)
+- Committed as: `156ae348cdb6e21c571349274a1c8183d4d06321`
+
+---
+
+
 ### Comprehensive E2E Test Suite Update (10 Parallel Agents)
 
 **Time:** 22:00 UTC
@@ -12895,6 +12922,33 @@ The sidebar component (`/home/ygupta/workspace/iofold/frontend/components/sideba
 - Consider adding visual regression tests with Playwright screenshots
 
 ## 2025-11-30
+
+### Fix Column Name Mismatch in matrix.ts
+
+**Time:** 17:26 UTC
+
+**Summary:** Fixed database column reference mismatch in the matrix API endpoint. The code was referencing `trace_data` but the actual database column is `steps`.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/src/api/matrix.ts`
+
+**Changes Made:**
+- Line 383: Changed `trace.trace_data as string` to `trace.steps as string`
+- Line 736: Changed `t.trace_data` to `t.steps` in SQL query
+- Line 757: Changed `row.trace_data as string` to `row.steps as string`
+
+**Impact:**
+- Fixes runtime errors when accessing trace data in comparison matrix endpoint
+- Aligns code with actual database schema where traces table uses `steps` column (not `trace_data`)
+- No new TypeScript compilation errors introduced
+
+**Verification:**
+- All 3 occurrences of `trace_data` replaced successfully
+- TypeScript compilation verified (no new errors from this change)
+- Committed as: `156ae348cdb6e21c571349274a1c8183d4d06321`
+
+---
+
 ### Traces Page E2E Tests Created
 
 **Time:** 16:15 UTC
@@ -13314,6 +13368,33 @@ Generated 25 unique sticker designs for iofold conference marketing using the ge
 
 ## 2025-11-30
 
+### Fix Column Name Mismatch in matrix.ts
+
+**Time:** 17:26 UTC
+
+**Summary:** Fixed database column reference mismatch in the matrix API endpoint. The code was referencing `trace_data` but the actual database column is `steps`.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/src/api/matrix.ts`
+
+**Changes Made:**
+- Line 383: Changed `trace.trace_data as string` to `trace.steps as string`
+- Line 736: Changed `t.trace_data` to `t.steps` in SQL query
+- Line 757: Changed `row.trace_data as string` to `row.steps as string`
+
+**Impact:**
+- Fixes runtime errors when accessing trace data in comparison matrix endpoint
+- Aligns code with actual database schema where traces table uses `steps` column (not `trace_data`)
+- No new TypeScript compilation errors introduced
+
+**Verification:**
+- All 3 occurrences of `trace_data` replaced successfully
+- TypeScript compilation verified (no new errors from this change)
+- Committed as: `156ae348cdb6e21c571349274a1c8183d4d06321`
+
+---
+
+
 ### Task: Generated Meta AI/Agent Sticker Pack (30 additional stickers)
 
 **Status:** Completed
@@ -13379,6 +13460,33 @@ Generated 25 unique sticker designs for iofold conference marketing using the ge
 
 ## 2025-11-30
 
+### Fix Column Name Mismatch in matrix.ts
+
+**Time:** 17:26 UTC
+
+**Summary:** Fixed database column reference mismatch in the matrix API endpoint. The code was referencing `trace_data` but the actual database column is `steps`.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/src/api/matrix.ts`
+
+**Changes Made:**
+- Line 383: Changed `trace.trace_data as string` to `trace.steps as string`
+- Line 736: Changed `t.trace_data` to `t.steps` in SQL query
+- Line 757: Changed `row.trace_data as string` to `row.steps as string`
+
+**Impact:**
+- Fixes runtime errors when accessing trace data in comparison matrix endpoint
+- Aligns code with actual database schema where traces table uses `steps` column (not `trace_data`)
+- No new TypeScript compilation errors introduced
+
+**Verification:**
+- All 3 occurrences of `trace_data` replaced successfully
+- TypeScript compilation verified (no new errors from this change)
+- Committed as: `156ae348cdb6e21c571349274a1c8183d4d06321`
+
+---
+
+
 ### Backend API Gap Fixes (Parallel Implementation)
 **Time:** 17:26 UTC
 
@@ -13433,3 +13541,58 @@ Implemented missing backend API endpoints identified from E2E test failures and 
 **Next Steps:**
 - Run full E2E test suite to verify fixes
 - Implement remaining job types (agent_discovery, prompt_evaluation)
+
+## 2025-11-30
+
+### Fix Column Name Mismatch in matrix.ts
+
+**Time:** 17:26 UTC
+
+**Summary:** Fixed database column reference mismatch in the matrix API endpoint. The code was referencing `trace_data` but the actual database column is `steps`.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/src/api/matrix.ts`
+
+**Changes Made:**
+- Line 383: Changed `trace.trace_data as string` to `trace.steps as string`
+- Line 736: Changed `t.trace_data` to `t.steps` in SQL query
+- Line 757: Changed `row.trace_data as string` to `row.steps as string`
+
+**Impact:**
+- Fixes runtime errors when accessing trace data in comparison matrix endpoint
+- Aligns code with actual database schema where traces table uses `steps` column (not `trace_data`)
+- No new TypeScript compilation errors introduced
+
+**Verification:**
+- All 3 occurrences of `trace_data` replaced successfully
+- TypeScript compilation verified (no new errors from this change)
+- Committed as: `156ae348cdb6e21c571349274a1c8183d4d06321`
+
+---
+
+
+### Task: Wired eval execution routes from matrix.ts
+
+**Files changed:**
+- `/home/ygupta/workspace/iofold/src/api/index.ts` - Added three new route handlers
+
+**Changes made:**
+1. Updated imports to include `getEvalExecutions`, `getTraceExecutions`, and `getEvalExecutionDetail` from matrix.ts
+2. Added route: `GET /api/evals/:id/executions` - Lists all executions for a specific eval with pagination support
+3. Added route: `GET /api/traces/:id/executions` - Lists all eval execution results for a specific trace
+4. Added route: `GET /api/eval-executions/:trace_id/:eval_id` - Gets detailed execution result for a specific eval on a specific trace
+
+**Implementation details:**
+- All three functions already existed in `/home/ygupta/workspace/iofold/src/api/matrix.ts` but were not exposed through the router
+- Routes follow existing pattern matching and error handling conventions
+- Added new "Eval Execution Endpoints" section in the router for better organization
+
+**Verification:**
+- TypeScript compilation checked (existing errors in codebase unrelated to these changes)
+- Git commit created: `feat(api): wire eval execution routes from matrix.ts` (9da7aa9)
+
+**Next steps:**
+- These routes are now ready for integration with the frontend
+- Consider adding API client methods for these endpoints
+- Test the endpoints with actual data to verify functionality
+
