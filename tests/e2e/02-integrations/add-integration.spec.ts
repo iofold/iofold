@@ -297,7 +297,8 @@ test.describe('Integration Management - Add Integration', () => {
 
     // Verify empty state is displayed
     await expect(page.getByText('No integrations connected')).toBeVisible({ timeout: 10000 })
-    await expect(page.getByText(/Connect your observability platform \(Langfuse, Langsmith, or OpenAI\) to import traces\./)).toBeVisible()
+    // Note: The text in the UI has "traces." with a period at the end
+    await expect(page.getByText('Connect your observability platform (Langfuse, Langsmith, or OpenAI) to import traces.')).toBeVisible()
 
     // Verify "Add your first integration" button is visible
     const addFirstButton = page.getByRole('button', { name: /Add your first integration/i })

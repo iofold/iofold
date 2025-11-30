@@ -19,34 +19,35 @@ test.describe('Integration Management - Error Cases', () => {
     await page.waitForLoadState('networkidle')
 
     // Click "Add Integration" button
-    await page.click('button:has-text("Add Integration")')
+    const addButton = page.getByRole('button', { name: /Add Integration/i })
+    await expect(addButton).toBeVisible({ timeout: 10000 })
+    await addButton.click()
 
     // Wait for modal/dialog to appear
-    await page.waitForSelector('[role="dialog"]', { state: 'visible' })
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible({ timeout: 5000 })
 
     // Fill in the form with invalid credentials
     const integrationName = uniqueName('Invalid Integration')
-    await page.fill('input#name', integrationName)
+    await page.locator('input#name').fill(integrationName)
 
     // Platform defaults to 'langfuse' - no need to change
 
     // Fill with invalid API key
-    await page.fill('input#api_key', 'invalid_api_key')
-    await page.fill('input#base_url', 'https://cloud.langfuse.com')
+    await page.locator('input#api_key').fill('invalid_api_key')
+    await page.locator('input#base_url').fill('https://cloud.langfuse.com')
 
     // Submit the form
-    await page.click('button[type="submit"]')
+    await dialog.getByRole('button', { name: /Add Integration$/i }).click()
 
     // The integration will be created (we don't validate credentials on create)
-    // Wait for success toast
-    try {
-      await page.waitForSelector('text=/added|success/i', { timeout: 10000 })
-    } catch {
-      // Or check if modal closes (indicating success)
-    }
+    // Wait for dialog to close (indicates success)
+    await expect(dialog).not.toBeVisible({ timeout: 10000 })
+
+    // Wait for the integration to appear in the list
+    await expect(page.getByText(integrationName)).toBeVisible({ timeout: 10000 })
 
     // Get the created integration ID for cleanup
-    await page.waitForTimeout(1000)
     const integrations = await apiRequest<{ integrations: any[] }>(page, '/api/integrations')
     const createdIntegration = integrations.integrations.find((i: any) => i.name === integrationName)
     if (createdIntegration) {
@@ -54,11 +55,7 @@ test.describe('Integration Management - Error Cases', () => {
     }
 
     // Verify integration was added (credentials validation happens on test connection, not on create)
-    await page.goto('/integrations')
-    await page.waitForLoadState('networkidle')
-
-    // Check if integration appears in the list
-    const integrationExists = await page.locator(`text="${integrationName}"`).count() > 0
-    expect(integrationExists).toBeTruthy()
+    // The integration should be visible in the list even with invalid credentials
+    expect(createdIntegration).toBeDefined()
   })
 })
