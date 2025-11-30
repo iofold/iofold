@@ -286,35 +286,55 @@ test.describe('Feedback UI Tests', () => {
     await page.goto('/traces');
     await page.waitForLoadState('networkidle');
 
+    // Wait longer for initial page load and data to render
+    await page.waitForTimeout(1500);
+
     // Wait for the page heading and table to load
-    await expect(page.getByRole('heading', { name: /traces explorer/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: /traces explorer/i })).toBeVisible({ timeout: 15000 });
 
     // Wait for table to be present
     const table = page.locator('table');
-    await expect(table).toBeVisible({ timeout: 10000 });
+    await expect(table).toBeVisible({ timeout: 15000 });
+
+    // Wait for at least one row to appear in the table body
+    const firstRow = page.locator('tbody tr').first();
+    await expect(firstRow).toBeVisible({ timeout: 15000 });
+
+    // Additional wait to ensure row is fully interactive
+    await page.waitForTimeout(500);
 
     // Click on first trace row - the row itself is clickable and opens the side sheet
-    const firstRow = page.locator('tbody tr').first();
     await firstRow.click();
 
     // Wait for the side sheet to open
-    await expect(page.getByRole('heading', { name: 'Trace Details' })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: 'Trace Details' })).toBeVisible({ timeout: 10000 });
+
+    // Wait for the View Full Details link to be visible and clickable
+    const viewDetailsLink = page.getByRole('link', { name: /view full details/i });
+    await expect(viewDetailsLink).toBeVisible({ timeout: 5000 });
 
     // Click the "View Full Details" button in the side sheet
-    await page.getByRole('link', { name: /view full details/i }).click();
+    await viewDetailsLink.click();
 
     // Wait for navigation to detail page (URL should change)
     await expect(page).toHaveURL(/\/traces\/[a-zA-Z0-9_-]+/, { timeout: 10000 });
 
-    // Should see the Trace Details heading on the full page
-    // Note: Using a more lenient check since different pages may have slightly different heading text
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 10000 });
+    // Wait for page to fully load
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // Should see the Trace Details heading on the full page (h1 level)
+    await expect(page.getByRole('heading', { name: 'Trace Details', exact: true })).toBeVisible({ timeout: 15000 });
 
     // Navigate back using browser back
     await page.goBack();
 
+    // Wait for navigation to complete
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
     // Should be back on list
-    await expect(page.getByRole('heading', { name: /traces explorer/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: /traces explorer/i })).toBeVisible({ timeout: 15000 });
   });
 
   test('TEST-FBUI09: Should show feedback status in traces list', async ({ page }) => {

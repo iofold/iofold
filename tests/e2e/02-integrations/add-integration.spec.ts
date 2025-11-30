@@ -8,7 +8,16 @@ import { apiRequest, uniqueName } from '../utils/helpers'
  * Note: The "Add Integration" flow uses a Dialog modal with Radix Select components.
  */
 test.describe('Integration Management - Add Integration', () => {
+  // Configure serial mode to prevent test pollution
+  // TEST-I08 requires clean state, so tests must run in order
+  test.describe.configure({ mode: 'serial' })
+
   let integrationId: string | null = null
+
+  test.beforeEach(async ({ page }) => {
+    // Reset integrationId before each test
+    integrationId = null
+  })
 
   test.afterEach(async ({ page }) => {
     // Cleanup created integration via API
@@ -285,15 +294,21 @@ test.describe('Integration Management - Add Integration', () => {
   })
 
   test('TEST-I08: Verify empty integrations state', async ({ page }) => {
-    // Delete all integrations first
+    // Delete all integrations first to ensure clean state
     const integrations = await apiRequest<{ integrations: any[] }>(page, '/api/integrations')
     for (const integration of integrations.integrations) {
       await apiRequest(page, `/api/integrations/${integration.id}`, { method: 'DELETE' }).catch(() => {})
     }
 
+    // Wait a bit for deletions to complete
+    await page.waitForTimeout(500)
+
     // Navigate to integrations page
     await page.goto('/integrations')
     await page.waitForLoadState('networkidle')
+
+    // Additional wait to ensure page has fully rendered
+    await page.waitForTimeout(1000)
 
     // Verify empty state is displayed
     await expect(page.getByText('No integrations connected')).toBeVisible({ timeout: 10000 })
