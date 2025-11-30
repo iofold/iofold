@@ -34,12 +34,12 @@ const mockTrendData = [
 ]
 
 const scoreDistribution = [
-  { range: '0-20', value: 2, color: '#D4705A' }, // Coral Dark - error
-  { range: '21-40', value: 5, color: '#F2B8A2' }, // Coral Light - warning
-  { range: '41-60', value: 12, color: '#6B7280' }, // Gray - neutral
-  { range: '61-80', value: 28, color: '#8EDCC4' }, // Mint Light
-  { range: '81-90', value: 35, color: '#4ECFA5' }, // Mint
-  { range: '91-100', value: 18, color: '#2D9B78' } // Mint Dark
+  { range: '0-20', value: 2, color: '#D84315' },  // 0-20: Error
+  { range: '21-40', value: 5, color: '#FF8A8A' },  // 21-40: Error muted
+  { range: '41-60', value: 12, color: '#8B949E' },  // 41-60: Neutral
+  { range: '61-80', value: 28, color: '#B2DFDB' },  // 61-80: Primary muted
+  { range: '81-90', value: 35, color: '#4ECDC4' },  // 81-90: Primary
+  { range: '91-100', value: 18, color: '#4CAF50' }  // 91-100: Success
 ]
 
 const SparklineChart = ({ data, color }: { data: number[], color: string }) => {

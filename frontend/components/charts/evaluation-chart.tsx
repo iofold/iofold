@@ -37,10 +37,10 @@ interface EvaluationChartProps {
 
 const metricColors: Record<string, string> = {
   success_rate: 'var(--chart-primary)',
-  performance_score: 'var(--chart-primary-dark)',
+  performance_score: 'var(--accent-sage)',
   latency: 'var(--chart-secondary)',
-  cost_per_run: 'var(--chart-secondary-dark)',
-  accuracy: 'var(--chart-quaternary)'
+  cost_per_run: 'var(--accent-peach)',
+  accuracy: 'var(--accent-gold)'
 }
 
 const CustomTooltip = ({
