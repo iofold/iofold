@@ -15,7 +15,8 @@ import type {
   AutoRefineJobPayload,
   AgentDiscoveryJobPayload,
   PromptImprovementJobPayload,
-  PromptEvaluationJobPayload
+  PromptEvaluationJobPayload,
+  RetryAttempt
 } from '../types/queue';
 import { JobManager } from '../jobs/job-manager';
 import { TraceImportJob } from '../jobs/trace-import-job';
@@ -24,6 +25,8 @@ import { EvalExecutionJob } from '../jobs/eval-execution-job';
 import { AgentDiscoveryJob } from '../jobs/agent-discovery-job';
 import { PromptImprovementJob } from '../jobs/prompt-improvement-job';
 import { PromptEvaluationJob } from '../jobs/prompt-evaluation-job';
+import { classifyError, isRetryable, getErrorCategoryDescription, type ErrorCategory } from '../errors/classifier';
+import { calculateBackoffDelay, shouldRetry as shouldRetryBackoff, DEFAULT_RETRY_CONFIG } from '../retry/backoff';
 
 /**
  * Cloudflare Queue message batch type
@@ -48,6 +51,18 @@ export interface Message<T> {
  */
 export interface DeadLetterQueue {
   send(message: DeadLetterMessage | any): Promise<void>;
+}
+
+/**
+ * Result of error handling for a message
+ */
+export interface MessageErrorResult {
+  shouldRetry: boolean;
+  moveToDlq: boolean;
+  errorCategory: ErrorCategory;
+  delayMs: number;
+  retryHistory?: RetryAttempt[];
+  suggestedAction?: string;
 }
 
 /**
@@ -109,23 +124,25 @@ export class QueueConsumer {
         message.ack();
         result.succeeded++;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`[QueueConsumer] Message ${message.id} failed: ${errorMessage}`);
+        const errorResult = await this.handleMessageError(message, error);
 
-        // Check if we should retry or move to DLQ
-        const queueMessage = message.body;
-        const maxRetries = 3;
+        if (errorResult.shouldRetry) {
+          // Update message with retry metadata before retry
+          message.body.attempt++;
+          message.body.error_category = errorResult.errorCategory;
+          message.body.last_error_at = new Date().toISOString();
+          message.body.retry_history = errorResult.retryHistory;
 
-        if (queueMessage.attempt < maxRetries) {
-          // Update attempt count for retry
-          queueMessage.attempt++;
           message.retry();
           result.retried++;
-          console.log(`[QueueConsumer] Retrying message ${message.id} (attempt ${queueMessage.attempt})`);
+          console.log(
+            `[QueueConsumer] Retrying message ${message.id} in ${errorResult.delayMs}ms ` +
+            `(attempt ${message.body.attempt}, category: ${errorResult.errorCategory})`
+          );
         } else {
-          // Move to dead letter queue
-          await this.moveToDeadLetterQueue(queueMessage, errorMessage);
-          message.ack(); // Ack to remove from main queue
+          // Move to DLQ
+          await this.moveToDeadLetterQueueEnhanced(message.body, error, errorResult);
+          message.ack();
           result.failed++;
         }
       }
@@ -416,7 +433,178 @@ export class QueueConsumer {
   }
 
   /**
-   * Move failed message to dead letter queue
+   * Handle message error with classification and retry decisions
+   */
+  async handleMessageError(
+    message: { body: QueueMessage; ack: () => void; retry: () => void },
+    error: unknown
+  ): Promise<MessageErrorResult> {
+    const queueMessage = message.body;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorCategory = classifyError(error);
+    const now = new Date().toISOString();
+
+    // Build retry history
+    const retryHistory: RetryAttempt[] = [
+      ...(queueMessage.retry_history || []),
+      {
+        attempt: queueMessage.attempt,
+        error: errorMessage,
+        error_category: errorCategory,
+        delay_ms: 0, // Will be set below if retrying
+        timestamp: now
+      }
+    ];
+
+    // Check if we should retry
+    const canRetry = isRetryable(errorCategory) &&
+                     shouldRetryBackoff(queueMessage.attempt, errorCategory, DEFAULT_RETRY_CONFIG);
+
+    if (!canRetry) {
+      // Move to DLQ
+      const suggestedAction = this.getSuggestedAction(errorCategory);
+
+      return {
+        shouldRetry: false,
+        moveToDlq: true,
+        errorCategory,
+        delayMs: 0,
+        retryHistory,
+        suggestedAction
+      };
+    }
+
+    // Calculate backoff delay
+    const delayMs = calculateBackoffDelay(queueMessage.attempt, errorCategory, DEFAULT_RETRY_CONFIG);
+
+    // Update the last retry record with actual delay
+    retryHistory[retryHistory.length - 1].delay_ms = delayMs;
+
+    // Record retry attempt in database
+    await this.recordRetryAttempt(queueMessage.job_id, queueMessage.attempt, errorMessage, errorCategory, delayMs);
+
+    return {
+      shouldRetry: true,
+      moveToDlq: false,
+      errorCategory,
+      delayMs,
+      retryHistory
+    };
+  }
+
+  /**
+   * Record retry attempt in database for audit trail
+   */
+  private async recordRetryAttempt(
+    jobId: string,
+    attempt: number,
+    error: string,
+    errorCategory: ErrorCategory,
+    delayMs: number
+  ): Promise<void> {
+    const id = `retry_${crypto.randomUUID()}`;
+
+    await this.db
+      .prepare(
+        `INSERT INTO job_retry_history (id, job_id, attempt, error, error_category, delay_ms)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .bind(id, jobId, attempt, error, errorCategory, delayMs)
+      .run();
+
+    // Update job record with retry info
+    await this.db
+      .prepare(
+        `UPDATE jobs SET
+         retry_count = ?,
+         error_category = ?,
+         last_error_at = ?,
+         next_retry_at = datetime('now', '+' || ? || ' seconds')
+         WHERE id = ?`
+      )
+      .bind(attempt, errorCategory, new Date().toISOString(), Math.ceil(delayMs / 1000), jobId)
+      .run();
+  }
+
+  /**
+   * Get suggested action for error category
+   */
+  private getSuggestedAction(category: ErrorCategory): string {
+    const actions: Record<ErrorCategory, string> = {
+      transient_network: 'Check network connectivity and retry',
+      transient_rate_limit: 'Wait for rate limit reset and retry',
+      transient_server: 'Wait for service recovery and retry',
+      transient_db_lock: 'Retry after a short delay',
+      permanent_validation: 'Review input data and fix validation errors',
+      permanent_auth: 'Check API credentials and permissions',
+      permanent_not_found: 'Verify resource exists before retrying',
+      permanent_security: 'Review code for security violations',
+      unknown: 'Investigate error and determine appropriate action'
+    };
+    return actions[category];
+  }
+
+  /**
+   * Move failed message to dead letter queue with enhanced metadata
+   */
+  private async moveToDeadLetterQueueEnhanced(
+    message: QueueMessage,
+    error: unknown,
+    errorResult: MessageErrorResult
+  ): Promise<void> {
+    console.log(`[QueueConsumer] Moving job ${message.job_id} to dead letter queue (${errorResult.errorCategory})`);
+
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const requiresUserAction = errorResult.errorCategory.startsWith('permanent_');
+
+    const dlqMessage: DeadLetterMessage = {
+      original_message: message,
+      error: errorMessage,
+      error_category: errorResult.errorCategory,
+      final_attempt: message.attempt,
+      failed_at: new Date().toISOString(),
+      retry_history: errorResult.retryHistory || [],
+      requires_user_action: requiresUserAction,
+      suggested_action: errorResult.suggestedAction
+    };
+
+    if (this.deadLetterQueue) {
+      await this.deadLetterQueue.send(dlqMessage);
+    } else {
+      console.error(`[QueueConsumer] DLQ not configured, job ${message.job_id} permanently failed:`, dlqMessage);
+    }
+
+    // Update job status to failed with enhanced DLQ info
+    await this.db
+      .prepare(
+        `UPDATE jobs SET
+         status = 'failed',
+         error = ?,
+         error_category = ?,
+         completed_at = ?,
+         metadata = json_set(
+           COALESCE(metadata, '{}'),
+           '$.moved_to_dlq', true,
+           '$.final_attempt', ?,
+           '$.requires_user_action', ?,
+           '$.suggested_action', ?
+         )
+         WHERE id = ?`
+      )
+      .bind(
+        `Failed after ${message.attempt} attempts: ${errorMessage}`,
+        errorResult.errorCategory,
+        new Date().toISOString(),
+        message.attempt,
+        requiresUserAction,
+        errorResult.suggestedAction || null,
+        message.job_id
+      )
+      .run();
+  }
+
+  /**
+   * Move failed message to dead letter queue (legacy method for backwards compatibility)
    */
   private async moveToDeadLetterQueue(
     message: QueueMessage,
@@ -427,8 +615,12 @@ export class QueueConsumer {
     const dlqMessage: DeadLetterMessage = {
       original_message: message,
       error,
+      error_category: 'unknown',
       final_attempt: message.attempt,
-      failed_at: new Date().toISOString()
+      failed_at: new Date().toISOString(),
+      retry_history: message.retry_history || [],
+      requires_user_action: true,
+      suggested_action: 'Investigate error and determine appropriate action'
     };
 
     if (this.deadLetterQueue) {
