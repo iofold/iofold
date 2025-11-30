@@ -125,48 +125,59 @@
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --background: 216 28% 7%;
+    --foreground: 210 17% 93%;
+    --card: 215 21% 11%;
+    --card-foreground: 210 17% 93%;
+    --primary: 174 58% 56%;
+    --primary-foreground: 216 28% 7%;
+    --secondary: 342 100% 71%;
+    --secondary-foreground: 216 28% 7%;
+    --muted: 215 14% 15%;
+    --muted-foreground: 210 14% 60%;
+    --accent: 215 14% 15%;
+    --accent-foreground: 210 17% 93%;
+    --destructive: 14 82% 47%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 212 12% 21%;
+    --input: 212 12% 21%;
+    --ring: 174 58% 56%;
 
     /* Semantic colors - dark mode */
-    --success: 142 71% 45%;
+    --success: 122 39% 49%;
     --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
+    --warning: 45 100% 51%;
     --warning-foreground: 0 0% 0%;
-    --error: 0 62% 50%;
+    --error: 14 82% 55%;
     --error-foreground: 0 0% 100%;
-    --info: 199 89% 48%;
+    --info: 192 32% 52%;
     --info-foreground: 0 0% 100%;
 
     /* IOFold Brand Colors - Dark Mode */
-    --color-background: #1A1D23; /* Dark charcoal background */
-    --color-foreground: #E5E7EB; /* Light gray text */
-    --color-border: #374151; /* Dark gray borders */
-    --color-input: #2A2D35; /* Dark inputs */
-    --color-ring: #4ECFA5; /* Keep mint for focus rings */
+    --color-background: #0D1117;
+    --color-foreground: #EAEEF2;
+    --color-border: #30363D;
+    --color-input: #161B22;
+    --color-ring: #4ECDC4;
 
-    --color-card: #2A2D35; /* Dark cards */
-    --color-card-foreground: #E5E7EB; /* Light text on cards */
-    --color-popover: #2A2D35; /* Dark popovers */
-    --color-popover-foreground: #E5E7EB; /* Light text */
+    --color-card: #161B22;
+    --color-card-foreground: #EAEEF2;
+    --color-popover: #161B22;
+    --color-popover-foreground: #EAEEF2;
 
-    --color-muted: #374151; /* Dark gray muted backgrounds */
-    --color-muted-foreground: #9CA3AF; /* Medium gray muted text */
+    --color-muted: #21262D;
+    --color-muted-foreground: #8B949E;
+
+    --color-primary-muted: #21403E;
+    --color-secondary-muted: #3D2030;
+    --color-success-muted: #1E3A1E;
+    --color-warning-muted: #3D3010;
+    --color-error-muted: #3D1510;
+
+    /* Chart colors for dark mode */
+    --chart-grid: #30363D;
+    --chart-axis: #8B949E;
+    --chart-text: #EAEEF2;
   }
 }
 
