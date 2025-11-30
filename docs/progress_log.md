@@ -6,6 +6,27 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### Connected Settings Theme Toggle to next-themes (Task 4)
+
+**Time:** 20:45 UTC
+
+**Summary:** Updated the settings page to use the `useTheme` hook from next-themes instead of local state for theme management. The theme selector dropdown now actually changes the application theme in real-time.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/frontend/app/settings/page.tsx` - Replaced local state with useTheme hook
+
+**Implementation Details:**
+- Added `import { useTheme } from 'next-themes'` and `useEffect` from React
+- Replaced `const [theme, setTheme] = useState('system')` with `const { theme, setTheme } = useTheme()`
+- Added mounted state to handle hydration: `const [mounted, setMounted] = useState(false)` with useEffect to set it to true
+- The existing Select component now properly connects to next-themes and changes the theme when a user selects light, dark, or system mode
+
+**Commit SHA:** a05154b818a150973aeeffef3abf9f975698555d
+
+**Next Steps:** Task 5 - Update Hardcoded Colors in Components
+
+---
+
 ### Installed and Configured next-themes (Task 3)
 
 **Time:** 20:35 UTC
@@ -14338,3 +14359,24 @@ Tests were failing because:
 
 ---
 
+
+### Fixed Missing Base Brand Colors in Dark Mode (Critical Fix from Task 2 Code Review)
+
+**Time:** 18:22 UTC
+
+**Summary:** Fixed a critical issue identified in code review where the `.dark` selector in `frontend/app/globals.css` was missing the base brand color variables (`--color-primary`, `--color-primary-foreground`, `--color-secondary`, `--color-secondary-foreground`). These are essential colors that components depend on for proper dark mode rendering.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/frontend/app/globals.css` - Added 4 missing color variables to `.dark` selector after line 169
+
+**Colors Added:**
+- `--color-primary: #4ECDC4;` (Seafoam brand color)
+- `--color-primary-foreground: #FFFFFF;` (White text on primary)
+- `--color-secondary: #FF6B9D;` (Blush brand color)
+- `--color-secondary-foreground: #FFFFFF;` (White text on secondary)
+
+**Commit SHA:** 26326f5887d7d5f183e227bbb7d43e56f03b9243
+
+**Impact:** This fix ensures that components using the primary and secondary brand colors will render correctly in dark mode with proper color values rather than potentially falling back to undefined or incorrect colors.
+
+---
