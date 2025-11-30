@@ -6,6 +6,49 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### API Endpoints: Job Retry History and Manual Retry
+
+**Time:** 22:30 UTC
+
+**Task:** Added two new API endpoints for job retry management (Task 7 of job queue enhancements plan).
+
+**Changes Made:**
+
+1. **Updated src/api/jobs.ts:**
+   - Added `createAPIError` import from `../utils/errors`
+   - Implemented `getJobRetries(jobId: string)` endpoint:
+     - Verifies job exists using `jobManager.getJob()`
+     - Retrieves retry history using `jobManager.getJobRetryHistory()`
+     - Returns JSON with `job_id`, `total_attempts`, and `retries` array
+   - Implemented `retryJob(jobId: string)` endpoint:
+     - Verifies job exists and status is 'failed'
+     - Resets job to 'queued' status with cleared error fields
+     - Increments `retry_count` and sets `next_retry_at` to current time
+     - Returns success message with `job_id`
+
+2. **Updated src/api/index.ts:**
+   - Registered new routes in the main API router:
+     - `GET /api/jobs/:id/retries` - Get retry history for a job
+     - `POST /api/jobs/:id/retry` - Manually retry a failed job
+   - Routes placed after cancel endpoint and before list jobs endpoint
+
+**Files Changed:**
+- `src/api/jobs.ts`
+- `src/api/index.ts`
+
+**Endpoints Added:**
+- `GET /api/jobs/:id/retries` - Returns retry history with attempt details
+- `POST /api/jobs/:id/retry` - Manually requeues a failed job for retry
+
+**Commit:** a566408
+
+**Next Steps:**
+- Task 8: Create frontend job queue dashboard component
+- Task 9: Add job queue section to system page
+- Task 10: Update progress log and run tests
+
+---
+
 ### Queue Type Enhancements: Retry Metadata
 
 **Time:** 21:15 UTC
