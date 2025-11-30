@@ -15,6 +15,7 @@ import {
   listTraces,
   getTraceById,
   deleteTrace,
+  deleteTraces,
   createTrace,
 } from './traces';
 
@@ -60,6 +61,7 @@ import {
   confirmAgent,
   deleteAgent,
   getAgentPrompt,
+  improveAgent,
 } from './agents';
 
 import {
@@ -101,6 +103,11 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   // GET /api/traces
   if (path === '/api/traces' && method === 'GET') {
     return listTraces(request, env);
+  }
+
+  // DELETE /api/traces (bulk) - must come BEFORE the :id pattern match
+  if (path === '/api/traces' && method === 'DELETE') {
+    return deleteTraces(request, env);
   }
 
   // GET /api/traces/:id
@@ -351,14 +358,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return confirmAgent(request, env, agentConfirmMatch[1]);
   }
 
-  // POST /api/agents/:id/improve (return 501 NOT_IMPLEMENTED for now)
+  // POST /api/agents/:id/improve
   const agentImproveMatch = path.match(/^\/api\/agents\/([^\/]+)\/improve$/);
   if (agentImproveMatch && method === 'POST') {
-    return createErrorResponse(
-      'NOT_IMPLEMENTED',
-      'Agent improvement feature not yet implemented',
-      501
-    );
+    return improveAgent(request, env, agentImproveMatch[1]);
   }
 
   // GET /api/agents/:id/versions
