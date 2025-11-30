@@ -7,104 +7,121 @@
   :root {
     /* shadcn/ui HSL variables for compatibility */
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --foreground: 215 14% 15%;
+    --card: 210 20% 98%;
+    --card-foreground: 215 14% 15%;
+    --primary: 174 58% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 342 100% 71%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 17% 93%;
+    --muted-foreground: 215 14% 40%;
+    --accent: 174 37% 79%;
+    --accent-foreground: 215 14% 15%;
+    --destructive: 14 82% 47%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 14% 84%;
+    --input: 210 14% 84%;
+    --ring: 174 58% 56%;
     --radius: 0.5rem;
 
     /* Semantic colors */
-    --success: 142 76% 36%;
+    --success: 122 39% 49%;
     --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
+    --warning: 45 100% 51%;
     --warning-foreground: 0 0% 0%;
-    --error: 0 84% 60%;
+    --error: 14 82% 47%;
     --error-foreground: 0 0% 100%;
 
     /* Info color */
-    --info: 199 89% 48%;
+    --info: 192 32% 52%;
     --info-foreground: 0 0% 100%;
 
     /* Elevation shadows */
-    --shadow-elevation-1: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
-    --shadow-elevation-2: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
-    --shadow-elevation-3: 0 10px 15px rgba(0,0,0,0.1), 0 4px 6px rgba(0,0,0,0.05);
+    --shadow-elevation-1: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-elevation-2: 0 4px 6px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
+    --shadow-elevation-3: 0 10px 15px rgba(0,0,0,0.08), 0 4px 6px rgba(0,0,0,0.04);
 
-    /* IOFold Brand Colors - Mint Primary Theme */
-    --color-background: #FDF8F0; /* Cream background */
-    --color-foreground: #2A2D35; /* Charcoal text */
-    --color-border: #D1D5DB; /* Medium gray borders for visibility */
-    --color-input: #FFFFFF; /* White inputs */
-    --color-ring: #4ECFA5; /* Mint for focus rings */
+    /* IOFold Brand Colors - New Palette */
+    --color-background: #FFFFFF;
+    --color-foreground: #21262D;
+    --color-border: #D0D7DE;
+    --color-input: #FFFFFF;
+    --color-ring: #4ECDC4;
 
     /* Surface Colors */
-    --color-card: #FFFFFF; /* White cards */
-    --color-card-foreground: #2A2D35; /* Charcoal text on cards */
-    --color-popover: #FFFFFF; /* White popovers */
-    --color-popover-foreground: #2A2D35; /* Charcoal text */
+    --color-card: #F6F8FA;
+    --color-card-foreground: #21262D;
+    --color-popover: #FFFFFF;
+    --color-popover-foreground: #21262D;
 
-    /* Muted Colors - Using Cream variants */
-    --color-muted: #F5EFE6; /* Darker cream for muted backgrounds */
-    --color-muted-foreground: #6B7280; /* Medium gray muted text */
+    /* Muted Colors */
+    --color-muted: #EAEEF2;
+    --color-muted-foreground: #57606A;
 
-    /* Primary Colors - Mint */
-    --color-primary: #4ECFA5; /* Mint primary */
-    --color-primary-foreground: #FFFFFF; /* White text on mint */
+    /* Primary Colors - Seafoam */
+    --color-primary: #4ECDC4;
+    --color-primary-foreground: #FFFFFF;
+    --color-primary-muted: #B2DFDB;
 
-    /* Secondary Colors - Coral */
-    --color-secondary: #E8967A; /* Coral secondary */
-    --color-secondary-foreground: #FFFFFF; /* White text on coral */
+    /* Secondary Colors - Blush */
+    --color-secondary: #FF6B9D;
+    --color-secondary-foreground: #FFFFFF;
+    --color-secondary-muted: #FFCDD2;
 
-    /* Accent Colors - Mint Light */
-    --color-accent: #8EDCC4; /* Mint Light accent */
-    --color-accent-foreground: #2A2D35; /* Charcoal text */
+    /* Accent Colors */
+    --color-accent: #B2DFDB;
+    --color-accent-foreground: #21262D;
 
     /* Status Colors */
-    --color-success: #2D9B78; /* Mint Dark for success */
-    --color-success-foreground: #FFFFFF; /* White text */
+    --color-success: #4CAF50;
+    --color-success-foreground: #FFFFFF;
+    --color-success-muted: #81C784;
 
-    --color-warning: #F2B8A2; /* Coral Light for warnings */
-    --color-warning-foreground: #2A2D35; /* Charcoal text */
+    --color-warning: #FFC107;
+    --color-warning-foreground: #21262D;
+    --color-warning-muted: #FFD54F;
 
-    --color-error: #D4705A; /* Coral Dark for errors */
-    --color-error-foreground: #FFFFFF; /* White text */
+    --color-error: #D84315;
+    --color-error-foreground: #FFFFFF;
+    --color-error-muted: #FF8A8A;
 
-    --color-destructive: #D4705A; /* Coral Dark destructive */
-    --color-destructive-foreground: #FFFFFF; /* White text */
+    --color-destructive: #D84315;
+    --color-destructive-foreground: #FFFFFF;
 
-    /* Chart-Specific Colors - IOFold Brand Palette */
-    --chart-primary: #4ECFA5; /* Mint - main chart color */
-    --chart-primary-dark: #2D9B78; /* Mint Dark - darker variant */
-    --chart-primary-light: #8EDCC4; /* Mint Light - lighter variant */
+    /* Chart Colors - Accent Palette */
+    --chart-primary: #4ECDC4;
+    --chart-primary-dark: #37474F;
+    --chart-primary-light: #A8E6CF;
 
-    --chart-secondary: #E8967A; /* Coral - secondary chart color */
-    --chart-secondary-dark: #D4705A; /* Coral Dark - darker variant */
-    --chart-secondary-light: #F2B8A2; /* Coral Light - lighter variant */
+    --chart-secondary: #FF6B9D;
+    --chart-secondary-dark: #D84315;
+    --chart-secondary-light: #FF8A8A;
 
-    --chart-tertiary: #6B7280; /* Neutral gray for tertiary data */
-    --chart-quaternary: #A78BFA; /* Purple accent for additional series */
-    --chart-quinary: #FBBF24; /* Amber for highlights */
+    --chart-tertiary: #FFAB76;
+    --chart-quaternary: #FFC107;
+    --chart-quinary: #8D6E63;
 
-    --chart-grid: #E5E7EB; /* Light gray for grid lines */
-    --chart-axis: #6B7280; /* Medium gray for axis */
-    --chart-text: #2A2D35; /* Charcoal for chart text */
+    --chart-grid: #EAEEF2;
+    --chart-axis: #57606A;
+    --chart-text: #21262D;
+
+    /* Accent Palette for Tags/Charts */
+    --accent-mint: #A8E6CF;
+    --accent-seafoam: #4ECDC4;
+    --accent-coral: #FF8A8A;
+    --accent-blush: #FF6B9D;
+    --accent-peach: #FFAB76;
+    --accent-gold: #FFC107;
+    --accent-sage: #4CAF50;
+    --accent-forest: #1B5E20;
+    --accent-teal: #37474F;
+    --accent-clay: #8D6E63;
 
     /* Heat Map Colors */
-    --heatmap-success: #2D9B78; /* Mint Dark for agreements */
-    --heatmap-error: #D4705A; /* Coral Dark for contradictions */
-    --heatmap-neutral: #8EDCC4; /* Mint Light for neutral */
+    --heatmap-success: #4CAF50;
+    --heatmap-error: #D84315;
+    --heatmap-neutral: #B2DFDB;
   }
 
   .dark {
