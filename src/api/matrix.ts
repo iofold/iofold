@@ -380,7 +380,7 @@ export async function getComparisonMatrix(
       const humanRating = trace.human_rating as string | null;
 
       const { input_preview, output_preview } = extractTraceSummary(
-        trace.trace_data as string
+        trace.steps as string
       );
 
       const predictions: Record<string, PredictionResult | null> = {};
@@ -733,7 +733,7 @@ export async function getEvalExecutions(
         ee.error,
         ee.executed_at,
         t.imported_at as trace_timestamp,
-        t.trace_data
+        t.steps
       FROM eval_executions ee
       INNER JOIN traces t ON ee.trace_id = t.id
       WHERE ${conditions.join(' AND ')}
@@ -754,7 +754,7 @@ export async function getEvalExecutions(
     // Build response
     const executionsList: EvalExecution[] = executions.map(row => {
       const { input_preview, output_preview } = extractTraceSummary(
-        row.trace_data as string
+        row.steps as string
       );
 
       return {
