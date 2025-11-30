@@ -67,7 +67,8 @@ test.describe('TEST-N01: Sidebar Navigation', () => {
 
   test('TEST-N01-02: Active page highlighted in sidebar', async ({ page }) => {
     // We're on /traces page from beforeEach
-    const tracesLink = page.getByRole('link', { name: 'Traces' });
+    const sidebar = page.locator('aside').first();
+    const tracesLink = sidebar.getByRole('link', { name: 'Traces', exact: true });
     await expect(tracesLink).toBeVisible();
 
     // Check that the Traces link has active styling
@@ -79,11 +80,11 @@ test.describe('TEST-N01: Sidebar Navigation', () => {
     await page.waitForLoadState('networkidle');
 
     // Verify Evals is now active
-    const evalsLink = page.getByRole('link', { name: 'Evals' });
+    const evalsLink = sidebar.getByRole('link', { name: 'Evals', exact: true });
     await expect(evalsLink).toHaveAttribute('aria-current', 'page');
 
     // Verify Traces is no longer active
-    const tracesLinkNew = page.getByRole('link', { name: 'Traces' });
+    const tracesLinkNew = sidebar.getByRole('link', { name: 'Traces', exact: true });
     await expect(tracesLinkNew).not.toHaveAttribute('aria-current', 'page');
   });
 
@@ -93,12 +94,14 @@ test.describe('TEST-N01: Sidebar Navigation', () => {
       { label: 'Evals', expectedUrl: /\/evals/ },
       { label: 'Agents', expectedUrl: /\/agents/ },
       { label: 'System', expectedUrl: /\/system/ },
-      { label: 'Overview', expectedUrl: /^\/$/ },
+      { label: 'Overview', expectedUrl: /\/$/ },
     ];
+
+    const sidebar = page.locator('aside').first();
 
     for (const nav of navigationTests) {
       // Click the navigation item
-      const navLink = page.getByRole('link', { name: nav.label });
+      const navLink = sidebar.getByRole('link', { name: nav.label, exact: true });
       await navLink.click();
 
       // Wait for navigation to complete
@@ -108,7 +111,7 @@ test.describe('TEST-N01: Sidebar Navigation', () => {
       await expect(page).toHaveURL(nav.expectedUrl);
 
       // Verify the link is now marked as active
-      const activeLink = page.getByRole('link', { name: nav.label });
+      const activeLink = sidebar.getByRole('link', { name: nav.label, exact: true });
       await expect(activeLink).toHaveAttribute('aria-current', 'page');
     }
   });
@@ -127,14 +130,15 @@ test.describe('TEST-N01: Sidebar Navigation', () => {
     await expect(logo).toBeVisible();
 
     // Click the overview/dashboard link instead (since logo might not be clickable)
-    const dashboardLink = page.getByRole('link', { name: 'Overview' });
+    const sidebar = page.locator('aside').first();
+    const dashboardLink = sidebar.getByRole('link', { name: 'Overview', exact: true });
     await dashboardLink.click();
 
     // Wait for navigation
     await page.waitForLoadState('networkidle');
 
     // Verify we're back at dashboard
-    await expect(page).toHaveURL(/^\//);
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test('TEST-N01-05: Mobile menu toggle works', async ({ page }) => {
@@ -270,13 +274,21 @@ test.describe('TEST-N01: Sidebar Navigation', () => {
   });
 
   test('TEST-N01-10: Sidebar persists across page navigation', async ({ page }) => {
+    // Find the toggle button first
+    const sidebar = page.locator('aside').first();
+    const toggleButton = sidebar.locator('button[aria-label*="sidebar"]');
+    await expect(toggleButton).toBeVisible();
+
+    // Verify initial state (should be expanded with "Collapse" label)
+    let buttonLabel = await toggleButton.getAttribute('aria-label');
+    expect(buttonLabel).toContain('Collapse');
+
     // Collapse the sidebar
-    const toggleButton = page.locator('aside button[aria-label*="Collapse sidebar"]');
     await toggleButton.click();
     await page.waitForTimeout(300);
 
     // Verify collapsed state
-    let buttonLabel = await toggleButton.getAttribute('aria-label');
+    buttonLabel = await toggleButton.getAttribute('aria-label');
     expect(buttonLabel).toContain('Expand');
 
     // Navigate to a different page

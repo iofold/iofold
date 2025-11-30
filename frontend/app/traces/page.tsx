@@ -569,7 +569,7 @@ function TracesPageContent() {
             </div>
           </Card>
         ) : (
-          <Card className="overflow-hidden">
+          <Card className="overflow-hidden" data-testid="trace-list">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-muted/50 border-b">
@@ -628,6 +628,7 @@ function TracesPageContent() {
                         key={trace.id}
                         className="hover:bg-muted/30 transition-colors cursor-pointer"
                         onClick={() => setSelectedTrace(trace)}
+                        data-testid="trace-row"
                       >
                         <td className="px-4 py-4">
                           <Checkbox

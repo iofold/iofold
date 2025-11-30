@@ -73,11 +73,11 @@ test.describe('Trace Management - Feedback', () => {
     // Click thumbs up button
     await positiveButton.click()
 
-    // Wait for success toast - the toast shows "Marked as positive"
-    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked.*positive/i })).toBeVisible({ timeout: 10000 })
+    // Wait for success toast - the toast shows "Feedback submitted successfully"
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /feedback submitted successfully/i })).toBeVisible({ timeout: 10000 })
 
-    // Verify button shows active state - check for bg-green or the selected class
-    await expect(positiveButton).toHaveClass(/bg-green|active|selected/, { timeout: 5000 })
+    // Verify button shows active state - check for bg-green-50 (the actual class used)
+    await expect(positiveButton).toHaveClass(/bg-green-50/, { timeout: 5000 })
   })
 
   test('TEST-T11: Keyboard shortcuts', async ({ page }) => {
@@ -94,30 +94,30 @@ test.describe('Trace Management - Feedback', () => {
     // Press "1" for positive feedback
     await page.keyboard.press('1')
 
-    // Wait for success toast - the toast shows "Marked as positive"
-    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked.*positive/i })).toBeVisible({ timeout: 10000 })
+    // Wait for success toast - keyboard shortcuts show "Marked as positive"
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked as positive/i })).toBeVisible({ timeout: 10000 })
 
-    // Verify positive button is active
-    await expect(positiveButton).toHaveClass(/bg-green|active|selected/, { timeout: 5000 })
+    // Verify positive button is active - check for bg-green-50 (the actual class used)
+    await expect(positiveButton).toHaveClass(/bg-green-50/, { timeout: 5000 })
 
     // Press "2" for neutral feedback
     await page.keyboard.press('2')
 
-    // Wait for success toast - the toast shows "Marked as neutral"
-    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked.*neutral/i })).toBeVisible({ timeout: 10000 })
+    // Wait for success toast - keyboard shortcuts show "Marked as neutral"
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked as neutral/i })).toBeVisible({ timeout: 10000 })
 
-    // Verify neutral button is active
+    // Verify neutral button is active - check for bg-gray-50 (the actual class used)
     const neutralButton = page.locator('[data-testid="feedback-neutral"]')
-    await expect(neutralButton).toHaveClass(/bg-gray|active|selected/, { timeout: 5000 })
+    await expect(neutralButton).toHaveClass(/bg-gray-50/, { timeout: 5000 })
 
     // Press "3" for negative feedback
     await page.keyboard.press('3')
 
-    // Wait for success toast - the toast shows "Marked as negative"
-    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked.*negative/i })).toBeVisible({ timeout: 10000 })
+    // Wait for success toast - keyboard shortcuts show "Marked as negative"
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked as negative/i })).toBeVisible({ timeout: 10000 })
 
-    // Verify negative button is active
+    // Verify negative button is active - check for bg-red-50 (the actual class used)
     const negativeButton = page.locator('[data-testid="feedback-negative"]')
-    await expect(negativeButton).toHaveClass(/bg-red|active|selected/, { timeout: 5000 })
+    await expect(negativeButton).toHaveClass(/bg-red-50/, { timeout: 5000 })
   })
 })

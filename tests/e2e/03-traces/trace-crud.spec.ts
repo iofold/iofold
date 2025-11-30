@@ -247,6 +247,12 @@ test.describe('Trace CRUD Operations', () => {
     // Get first page
     const page1 = await apiRequest<any>(page, '/api/traces?limit=2');
 
+    // Verify pagination metadata exists
+    expect(page1).toHaveProperty('has_more');
+    expect(page1.traces).toBeDefined();
+    expect(Array.isArray(page1.traces)).toBe(true);
+
+    // Only test pagination if there are more results
     if (page1.has_more && page1.next_cursor) {
       // Get second page
       const page2 = await apiRequest<any>(page, `/api/traces?limit=2&cursor=${page1.next_cursor}`);
@@ -258,6 +264,9 @@ test.describe('Trace CRUD Operations', () => {
       const page2Ids = page2.traces.map((t: any) => t.id);
       const overlap = page1Ids.filter((id: string) => page2Ids.includes(id));
       expect(overlap.length).toBe(0);
+    } else {
+      // If no more pages, verify has_more is false
+      expect(page1.has_more).toBe(false);
     }
   });
 
