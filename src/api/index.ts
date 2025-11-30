@@ -46,6 +46,8 @@ import {
   getRefinementHistory,
 } from './monitoring';
 
+import { getComparisonMatrix } from './matrix';
+
 import {
   createAgent,
   listAgents,
@@ -353,6 +355,12 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   const agentVersionRejectMatch = path.match(/^\/api\/agents\/([^\/]+)\/versions\/([^\/]+)\/reject$/);
   if (agentVersionRejectMatch && method === 'POST') {
     return rejectAgentVersion(request, env, agentVersionRejectMatch[1], agentVersionRejectMatch[2]);
+  }
+
+  // GET /api/agents/:id/matrix - Get comparison matrix
+  const agentMatrixMatch = path.match(/^\/api\/agents\/([^\/]+)\/matrix$/);
+  if (agentMatrixMatch && method === 'GET') {
+    return getComparisonMatrix(env.DB, agentMatrixMatch[1], url.searchParams);
   }
 
   // GET /api/agents/:id

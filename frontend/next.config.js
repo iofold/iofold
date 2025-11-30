@@ -5,7 +5,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  trailingSlash: true,
+  // Prevent redirect loops between trailing slash and non-trailing slash URLs
+  skipTrailingSlashRedirect: true,
   reactStrictMode: true,
   // Environment variables
   env: {

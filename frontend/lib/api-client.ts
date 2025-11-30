@@ -62,8 +62,11 @@ class APIClient {
       headers['X-Workspace-Id'] = this.workspaceId
     }
 
+    // Destructure to exclude headers from options to avoid overwriting our headers
+    const { headers: _, ...restOptions } = options
+
     const response = await fetch(`${this.baseURL}${endpoint}`, {
-      ...options,
+      ...restOptions,
       headers,
     })
 
@@ -179,6 +182,24 @@ class APIClient {
     return this.request(`/api/feedback/${id}`, {
       method: 'DELETE',
     })
+  }
+
+  async listFeedback(params?: {
+    trace_id?: string
+    agent_id?: string
+    rating?: 'positive' | 'negative' | 'neutral'
+    cursor?: string
+    limit?: number
+  }): Promise<{ feedback: Feedback[]; next_cursor: string | null; has_more: boolean }> {
+    const query = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          query.append(key, String(value))
+        }
+      })
+    }
+    return this.request(`/api/feedback?${query.toString()}`)
   }
 
   // ============================================================================

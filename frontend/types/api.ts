@@ -10,6 +10,15 @@ export interface Trace {
   metadata: Record<string, any>;
   steps: ExecutionStep[];
   feedback?: Feedback;
+  raw_data?: {
+    observations?: any[];
+    [key: string]: any;
+  };
+  summary?: {
+    input_preview?: string;
+    output_preview?: string;
+    has_errors?: boolean;
+  };
 }
 
 export interface TraceSummary {
@@ -68,6 +77,8 @@ export interface Feedback {
   rating: 'positive' | 'negative' | 'neutral';
   notes: string | null;
   created_at: string;
+  user_id?: string;
+  agent_name?: string;
 }
 
 // ============================================================================
