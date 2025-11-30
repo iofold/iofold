@@ -6,6 +6,39 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### Wire Bulk DELETE /api/traces Endpoint
+
+**Time:** 17:30 UTC
+
+**Summary:** Completed the implementation of the bulk DELETE /api/traces endpoint by adding the route handler to the API router. The `deleteTraces` function was already implemented in traces.ts, but the route was not wired up in index.ts.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/src/api/index.ts` - Added DELETE /api/traces route and import
+
+**Implementation Details:**
+- Added `deleteTraces` to imports from './traces'
+- Added route handler `DELETE /api/traces` that calls `deleteTraces(request, env)`
+- Route is positioned BEFORE the `/api/traces/:id` pattern match to ensure correct routing priority
+- The underlying `deleteTraces` function (already implemented) provides:
+  - Validation of `trace_ids` array in request body
+  - Limit of 100 traces per bulk operation
+  - Workspace isolation (only deletes traces belonging to the requesting workspace)
+  - Returns `{ deleted_count: number }` response
+
+**Frontend Integration:**
+- Matches expected API signature in `frontend/lib/api-client.ts` lines 155-160
+- Takes array of trace IDs and returns deleted count
+
+**Verification:**
+- TypeScript compilation checked (no new errors introduced in modified files)
+- Committed as: `6328078`
+
+**Notes:**
+- The `deleteTraces` function was previously implemented in commit `9da7aa9` but not exposed via the router
+- This completes the endpoint implementation requested by the frontend
+
+---
+
 ### Implement POST /api/agents/:id/improve Endpoint
 
 **Time:** 17:45 UTC
@@ -13634,4 +13667,84 @@ Implemented missing backend API endpoints identified from E2E test failures and 
 - These routes are now ready for integration with the frontend
 - Consider adding API client methods for these endpoints
 - Test the endpoints with actual data to verify functionality
+
+
+### Verify createEval Method Implementation
+
+**Time:** 18:30 UTC
+
+**Summary:** Verified that the `createEval` method exists in EvalsAPI class and the POST /api/evals route is properly wired in index.ts. Implementation was already complete from a previous commit.
+
+**Files Verified:**
+- `/home/ygupta/workspace/iofold/src/api/evals.ts` - Contains CreateEvalSchema and createEval method
+- `/home/ygupta/workspace/iofold/src/index.ts` - Contains POST /api/evals route
+
+**Implementation Details:**
+- `CreateEvalSchema` validates:
+  - `agent_id` (required)
+  - `name` (required, max 255 chars)
+  - `description` (optional)
+  - `code` (required)
+  - `model_used` (optional, defaults to 'manual')
+- `createEval` method:
+  - Validates agent exists
+  - Auto-increments version number for the agent
+  - Generates eval ID with `eval_` prefix
+  - Inserts eval with status 'draft'
+  - Returns created eval via getEval
+- Route handler in index.ts properly positioned before GET /api/evals to avoid conflicts
+
+**Verification:**
+- TypeScript compilation checked (no errors related to evals.ts or index.ts)
+- All required functionality confirmed present
+
+---
+
+
+---
+
+## 2025-11-30
+
+### Add POST /api/evals Endpoint for Direct Eval Creation
+
+**Time:** 18:15 UTC
+
+**Summary:** Implemented the POST /api/evals endpoint to allow direct creation of eval functions without running the generation job. This is useful for testing and seeding the database with sample evals.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/src/api/evals.ts` - Added `CreateEvalSchema` and `createEval` method
+- `/home/ygupta/workspace/iofold/src/api/index.ts` - Added POST /api/evals route
+
+**Implementation Details:**
+- Added `CreateEvalSchema` with validation for:
+  - `agent_id` (required): Agent to associate eval with
+  - `name` (required): Eval name (1-255 chars)
+  - `description` (optional): Eval description
+  - `code` (required): Python eval function code
+  - `model_used` (optional): Model identifier (defaults to 'manual')
+  
+- Added `createEval` method that:
+  - Validates request body against schema
+  - Checks that the specified agent exists (returns 404 if not)
+  - Auto-increments version number for the agent
+  - Generates unique eval ID with `eval_` prefix
+  - Inserts eval with status 'draft'
+  - Returns the created eval via `getEval`
+
+- Added route handler before GET /api/evals:
+  - POST /api/evals - Parses JSON body and calls `evalsAPI.createEval`
+
+**Use Cases:**
+- Seeding database with sample evals for testing
+- Manually creating eval functions during development
+- Testing eval execution pipeline without running generation
+
+**Verification:**
+- TypeScript compilation checked (no new errors introduced)
+- Implementation follows existing API patterns (similar to createTrace)
+- Committed as part of: `9da7aa9`
+
+**Next Steps:**
+- Test endpoint with sample eval code
+- Use in seeding scripts for development database setup
 
