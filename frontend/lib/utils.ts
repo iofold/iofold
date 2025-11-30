@@ -55,31 +55,31 @@ export function getStatusColor(status: string): string {
     case 'completed':
     case 'active':
     case 'success':
-      return 'text-green-600 bg-green-50'
+      return 'text-success bg-success/10'
     case 'failed':
     case 'error':
-      return 'text-red-600 bg-red-50'
+      return 'text-error bg-error/10'
     case 'running':
     case 'in_progress':
-      return 'text-blue-600 bg-blue-50'
+      return 'text-primary bg-primary/10'
     case 'queued':
     case 'pending':
-      return 'text-yellow-600 bg-yellow-50'
+      return 'text-warning bg-warning/10'
     case 'cancelled':
-      return 'text-gray-600 bg-gray-50'
+      return 'text-muted-foreground bg-muted'
     default:
-      return 'text-gray-600 bg-gray-50'
+      return 'text-muted-foreground bg-muted'
   }
 }
 
 export function getRatingColor(rating: 'positive' | 'negative' | 'neutral'): string {
   switch (rating) {
     case 'positive':
-      return 'text-green-600 bg-green-50'
+      return 'text-success bg-success/10'
     case 'negative':
-      return 'text-red-600 bg-red-50'
+      return 'text-error bg-error/10'
     case 'neutral':
-      return 'text-gray-600 bg-gray-50'
+      return 'text-muted-foreground bg-muted'
   }
 }
 

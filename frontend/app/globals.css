@@ -24,6 +24,8 @@
     --input: 210 14% 84%;
     --ring: 174 58% 56%;
     --radius: 0.5rem;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 14% 15%;
 
     /* Semantic colors */
     --success: 122 39% 49%;
@@ -142,6 +144,8 @@
     --border: 212 12% 21%;
     --input: 212 12% 21%;
     --ring: 174 58% 56%;
+    --popover: 215 21% 11%;
+    --popover-foreground: 210 17% 93%;
 
     /* Semantic colors - dark mode */
     --success: 122 39% 49%;

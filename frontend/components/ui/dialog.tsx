@@ -134,7 +134,7 @@ export function DialogContent({ className, children }: DialogContentProps) {
           aria-modal="true"
           aria-labelledby={titleId}
           className={cn(
-            "relative w-full max-w-lg bg-white rounded-lg shadow-xl pointer-events-auto animate-scale-in",
+            "relative w-full max-w-lg bg-card rounded-lg shadow-xl pointer-events-auto animate-scale-in",
             className
           )}
           onClick={(e) => e.stopPropagation()}
@@ -142,7 +142,7 @@ export function DialogContent({ className, children }: DialogContentProps) {
           <button
             onClick={() => onOpenChange(false)}
             aria-label="Close dialog"
-            className="absolute right-4 top-4 rounded-full p-1 opacity-70 hover:opacity-100 hover:bg-gray-100 transition-all duration-200"
+            className="absolute right-4 top-4 rounded-full p-1 opacity-70 hover:opacity-100 hover:bg-muted transition-all duration-200"
           >
             <X className="h-4 w-4" aria-hidden="true" />
             <span className="sr-only">Close</span>

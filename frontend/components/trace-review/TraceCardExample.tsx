@@ -191,17 +191,17 @@ export function TraceCardExample() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 md:p-8">
+    <div className="min-h-screen bg-muted p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-6 text-center">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-3xl font-bold text-foreground mb-2">
             Trace Review Example
           </h1>
-          <p className="text-gray-600">
+          <p className="text-muted-foreground">
             Try keyboard shortcuts: 1 (positive), 2 (neutral), 3 (negative), Space (skip), Arrows (navigate), E (expand)
           </p>
-          <div className="mt-2 text-sm text-gray-500">
+          <div className="mt-2 text-sm text-muted-foreground">
             Trace {currentIndex + 1} of {samples.length}
           </div>
         </div>
@@ -219,13 +219,13 @@ export function TraceCardExample() {
 
         {/* Feedback Log */}
         {feedbackLog.length > 0 && (
-          <div className="bg-white rounded-lg p-4 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+          <div className="bg-card rounded-lg p-4 shadow">
+            <h2 className="text-lg font-semibold text-foreground mb-2">
               Feedback Log
             </h2>
             <div className="space-y-1">
               {feedbackLog.map((log, index) => (
-                <div key={index} className="text-sm text-gray-600">
+                <div key={index} className="text-sm text-muted-foreground">
                   {index + 1}. {log}
                 </div>
               ))}

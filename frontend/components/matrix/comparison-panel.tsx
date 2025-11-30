@@ -67,8 +67,8 @@ export function ComparisonPanel({
   }
 
   const getRatingColor = (result: boolean | null) => {
-    if (result === null) return 'text-gray-600 bg-gray-50'
-    return result ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'
+    if (result === null) return 'text-muted-foreground bg-muted'
+    return result ? 'text-success bg-success/10' : 'text-destructive bg-destructive/10'
   }
 
   const getHumanRatingIcon = (rating: 'positive' | 'negative' | 'neutral') => {
@@ -82,10 +82,10 @@ export function ComparisonPanel({
 
   const getHumanRatingColor = (rating: 'positive' | 'negative' | 'neutral') => {
     switch (rating) {
-      case 'positive': return 'text-green-600 bg-green-50'
-      case 'negative': return 'text-red-600 bg-red-50'
-      case 'neutral': return 'text-yellow-600 bg-yellow-50'
-      default: return 'text-gray-600 bg-gray-50'
+      case 'positive': return 'text-success bg-success/10'
+      case 'negative': return 'text-destructive bg-destructive/10'
+      case 'neutral': return 'text-warning bg-warning/10'
+      default: return 'text-muted-foreground bg-muted'
     }
   }
 
@@ -194,14 +194,14 @@ export function ComparisonPanel({
                         return (
                           <div
                             key={version.id}
-                            className={`p-3 rounded border ${isContradiction ? 'border-red-200 bg-red-50/50' : 'bg-background'}`}
+                            className={`p-3 rounded border ${isContradiction ? 'border-destructive bg-destructive/5' : 'bg-background'}`}
                           >
                             <div className="flex items-center justify-between mb-2">
                               <span className="font-medium text-xs text-foreground">
                                 {version.prompt_template || `Eval ${version.version}`}
                               </span>
                               {isContradiction && (
-                                <span className="text-xs text-red-600 bg-red-100 px-2 py-1 rounded flex items-center">
+                                <span className="text-xs text-destructive bg-destructive/10 px-2 py-1 rounded flex items-center">
                                   <AlertTriangle size={12} className="mr-1" />
                                   Contradiction
                                 </span>
@@ -263,8 +263,8 @@ export function ComparisonPanel({
                         v{refinement.fromVersion} → v{refinement.toVersion}
                       </span>
                       <span className={`px-2 py-1 text-xs rounded ${
-                        refinement.status === 'completed' ? 'bg-green-100 text-green-700' :
-                        refinement.status === 'testing' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'
+                        refinement.status === 'completed' ? 'bg-success/10 text-success' :
+                        refinement.status === 'testing' ? 'bg-warning/10 text-warning' : 'bg-muted text-muted-foreground'
                       }`}>
                         {refinement.status}
                       </span>
@@ -275,15 +275,15 @@ export function ComparisonPanel({
                     <div className="grid grid-cols-2 gap-4 text-xs">
                       <div>
                         <span className="text-muted-foreground">Contradictions Resolved:</span>
-                        <span className="ml-1 text-green-600 font-medium">
+                        <span className="ml-1 text-success font-medium">
                           {refinement.contradictionsResolved}
                         </span>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Accuracy Change:</span>
                         <span className={`ml-1 font-medium ${
-                          refinement.accuracyImprovement > 0 ? 'text-green-600' :
-                          refinement.accuracyImprovement < 0 ? 'text-red-600' : 'text-gray-600'
+                          refinement.accuracyImprovement > 0 ? 'text-success' :
+                          refinement.accuracyImprovement < 0 ? 'text-destructive' : 'text-muted-foreground'
                         }`}>
                           {refinement.accuracyImprovement > 0 ? '+' : ''}{refinement.accuracyImprovement}%
                         </span>
@@ -310,14 +310,14 @@ export function ComparisonPanel({
             <div>
               <h4 className="font-medium text-sm text-foreground mb-3">Pattern Analysis</h4>
               <div className="space-y-3">
-                <div className="bg-blue-50 p-3 rounded border border-blue-200">
+                <div className="bg-info/10 p-3 rounded border border-info">
                   <div className="flex items-start space-x-2">
-                    <TrendingUp size={16} className="text-blue-600 mt-0.5" />
+                    <TrendingUp size={16} className="text-info mt-0.5" />
                     <div>
-                      <div className="font-medium text-sm text-blue-900">
+                      <div className="font-medium text-sm text-info">
                         Speed vs Accuracy Pattern
                       </div>
-                      <p className="text-sm text-blue-700">
+                      <p className="text-sm text-info/90">
                         Most contradictions occur when responses are accurate but slow.
                         Consider adjusting evaluation criteria to prioritize accuracy.
                       </p>
@@ -325,14 +325,14 @@ export function ComparisonPanel({
                   </div>
                 </div>
 
-                <div className="bg-yellow-50 p-3 rounded border border-yellow-200">
+                <div className="bg-warning/10 p-3 rounded border border-warning">
                   <div className="flex items-start space-x-2">
-                    <AlertCircle size={16} className="text-yellow-600 mt-0.5" />
+                    <AlertCircle size={16} className="text-warning mt-0.5" />
                     <div>
-                      <div className="font-medium text-sm text-yellow-900">
+                      <div className="font-medium text-sm text-warning">
                         Policy Knowledge Gap
                       </div>
-                      <p className="text-sm text-yellow-700">
+                      <p className="text-sm text-warning/90">
                         High contradiction rate in policy-related queries suggests
                         evaluation model needs better policy context training.
                       </p>
@@ -340,14 +340,14 @@ export function ComparisonPanel({
                   </div>
                 </div>
 
-                <div className="bg-green-50 p-3 rounded border border-green-200">
+                <div className="bg-success/10 p-3 rounded border border-success">
                   <div className="flex items-start space-x-2">
-                    <CheckCircle size={16} className="text-green-600 mt-0.5" />
+                    <CheckCircle size={16} className="text-success mt-0.5" />
                     <div>
-                      <div className="font-medium text-sm text-green-900">
+                      <div className="font-medium text-sm text-success">
                         Technical Support Excellence
                       </div>
-                      <p className="text-sm text-green-700">
+                      <p className="text-sm text-success/90">
                         Technical support traces show high agreement between human
                         feedback and evaluations. This domain is well-calibrated.
                       </p>

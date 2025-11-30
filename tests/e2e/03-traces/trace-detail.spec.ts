@@ -49,32 +49,27 @@ test.describe('Trace Management - Detail View', () => {
     await page.goto(`/traces/${traceId}`)
     await page.waitForLoadState('networkidle')
 
-    // Verify trace detail page loaded - check for heading or page title
+    // Verify trace detail page loaded - the h1 heading says "Trace Details"
     const traceDetailsHeading = page.getByRole('heading', { name: 'Trace Details' })
-    const traceIdVisible = await traceDetailsHeading.isVisible().catch(() => false)
+    await expect(traceDetailsHeading).toBeVisible({ timeout: 10000 })
 
-    // If heading not found, verify we're on the right page some other way
-    if (!traceIdVisible) {
-      // Check URL contains traces
-      expect(page.url()).toContain('/traces/')
-    }
+    // Verify we're on the correct page
+    expect(page.url()).toContain('/traces/')
 
-    // Verify trace metadata is visible
-    // This will depend on your actual UI implementation
-    const metadataSection = page.locator('[data-testid="trace-metadata"]')
-    if (await metadataSection.count() > 0) {
-      await expect(metadataSection).toBeVisible()
-    }
+    // Verify trace ID is displayed (in a code element)
+    const traceIdCode = page.locator('code.font-mono')
+    await expect(traceIdCode.first()).toBeVisible()
 
-    // Verify execution steps or trace content is visible
-    const traceContent = page.locator('[data-testid="trace-content"]')
-    if (await traceContent.count() > 0) {
-      await expect(traceContent).toBeVisible()
-    }
+    // Verify "Back to Traces" button is visible
+    const backButton = page.getByRole('button', { name: /Back to Traces/i })
+    await expect(backButton).toBeVisible()
 
-    // Verify feedback buttons are visible (at least one feedback-related element)
-    const feedbackButtons = page.locator('[data-testid*="feedback"]')
-    const feedbackCount = await feedbackButtons.count()
-    expect(feedbackCount).toBeGreaterThanOrEqual(1)
+    // Verify observation tree or timeline section is visible
+    const observationSection = page.locator('text=/Observation Tree|Timeline/i')
+    await expect(observationSection.first()).toBeVisible()
+
+    // Verify feedback section is visible - look for "Add Feedback" or "Update Feedback" heading
+    const feedbackSection = page.locator('text=/Add Feedback|Update Feedback/i')
+    await expect(feedbackSection).toBeVisible()
   })
 })

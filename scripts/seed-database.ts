@@ -221,6 +221,7 @@ async function createIntegration(): Promise<string> {
   try {
     const result = await apiRequest('/api/integrations', 'POST', {
       platform: 'langfuse',
+      name: 'Langfuse Integration',
       api_key: 'lf_pk_' + crypto.randomUUID(),
       config: {
         base_url: 'https://cloud.langfuse.com',

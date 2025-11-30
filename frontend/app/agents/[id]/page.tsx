@@ -256,7 +256,7 @@ export default function AgentDetailPage() {
                             {version.variables.map((variable) => (
                               <span
                                 key={variable}
-                                className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700 font-mono"
+                                className="px-2 py-1 text-xs rounded bg-muted text-muted-foreground font-mono"
                               >
                                 {variable}
                               </span>
@@ -266,7 +266,7 @@ export default function AgentDetailPage() {
                       )}
 
                       {isExpanded && (
-                        <div className="mt-3 p-3 bg-gray-50 rounded border">
+                        <div className="mt-3 p-3 bg-muted rounded border">
                           <p className="text-xs text-muted-foreground mb-2">Prompt Template:</p>
                           <pre className="text-xs whitespace-pre-wrap font-mono">
                             {version.prompt_template}

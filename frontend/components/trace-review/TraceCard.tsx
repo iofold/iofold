@@ -180,7 +180,7 @@ export function TraceCard({
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.9, y: -20 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className={`bg-white rounded-lg overflow-hidden w-full max-w-2xl mx-auto ${
+      className={`bg-card rounded-lg overflow-hidden w-full max-w-2xl mx-auto ${
         isDragging ? 'cursor-grabbing' : 'cursor-grab'
       }`}
       role="region"
@@ -210,7 +210,7 @@ export function TraceCard({
           <div className="px-4 pb-3">
             <button
               onClick={handleExpand}
-              className="w-full py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded border border-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+              className="w-full py-2 px-4 bg-muted hover:bg-muted/80 text-foreground text-sm font-medium rounded border border-border transition-colors focus:outline-none focus:ring-2 focus:ring-muted-foreground focus:ring-offset-2"
               aria-label={
                 expanded ? 'Collapse previous messages' : 'Expand previous messages'
               }

@@ -77,18 +77,26 @@ test.describe('Trace Management - Import', () => {
   })
 
   test('TEST-T02: Import traces with limit', async ({ page }) => {
+    test.skip(!integrationName, 'No integration available')
+
     // Navigate to traces page
     await page.goto('/traces')
     await page.waitForLoadState('networkidle')
 
     // Click "Import Traces" button
-    await page.click('button:has-text("Import Traces")')
+    const importButton = page.locator('button:has-text("Import Traces")')
+    await expect(importButton).toBeVisible({ timeout: 10000 })
+    await importButton.click()
 
     // Wait for import modal
     await page.waitForSelector('[role="dialog"]', { state: 'visible' })
 
+    // Wait for the integration select to be ready
+    const integrationSelect = page.locator('#integration')
+    await expect(integrationSelect).toBeVisible({ timeout: 10000 })
+
     // Select integration using Radix Select component
-    await page.click('#integration')
+    await integrationSelect.click()
     await page.waitForSelector('[role="listbox"]', { state: 'visible' })
     await page.click(`[role="option"]:has-text("${integrationName}")`)
 
@@ -120,7 +128,7 @@ test.describe('Trace Management - Import', () => {
     await page.goto('/traces')
     await page.waitForLoadState('networkidle')
 
-    // Verify the page loads without error
-    await expect(page.locator('h1:has-text("Traces")')).toBeVisible()
+    // Verify the page loads without error - the actual h1 text is "Traces Explorer"
+    await expect(page.locator('h1:has-text("Traces Explorer")')).toBeVisible()
   })
 })

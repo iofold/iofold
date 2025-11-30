@@ -151,68 +151,68 @@ export default function SystemMonitoringPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'healthy':
-        return 'bg-emerald-500'
+        return 'bg-success'
       case 'warning':
-        return 'bg-amber-500'
+        return 'bg-warning'
       case 'critical':
-        return 'bg-rose-500'
+        return 'bg-destructive'
       default:
-        return 'bg-slate-500'
+        return 'bg-muted'
     }
   }
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'critical':
-        return 'border-l-rose-500 bg-rose-50 dark:bg-rose-950/20'
+        return 'border-l-destructive bg-destructive/10'
       case 'warning':
-        return 'border-l-amber-500 bg-amber-50 dark:bg-amber-950/20'
+        return 'border-l-warning bg-warning/10'
       case 'info':
-        return 'border-l-blue-500 bg-blue-50 dark:bg-blue-950/20'
+        return 'border-l-info bg-info/10'
       default:
-        return 'border-l-slate-500 bg-slate-50 dark:bg-slate-950/20'
+        return 'border-l-border bg-muted'
     }
   }
 
   const getSeverityBadgeColor = (severity: string) => {
     switch (severity) {
       case 'critical':
-        return 'bg-rose-500 text-white'
+        return 'bg-destructive text-white'
       case 'warning':
-        return 'bg-amber-500 text-white'
+        return 'bg-warning text-white'
       case 'info':
-        return 'bg-blue-500 text-white'
+        return 'bg-info text-white'
       default:
-        return 'bg-slate-500 text-white'
+        return 'bg-muted text-foreground'
     }
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+    <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">
+              <h1 className="text-3xl font-bold tracking-tight text-foreground">
                 System Monitoring
               </h1>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+              <p className="mt-2 text-sm text-muted-foreground">
                 Real-time infrastructure health and performance analytics
               </p>
             </div>
 
             <div className="flex items-center gap-4">
               {/* Connection Status */}
-              <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-900 dark:bg-emerald-950/20">
-                <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+              <div className="flex items-center gap-2 rounded-lg border border-success/20 bg-success/10 px-3 py-2">
+                <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
+                <span className="text-sm font-medium text-success">
                   Connected
                 </span>
               </div>
 
               {/* Time Range Selector */}
-              <button className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
+              <button className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted">
                 Last 24 Hours
                 <ChevronDown className="h-4 w-4" />
               </button>
@@ -222,8 +222,8 @@ export default function SystemMonitoringPage() {
                 onClick={() => setAutoRefresh(!autoRefresh)}
                 className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
                   autoRefresh
-                    ? 'border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900 dark:bg-purple-950/20 dark:text-purple-400'
-                    : 'border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+                    ? 'border-primary/20 bg-primary/10 text-primary'
+                    : 'border-border bg-card text-foreground'
                 }`}
               >
                 <RefreshCw className={`h-4 w-4 ${autoRefresh ? 'animate-spin' : ''}`} />
@@ -233,7 +233,7 @@ export default function SystemMonitoringPage() {
           </div>
 
           {/* Last Updated */}
-          <div className="mt-4 flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
             <Clock className="h-4 w-4" />
             <span suppressHydrationWarning>
               Last updated: {mounted && lastUpdated ? lastUpdated.toLocaleTimeString() : '--:--:--'}
@@ -244,22 +244,22 @@ export default function SystemMonitoringPage() {
 
         {/* Alert Banner */}
         {showBanner && (
-          <div className="mb-6 flex items-start gap-4 rounded-lg border-l-4 border-l-amber-500 bg-amber-50 p-4 dark:bg-amber-950/20">
-            <AlertCircle className="h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-500" />
+          <div className="mb-6 flex items-start gap-4 rounded-lg border-l-4 border-l-warning bg-warning/10 p-4">
+            <AlertCircle className="h-5 w-5 flex-shrink-0 text-warning" />
             <div className="flex-1">
-              <h3 className="font-semibold text-amber-900 dark:text-amber-200">
+              <h3 className="font-semibold text-warning">
                 High Memory Usage Detected
               </h3>
-              <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">
+              <p className="mt-1 text-sm text-warning">
                 Memory usage has exceeded 85% threshold. Consider scaling resources or investigating memory leaks.
               </p>
-              <button className="mt-2 text-sm font-medium text-amber-700 underline hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200">
+              <button className="mt-2 text-sm font-medium text-warning underline hover:text-warning/80">
                 View Details
               </button>
             </div>
             <button
               onClick={() => setShowBanner(false)}
-              className="flex-shrink-0 text-amber-600 transition-colors hover:text-amber-900 dark:text-amber-500 dark:hover:text-amber-200"
+              className="flex-shrink-0 text-warning transition-colors hover:text-warning/80"
             >
               <X className="h-5 w-5" />
             </button>
@@ -271,35 +271,35 @@ export default function SystemMonitoringPage() {
           <div className="space-y-6 lg:col-span-2">
             {/* Connector Health */}
             <section>
-              <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-50">
+              <h2 className="mb-4 text-lg font-semibold text-foreground">
                 Connector Health
               </h2>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {services.map((service) => (
                   <div
                     key={service.id}
-                    className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                    className="rounded-lg border border-border bg-card p-5 shadow-sm"
                   >
                     {/* Status Bar */}
                     <div className={`mb-4 h-1 w-full rounded-full ${getStatusColor(service.status)}`} />
 
                     {/* Service Info */}
                     <div className="mb-4">
-                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50">
+                      <h3 className="text-base font-semibold text-foreground">
                         {service.name}
                       </h3>
-                      <p className="text-sm text-slate-600 dark:text-slate-300">{service.type}</p>
+                      <p className="text-sm text-muted-foreground">{service.type}</p>
                     </div>
 
                     {/* Health Progress */}
                     <div className="mb-4">
                       <div className="mb-1 flex items-center justify-between text-sm">
-                        <span className="text-slate-600 dark:text-slate-300">Health</span>
-                        <span className="font-medium text-slate-900 dark:text-slate-50">
+                        <span className="text-muted-foreground">Health</span>
+                        <span className="font-medium text-foreground">
                           {service.health}%
                         </span>
                       </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                         <div
                           className={`h-full rounded-full transition-all ${getStatusColor(service.status)}`}
                           style={{ width: `${service.health}%` }}
@@ -310,34 +310,34 @@ export default function SystemMonitoringPage() {
                     {/* Metrics Grid */}
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
-                        <p className="text-slate-600 dark:text-slate-300">Uptime</p>
-                        <p className="font-semibold text-slate-900 dark:text-slate-50">
+                        <p className="text-muted-foreground">Uptime</p>
+                        <p className="font-semibold text-foreground">
                           {service.uptime}%
                         </p>
                       </div>
                       <div>
-                        <p className="text-slate-600 dark:text-slate-300">Throughput</p>
-                        <p className="font-semibold text-slate-900 dark:text-slate-50">
+                        <p className="text-muted-foreground">Throughput</p>
+                        <p className="font-semibold text-foreground">
                           {service.throughput} req/min
                         </p>
                       </div>
                       <div>
-                        <p className="text-slate-600 dark:text-slate-300">Last Sync</p>
-                        <p className="font-semibold text-slate-900 dark:text-slate-50">
+                        <p className="text-muted-foreground">Last Sync</p>
+                        <p className="font-semibold text-foreground">
                           {service.lastSync}
                         </p>
                       </div>
                       <div>
-                        <p className="text-slate-600 dark:text-slate-300">Error Rate</p>
-                        <p className="font-semibold text-slate-900 dark:text-slate-50">
+                        <p className="text-muted-foreground">Error Rate</p>
+                        <p className="font-semibold text-foreground">
                           {service.errorRate}%
                         </p>
                       </div>
                     </div>
 
                     {/* Version */}
-                    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                         {service.version}
                       </span>
                     </div>
@@ -348,19 +348,19 @@ export default function SystemMonitoringPage() {
 
             {/* Performance Metrics */}
             <section>
-              <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-50">
+              <h2 className="mb-4 text-lg font-semibold text-foreground">
                 Performance Metrics
               </h2>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {/* API Response Time */}
-                <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-50">
+                <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+                  <h3 className="mb-4 text-sm font-semibold text-foreground">
                     API Response Time
                   </h3>
                   <div className="min-h-[200px]">
                     {!mounted ? (
-                      <div className="w-full h-[200px] flex items-center justify-center bg-slate-100/20 dark:bg-slate-800/20 rounded-lg">
-                        <div className="animate-pulse text-slate-500 dark:text-slate-300">Loading chart...</div>
+                      <div className="w-full h-[200px] flex items-center justify-center bg-muted/20 rounded-lg">
+                        <div className="animate-pulse text-muted-foreground">Loading chart...</div>
                       </div>
                     ) : (
                       <ResponsiveContainer width="100%" height={200}>
@@ -401,14 +401,14 @@ export default function SystemMonitoringPage() {
                 </div>
 
                 {/* Memory Usage */}
-                <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-50">
+                <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+                  <h3 className="mb-4 text-sm font-semibold text-foreground">
                     Memory Usage
                   </h3>
                   <div className="min-h-[200px]">
                     {!mounted ? (
-                      <div className="w-full h-[200px] flex items-center justify-center bg-slate-100/20 dark:bg-slate-800/20 rounded-lg">
-                        <div className="animate-pulse text-slate-500 dark:text-slate-300">Loading chart...</div>
+                      <div className="w-full h-[200px] flex items-center justify-center bg-muted/20 rounded-lg">
+                        <div className="animate-pulse text-muted-foreground">Loading chart...</div>
                       </div>
                     ) : (
                       <ResponsiveContainer width="100%" height={200}>
@@ -454,12 +454,12 @@ export default function SystemMonitoringPage() {
 
           {/* System Alerts Sidebar */}
           <div className="lg:col-span-1">
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">
+                <h2 className="text-lg font-semibold text-foreground">
                   System Alerts
                 </h2>
-                <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-950/20 dark:text-rose-400">
+                <span className="inline-flex items-center rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive">
                   {alerts.length} Active
                 </span>
               </div>
@@ -482,13 +482,13 @@ export default function SystemMonitoringPage() {
                             {alert.severity.toUpperCase()}
                           </span>
                         </div>
-                        <h3 className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-50">
+                        <h3 className="mt-2 text-sm font-semibold text-foreground">
                           {alert.title}
                         </h3>
-                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                        <p className="mt-1 text-sm text-muted-foreground">
                           {alert.message}
                         </p>
-                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
+                        <p className="mt-2 text-xs text-muted-foreground">
                           {alert.timestamp}
                         </p>
                       </div>
@@ -498,7 +498,7 @@ export default function SystemMonitoringPage() {
               </div>
 
               {/* View All Link */}
-              <button className="mt-4 w-full rounded-lg border border-slate-200 bg-slate-50 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+              <button className="mt-4 w-full rounded-lg border border-border bg-muted py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/80">
                 View All Alerts
               </button>
             </section>

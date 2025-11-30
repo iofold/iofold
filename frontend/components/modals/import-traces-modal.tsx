@@ -120,9 +120,9 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
                   </p>
                   {isStreaming && (
                     <p className="text-xs">
-                      {isSSEActive && <span className="text-green-600">Real-time (SSE)</span>}
-                      {isPolling && <span className="text-yellow-600">Polling fallback</span>}
-                      {!isSSEActive && !isPolling && <span className="text-gray-500">Connecting...</span>}
+                      {isSSEActive && <span className="text-success">Real-time (SSE)</span>}
+                      {isPolling && <span className="text-warning">Polling fallback</span>}
+                      {!isSSEActive && !isPolling && <span className="text-muted-foreground">Connecting...</span>}
                     </p>
                   )}
                 </div>

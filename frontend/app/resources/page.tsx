@@ -182,33 +182,33 @@ export default function ResourcesPage() {
   const getSeverityIcon = (severity: BudgetAlert['severity']) => {
     switch (severity) {
       case 'error':
-        return <AlertCircle className="w-5 h-5 text-[#D4705A]" />
+        return <AlertCircle className="w-5 h-5 text-destructive" />
       case 'warning':
-        return <AlertTriangle className="w-5 h-5 text-[#E8967A]" />
+        return <AlertTriangle className="w-5 h-5 text-warning" />
       case 'info':
-        return <Info className="w-5 h-5 text-[#4ECFA5]" />
+        return <Info className="w-5 h-5 text-info" />
     }
   }
 
   const getSeverityBg = (severity: BudgetAlert['severity']) => {
     switch (severity) {
       case 'error':
-        return 'bg-[#F2B8A2]/20'
+        return 'bg-destructive/20'
       case 'warning':
-        return 'bg-[#F2B8A2]/10'
+        return 'bg-warning/10'
       case 'info':
-        return 'bg-[#8EDCC4]/10'
+        return 'bg-info/10'
     }
   }
 
   const getBadgeStyles = (variant: 'success' | 'error' | 'warning') => {
     switch (variant) {
       case 'success':
-        return 'bg-[#8EDCC4]/20 text-[#2D9B78] border-[#4ECFA5]/30'
+        return 'bg-success/20 text-success border-success/30'
       case 'error':
-        return 'bg-[#F2B8A2]/20 text-[#D4705A] border-[#E8967A]/30'
+        return 'bg-destructive/20 text-destructive border-destructive/30'
       case 'warning':
-        return 'bg-[#F2B8A2]/10 text-[#E8967A] border-[#E8967A]/30'
+        return 'bg-warning/10 text-warning border-warning/30'
     }
   }
 
@@ -217,12 +217,12 @@ export default function ResourcesPage() {
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-lg bg-[#4ECFA5]/10 flex items-center justify-center">
-            <DollarSign className="w-6 h-6 text-[#4ECFA5]" />
+          <div className="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
+            <DollarSign className="w-6 h-6 text-info" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-[#2A2D35]">Cost & Resource Analytics</h1>
-            <p className="text-[#6B7280] mt-1">
+            <h1 className="text-3xl font-bold text-foreground">Cost & Resource Analytics</h1>
+            <p className="text-muted-foreground mt-1">
               Monitor resource utilization, track costs, and optimize infrastructure spending
             </p>
           </div>
@@ -231,15 +231,15 @@ export default function ResourcesPage() {
         {/* Header Controls */}
         <div className="flex flex-wrap items-center gap-3 mt-6">
           {/* Cost Center Selector */}
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border border-[#D1D5DB] rounded-lg hover:bg-[#F5EFE6] transition-colors">
-            <span className="text-sm font-medium text-[#2A2D35]">All Cost Centers</span>
-            <ChevronDown className="w-4 h-4 text-[#6B7280]" />
+          <button className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg hover:bg-muted transition-colors">
+            <span className="text-sm font-medium text-foreground">All Cost Centers</span>
+            <ChevronDown className="w-4 h-4 text-muted-foreground" />
           </button>
 
           {/* Date Range Selector */}
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border border-[#D1D5DB] rounded-lg hover:bg-[#F5EFE6] transition-colors">
-            <span className="text-sm font-medium text-[#2A2D35]">Current Month</span>
-            <ChevronDown className="w-4 h-4 text-[#6B7280]" />
+          <button className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg hover:bg-muted transition-colors">
+            <span className="text-sm font-medium text-foreground">Current Month</span>
+            <ChevronDown className="w-4 h-4 text-muted-foreground" />
           </button>
 
           <div className="flex-1" />
@@ -251,7 +251,7 @@ export default function ResourcesPage() {
           </Button>
 
           {/* Export Report */}
-          <Button className="gap-2 bg-[#4ECFA5] hover:bg-[#2D9B78] text-white">
+          <Button className="gap-2 bg-info hover:bg-info/90 text-white">
             <Download className="w-4 h-4" />
             Export Report
           </Button>
@@ -260,7 +260,7 @@ export default function ResourcesPage() {
 
       {/* Budget Alerts */}
       <div className="mb-8">
-        <h2 className="text-lg font-semibold text-[#2A2D35] mb-4">Budget Alerts</h2>
+        <h2 className="text-lg font-semibold text-foreground mb-4">Budget Alerts</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {budgetAlerts.map((alert) => (
             <Card
@@ -269,18 +269,18 @@ export default function ResourcesPage() {
               style={{
                 borderLeftColor:
                   alert.severity === 'error'
-                    ? '#D4705A'
+                    ? 'hsl(var(--destructive))'
                     : alert.severity === 'warning'
-                    ? '#E8967A'
-                    : '#4ECFA5',
+                    ? 'hsl(var(--warning))'
+                    : 'hsl(var(--info))',
               }}
             >
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0 mt-0.5">{getSeverityIcon(alert.severity)}</div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-medium text-sm text-[#2A2D35] mb-1">{alert.title}</h3>
-                  <p className="text-xs text-[#6B7280] mb-2">{alert.message}</p>
-                  <p className="text-xs text-[#9CA3AF]">{alert.timestamp}</p>
+                  <h3 className="font-medium text-sm text-foreground mb-1">{alert.title}</h3>
+                  <p className="text-xs text-muted-foreground mb-2">{alert.message}</p>
+                  <p className="text-xs text-muted-foreground/70">{alert.timestamp}</p>
                 </div>
               </div>
             </Card>
@@ -291,10 +291,10 @@ export default function ResourcesPage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {kpiCards.map((kpi) => (
-          <Card key={kpi.id} className="p-6 bg-white">
+          <Card key={kpi.id} className="p-6 bg-card">
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-[#6B7280]">{kpi.title}</span>
+                <span className="text-sm text-muted-foreground">{kpi.title}</span>
                 {kpi.badge && (
                   <span
                     className={cn(
@@ -306,9 +306,9 @@ export default function ResourcesPage() {
                   </span>
                 )}
               </div>
-              <div className="text-3xl font-bold text-[#2A2D35] mb-1">{kpi.value}</div>
+              <div className="text-3xl font-bold text-foreground mb-1">{kpi.value}</div>
               {kpi.budget && (
-                <div className="text-sm text-[#6B7280]">Budget: {kpi.budget}</div>
+                <div className="text-sm text-muted-foreground">Budget: {kpi.budget}</div>
               )}
             </div>
 
@@ -317,7 +317,7 @@ export default function ResourcesPage() {
               <div
                 className={cn(
                   'flex items-center gap-1 text-sm font-medium',
-                  kpi.trend.isPositive ? 'text-[#2D9B78]' : 'text-[#D4705A]'
+                  kpi.trend.isPositive ? 'text-success' : 'text-destructive'
                 )}
               >
                 {kpi.trend.isPositive ? (
@@ -327,7 +327,7 @@ export default function ResourcesPage() {
                 )}
                 <span>{kpi.trend.value}%</span>
               </div>
-              <span className="text-xs text-[#9CA3AF]">vs last month</span>
+              <span className="text-xs text-muted-foreground/70">vs last month</span>
             </div>
           </Card>
         ))}
@@ -337,13 +337,13 @@ export default function ResourcesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Cost Breakdown Chart */}
         <div className="lg:col-span-2">
-          <Card className="p-6 bg-white">
+          <Card className="p-6 bg-card">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-[#2A2D35]">Cost Breakdown Over Time</h2>
+              <h2 className="text-lg font-semibold text-foreground">Cost Breakdown Over Time</h2>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setSortBy(sortBy === 'cost' ? 'date' : 'cost')}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm border border-[#D1D5DB] rounded-lg hover:bg-[#F5EFE6] transition-colors"
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
                 >
                   <ArrowUpDown className="w-3.5 h-3.5" />
                   Sort by {sortBy === 'cost' ? 'Cost' : 'Date'}
@@ -362,27 +362,27 @@ export default function ResourcesPage() {
                 return (
                   <div key={index} className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-[#6B7280] font-medium">{item.date}</span>
-                      <span className="text-[#2A2D35] font-semibold">${total}</span>
+                      <span className="text-muted-foreground font-medium">{item.date}</span>
+                      <span className="text-foreground font-semibold">${total}</span>
                     </div>
                     <div className="flex h-8 rounded-lg overflow-hidden">
                       <div
-                        className="bg-[#3B82F6] transition-all"
+                        className="bg-info transition-all"
                         style={{ width: `${(item.apiCosts / total) * 100}%` }}
                         title={`API: $${item.apiCosts}`}
                       />
                       <div
-                        className="bg-[#F97316] transition-all"
+                        className="bg-warning transition-all"
                         style={{ width: `${(item.compute / total) * 100}%` }}
                         title={`Compute: $${item.compute}`}
                       />
                       <div
-                        className="bg-[#8B5CF6] transition-all"
+                        className="bg-primary transition-all"
                         style={{ width: `${(item.storage / total) * 100}%` }}
                         title={`Storage: $${item.storage}`}
                       />
                       <div
-                        className="bg-[#10B981] transition-all"
+                        className="bg-success transition-all"
                         style={{ width: `${(item.database / total) * 100}%` }}
                         title={`Database: $${item.database}`}
                       />
@@ -392,22 +392,22 @@ export default function ResourcesPage() {
               })}
 
               {/* Legend */}
-              <div className="flex flex-wrap gap-6 pt-4 border-t border-[#D1D5DB]">
+              <div className="flex flex-wrap gap-6 pt-4 border-t border-border">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm bg-[#3B82F6]" />
-                  <span className="text-xs text-[#4B5563] font-medium">API Costs</span>
+                  <div className="w-3 h-3 rounded-sm bg-info" />
+                  <span className="text-xs text-muted-foreground font-medium">API Costs</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm bg-[#F97316]" />
-                  <span className="text-xs text-[#4B5563] font-medium">Compute</span>
+                  <div className="w-3 h-3 rounded-sm bg-warning" />
+                  <span className="text-xs text-muted-foreground font-medium">Compute</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm bg-[#8B5CF6]" />
-                  <span className="text-xs text-[#4B5563] font-medium">Storage</span>
+                  <div className="w-3 h-3 rounded-sm bg-primary" />
+                  <span className="text-xs text-muted-foreground font-medium">Storage</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm bg-[#10B981]" />
-                  <span className="text-xs text-[#4B5563] font-medium">Database</span>
+                  <div className="w-3 h-3 rounded-sm bg-success" />
+                  <span className="text-xs text-muted-foreground font-medium">Database</span>
                 </div>
               </div>
             </div>
@@ -416,16 +416,16 @@ export default function ResourcesPage() {
 
         {/* Top Cost Drivers / Recommendations Sidebar */}
         <div className="lg:col-span-1">
-          <Card className="p-6 bg-white">
+          <Card className="p-6 bg-card">
             {/* Tab Toggle */}
-            <div className="flex gap-2 mb-6 p-1 bg-[#F5EFE6] rounded-lg">
+            <div className="flex gap-2 mb-6 p-1 bg-muted rounded-lg">
               <button
                 onClick={() => setActiveTab('drivers')}
                 className={cn(
                   'flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors',
                   activeTab === 'drivers'
-                    ? 'bg-white text-[#2A2D35] shadow-sm'
-                    : 'text-[#6B7280] hover:text-[#2A2D35]'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 )}
               >
                 Cost Drivers
@@ -435,8 +435,8 @@ export default function ResourcesPage() {
                 className={cn(
                   'flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors',
                   activeTab === 'recommendations'
-                    ? 'bg-white text-[#2A2D35] shadow-sm'
-                    : 'text-[#6B7280] hover:text-[#2A2D35]'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 )}
               >
                 Recommendations
@@ -446,33 +446,33 @@ export default function ResourcesPage() {
             {/* Content */}
             {activeTab === 'drivers' ? (
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-[#2A2D35] mb-4">Top Cost Drivers</h3>
+                <h3 className="text-sm font-semibold text-foreground mb-4">Top Cost Drivers</h3>
                 {costDrivers.map((driver) => (
                   <div key={driver.rank} className="space-y-2">
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-3 flex-1">
-                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[#4ECFA5]/10 flex items-center justify-center">
-                          <span className="text-xs font-semibold text-[#2D9B78]">
+                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-info/10 flex items-center justify-center">
+                          <span className="text-xs font-semibold text-success">
                             {driver.rank}
                           </span>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-[#2A2D35] mb-1">
+                          <div className="text-sm font-medium text-foreground mb-1">
                             {driver.service}
                           </div>
-                          <div className="text-xs text-[#6B7280]">
+                          <div className="text-xs text-muted-foreground">
                             {driver.percentage}% of total
                           </div>
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-semibold text-[#2A2D35]">
+                        <div className="text-sm font-semibold text-foreground">
                           ${driver.cost}
                         </div>
                         <div
                           className={cn(
                             'text-xs font-medium flex items-center gap-0.5',
-                            driver.trend > 0 ? 'text-[#D4705A]' : 'text-[#2D9B78]'
+                            driver.trend > 0 ? 'text-destructive' : 'text-success'
                           )}
                         >
                           {driver.trend > 0 ? (
@@ -485,38 +485,38 @@ export default function ResourcesPage() {
                       </div>
                     </div>
                     {driver.rank < costDrivers.length && (
-                      <div className="h-px bg-[#D1D5DB]" />
+                      <div className="h-px bg-border" />
                     )}
                   </div>
                 ))}
               </div>
             ) : (
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-[#2A2D35] mb-4">
+                <h3 className="text-sm font-semibold text-foreground mb-4">
                   Optimization Recommendations
                 </h3>
                 {recommendations.map((rec, index) => (
                   <div key={rec.id} className="space-y-2">
                     <div className="space-y-2">
                       <div className="flex items-start justify-between gap-2">
-                        <h4 className="text-sm font-medium text-[#2A2D35] flex-1">
+                        <h4 className="text-sm font-medium text-foreground flex-1">
                           {rec.title}
                         </h4>
-                        <span className="text-xs font-semibold text-[#2D9B78] whitespace-nowrap">
+                        <span className="text-xs font-semibold text-success whitespace-nowrap">
                           Save ${rec.potentialSavings}
                         </span>
                       </div>
-                      <p className="text-xs text-[#6B7280]">{rec.description}</p>
+                      <p className="text-xs text-muted-foreground">{rec.description}</p>
                       <Button
                         size="sm"
                         variant="outline"
-                        className="w-full text-xs bg-[#4ECFA5]/5 border-[#4ECFA5]/30 hover:bg-[#4ECFA5]/10"
+                        className="w-full text-xs bg-info/5 border-info/30 hover:bg-info/10"
                       >
                         Learn More
                       </Button>
                     </div>
                     {index < recommendations.length - 1 && (
-                      <div className="h-px bg-[#D1D5DB]" />
+                      <div className="h-px bg-border" />
                     )}
                   </div>
                 ))}

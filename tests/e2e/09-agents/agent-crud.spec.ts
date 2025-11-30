@@ -259,9 +259,9 @@ test.describe('Agent Version Management', () => {
     // Wait for page to refresh
     await page.waitForLoadState('networkidle');
 
-    // Verify "Active" badge appears (the blue badge indicating current active version)
-    // When a version is active, only the blue "Active" badge is shown, not the status badge
-    await expect(page.locator('span.bg-blue-50:has-text("Active")')).toBeVisible();
+    // Verify "Active" badge appears (uses semantic color classes)
+    // When a version is active, only the "Active" badge is shown, not the status badge
+    await expect(page.locator('span.bg-info\\/10:has-text("Active")')).toBeVisible();
 
     // Verify promote button is no longer visible
     await expect(page.locator('button:has-text("Promote")')).not.toBeVisible();
@@ -519,10 +519,10 @@ test.describe('Agent UI/UX', () => {
     await expect(statusBadge).toBeVisible();
     await expect(statusBadge).toHaveText('confirmed');
 
-    // Verify badge has correct color classes for confirmed status (green)
+    // Verify badge has correct color classes for confirmed status (uses semantic colors)
     const badgeClasses = await statusBadge.getAttribute('class');
-    expect(badgeClasses).toContain('text-green-600');
-    expect(badgeClasses).toContain('bg-green-50');
+    expect(badgeClasses).toContain('text-success');
+    expect(badgeClasses).toContain('bg-success/10');
   });
 
   test('TEST-A15: should display discovered status with yellow badge', async ({ page }) => {
@@ -558,10 +558,10 @@ test.describe('Agent UI/UX', () => {
     const statusBadge = agentCard.getByTestId('agent-card-status');
     await expect(statusBadge).toHaveText('confirmed');
 
-    // Verify badge has correct color classes for confirmed status (green)
+    // Verify badge has correct color classes for confirmed status (uses semantic colors)
     const badgeClasses = await statusBadge.getAttribute('class');
-    expect(badgeClasses).toContain('text-green-600');
-    expect(badgeClasses).toContain('bg-green-50');
+    expect(badgeClasses).toContain('text-success');
+    expect(badgeClasses).toContain('bg-success/10');
   });
 
   test('TEST-A16: should display archived status with gray badge', async ({ page }) => {

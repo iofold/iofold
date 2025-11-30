@@ -133,14 +133,14 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
 
             <div className="space-y-4 py-4 px-6">
               {error && (
-                <div className="bg-red-50 text-red-600 px-4 py-3 rounded-md text-sm">
+                <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-md text-sm">
                   {error}
                 </div>
               )}
 
               <div className="space-y-2">
                 <Label htmlFor="name">
-                  Eval Name <span className="text-red-500">*</span>
+                  Eval Name <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="name"
@@ -233,11 +233,11 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
               {/* Status indicator */}
               <div className="flex items-center gap-3 mb-6">
                 {isGenerating || isQueued ? (
-                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" aria-hidden="true" />
+                  <Loader2 className="w-6 h-6 animate-spin text-info" aria-hidden="true" />
                 ) : isCompleted ? (
-                  <CheckCircle2 className="w-6 h-6 text-green-600" aria-hidden="true" />
+                  <CheckCircle2 className="w-6 h-6 text-success" aria-hidden="true" />
                 ) : isFailed ? (
-                  <XCircle className="w-6 h-6 text-red-600" aria-hidden="true" />
+                  <XCircle className="w-6 h-6 text-destructive" aria-hidden="true" />
                 ) : null}
 
                 <div className="flex-1">
@@ -256,9 +256,9 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
               {/* Progress bar */}
               {(isGenerating || isQueued) && (
                 <div className="mb-6">
-                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-blue-600 transition-all duration-500"
+                      className="h-full bg-info transition-all duration-500"
                       style={{ width: `${jobStatus?.progress || 0}%` }}
                     />
                   </div>
@@ -268,9 +268,9 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
                     </p>
                     {isStreaming && (
                       <p className="text-xs">
-                        {isSSEActive && <span className="text-green-600">Real-time (SSE)</span>}
-                        {isPolling && <span className="text-yellow-600">Polling fallback</span>}
-                        {!isSSEActive && !isPolling && <span className="text-gray-500">Connecting...</span>}
+                        {isSSEActive && <span className="text-success">Real-time (SSE)</span>}
+                        {isPolling && <span className="text-warning">Polling fallback</span>}
+                        {!isSSEActive && !isPolling && <span className="text-muted-foreground">Connecting...</span>}
                       </p>
                     )}
                   </div>
@@ -279,7 +279,7 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
 
               {/* Error message */}
               {isFailed && jobStatus?.error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-6">
+                <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-md mb-6">
                   <p className="font-medium mb-1">Error</p>
                   <p className="text-sm">{jobStatus.error}</p>
                 </div>
@@ -288,7 +288,7 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
               {/* Success info */}
               {isCompleted && jobStatus?.result && (
                 <div className="space-y-4">
-                  <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-md">
+                  <div className="bg-success/10 border border-success/30 text-success px-4 py-3 rounded-md">
                     <p className="font-medium mb-1">Eval Generated Successfully</p>
                     <p className="text-sm">
                       Your eval function has been created and tested.

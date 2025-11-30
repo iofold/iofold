@@ -246,7 +246,7 @@ export default function SettingsPage() {
               >
                 <span
                   className={cn(
-                    "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                    "inline-block h-4 w-4 transform rounded-full bg-card transition-transform",
                     emailNotifications ? "translate-x-6" : "translate-x-1"
                   )}
                 />
@@ -276,7 +276,7 @@ export default function SettingsPage() {
               >
                 <span
                   className={cn(
-                    "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                    "inline-block h-4 w-4 transform rounded-full bg-card transition-transform",
                     slackIntegration ? "translate-x-6" : "translate-x-1"
                   )}
                 />

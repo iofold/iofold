@@ -356,57 +356,57 @@ function ReviewPageContent() {
     const averageTimePerTrace = reviewedCount > 0 ? Math.round(sessionDuration / reviewedCount) : 0
 
     return (
-      <div className="min-h-screen bg-[#FDF8F0] p-4 md:p-8">
+      <div className="min-h-screen bg-card p-4 md:p-8">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-4 mb-6">
             <Button
               variant="outline"
               size="sm"
               onClick={() => router.push('/agents')}
-              className="bg-white"
+              className="bg-card"
             >
               <ArrowLeft className="w-4 h-4 mr-2" aria-hidden="true" />
               Back
             </Button>
           </div>
 
-          <div className="text-center bg-white rounded-xl shadow-elevation-2 p-12">
+          <div className="text-center bg-card rounded-xl shadow-elevation-2 p-12">
             <div className="text-6xl mb-4">🎉</div>
-            <h2 className="text-3xl font-bold text-[#2A2D35] mb-2">Review Complete!</h2>
-            <p className="text-gray-600 mb-8">
+            <h2 className="text-3xl font-bold text-foreground mb-2">Review Complete!</h2>
+            <p className="text-muted-foreground mb-8">
               Great job! You have reviewed all {reviewedCount} traces
               {sessionDuration > 0 ? ` in ${Math.round(sessionDuration / 60)} minutes` : ''}
             </p>
 
             {/* Summary Stats */}
             <div className="grid grid-cols-4 gap-4 mb-8">
-              <div className="bg-green-50 rounded-lg p-4 border-2 border-green-200">
+              <div className="bg-success/10 rounded-lg p-4 border-2 border-success/20">
                 <div className="text-3xl mb-1">✅</div>
-                <div className="text-2xl font-bold text-green-700">{feedbackCounts.good}</div>
-                <div className="text-xs text-green-600">Good</div>
+                <div className="text-2xl font-bold text-success">{feedbackCounts.good}</div>
+                <div className="text-xs text-success">Good</div>
               </div>
-              <div className="bg-yellow-50 rounded-lg p-4 border-2 border-yellow-200">
+              <div className="bg-warning/10 rounded-lg p-4 border-2 border-warning/20">
                 <div className="text-3xl mb-1">➖</div>
-                <div className="text-2xl font-bold text-yellow-700">{feedbackCounts.okay}</div>
-                <div className="text-xs text-yellow-600">Okay</div>
+                <div className="text-2xl font-bold text-warning">{feedbackCounts.okay}</div>
+                <div className="text-xs text-warning">Okay</div>
               </div>
-              <div className="bg-red-50 rounded-lg p-4 border-2 border-red-200">
+              <div className="bg-destructive/10 rounded-lg p-4 border-2 border-destructive/20">
                 <div className="text-3xl mb-1">❌</div>
-                <div className="text-2xl font-bold text-red-700">{feedbackCounts.bad}</div>
-                <div className="text-xs text-red-600">Bad</div>
+                <div className="text-2xl font-bold text-destructive">{feedbackCounts.bad}</div>
+                <div className="text-xs text-destructive">Bad</div>
               </div>
-              <div className="bg-blue-50 rounded-lg p-4 border-2 border-blue-200">
+              <div className="bg-info/10 rounded-lg p-4 border-2 border-info/20">
                 <div className="text-3xl mb-1">⏱️</div>
-                <div className="text-2xl font-bold text-blue-700">{averageTimePerTrace}s</div>
-                <div className="text-xs text-blue-600">Avg/Trace</div>
+                <div className="text-2xl font-bold text-info">{averageTimePerTrace}s</div>
+                <div className="text-xs text-info">Avg/Trace</div>
               </div>
             </div>
 
             <div className="flex items-center justify-center gap-4">
-              <Button onClick={() => router.push('/agents')} className="bg-[#4ECFA5] hover:bg-[#2D9B78]">
+              <Button onClick={() => router.push('/agents')} className="bg-primary hover:bg-primary/80">
                 View Agents
               </Button>
-              <Button variant="outline" onClick={() => window.location.reload()} className="bg-white">
+              <Button variant="outline" onClick={() => window.location.reload()} className="bg-card">
                 <RefreshCw className="w-4 h-4 mr-2" aria-hidden="true" />
                 Review More
               </Button>
@@ -423,15 +423,15 @@ function ReviewPageContent() {
 
   if (!currentTrace) {
     return (
-      <div className="min-h-screen bg-[#FDF8F0] p-4 md:p-8">
+      <div className="min-h-screen bg-card p-4 md:p-8">
         <div className="max-w-4xl mx-auto">
-          <div className="text-center bg-white rounded-xl shadow-elevation-2 p-12">
+          <div className="text-center bg-card rounded-xl shadow-elevation-2 p-12">
             <div className="text-6xl mb-4">📋</div>
-            <h2 className="text-2xl font-bold text-[#2A2D35] mb-2">No Traces Available</h2>
-            <p className="text-gray-600 mb-6">
+            <h2 className="text-2xl font-bold text-foreground mb-2">No Traces Available</h2>
+            <p className="text-muted-foreground mb-6">
               There are no traces to review at the moment.
             </p>
-            <Button onClick={() => router.push('/agents')} className="bg-[#4ECFA5] hover:bg-[#2D9B78]">
+            <Button onClick={() => router.push('/agents')} className="bg-primary hover:bg-primary/80">
               Back to Agents
             </Button>
           </div>
@@ -456,9 +456,9 @@ function ReviewPageContent() {
   }
 
   return (
-    <div className="h-screen bg-[#FDF8F0] flex flex-col overflow-hidden">
+    <div className="h-screen bg-card flex flex-col overflow-hidden">
       {/* Compact Header - fixed height */}
-      <div className="flex-none px-4 py-3 border-b bg-white/80 backdrop-blur">
+      <div className="flex-none px-4 py-3 border-b bg-card/80 backdrop-blur">
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -466,26 +466,26 @@ function ReviewPageContent() {
                 variant="outline"
                 size="sm"
                 onClick={() => router.push('/agents')}
-                className="bg-white h-8 px-3"
+                className="bg-card h-8 px-3"
               >
                 <ArrowLeft className="w-3 h-3 mr-1" aria-hidden="true" />
                 <span className="text-xs">Back</span>
               </Button>
               <div className="flex items-center gap-2">
-                <Zap className="w-5 h-5 text-[#4ECFA5]" />
-                <h1 className="text-lg font-bold text-[#2A2D35]">Daily Quick Review</h1>
+                <Zap className="w-5 h-5 text-primary" />
+                <h1 className="text-lg font-bold text-foreground">Daily Quick Review</h1>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
               {/* Progress Inline */}
-              <div className="text-xs text-gray-600 font-medium">
-                <span className="text-[#4ECFA5] font-bold">{reviewedCount}</span>/{totalTraces}
+              <div className="text-xs text-muted-foreground font-medium">
+                <span className="text-primary font-bold">{reviewedCount}</span>/{totalTraces}
               </div>
               <div className="flex items-center gap-1 text-xs">
-                <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-semibold">Good: {feedbackCounts.good}</span>
-                <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded font-semibold">Okay: {feedbackCounts.okay}</span>
-                <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-semibold">Bad: {feedbackCounts.bad}</span>
+                <span className="bg-success/10 text-success px-2 py-0.5 rounded font-semibold">Good: {feedbackCounts.good}</span>
+                <span className="bg-warning/10 text-warning px-2 py-0.5 rounded font-semibold">Okay: {feedbackCounts.okay}</span>
+                <span className="bg-destructive/10 text-destructive px-2 py-0.5 rounded font-semibold">Bad: {feedbackCounts.bad}</span>
               </div>
 
               {/* Auto Mode Toggle */}
@@ -495,8 +495,8 @@ function ReviewPageContent() {
                 onClick={toggleAutoMode}
                 className={cn(
                   "h-8 px-3 text-xs",
-                  isAutoMode && "bg-[#4ECFA5] hover:bg-[#2D9B78] text-white",
-                  !isAutoMode && "bg-white"
+                  isAutoMode && "bg-primary hover:bg-primary/80 text-white",
+                  !isAutoMode && "bg-card"
                 )}
               >
                 {isAutoMode ? (
@@ -513,10 +513,10 @@ function ReviewPageContent() {
               </Button>
 
               {/* Remaining Time */}
-              <div className="bg-white px-3 py-1 rounded border border-gray-200">
-                <div className="text-xs text-gray-600 flex items-center gap-1">
+              <div className="bg-card px-3 py-1 rounded border border-border">
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  <span className="font-semibold text-[#2A2D35]">~{estimatedMinutes}m</span>
+                  <span className="font-semibold text-foreground">~{estimatedMinutes}m</span>
                 </div>
               </div>
 
@@ -526,8 +526,8 @@ function ReviewPageContent() {
                 size="sm"
                 onClick={() => setUseMockData(!useMockData)}
                 className={cn(
-                  "bg-white text-xs h-8 px-3",
-                  useMockData && "border-[#4ECFA5] text-[#4ECFA5]"
+                  "bg-card text-xs h-8 px-3",
+                  useMockData && "border-primary text-primary"
                 )}
               >
                 {useMockData ? 'Demo' : 'Live'}
@@ -543,20 +543,20 @@ function ReviewPageContent() {
           {/* Trace Card with animation */}
           <div
             className={cn(
-              "bg-white rounded-lg shadow-elevation-2 border border-gray-200 overflow-hidden transition-all duration-300 ease-out transform flex-1 flex flex-col",
+              "bg-card rounded-lg shadow-elevation-2 border border-border overflow-hidden transition-all duration-300 ease-out transform flex-1 flex flex-col",
               isTransitioning ? "opacity-0 scale-95 translate-x-4" : "opacity-100 scale-100 translate-x-0"
             )}
           >
             {/* Compact Card Header */}
-            <div className="flex-none px-4 py-2 border-b border-gray-200 bg-gradient-to-r from-[#4ECFA5]/10 to-[#8EDCC4]/10">
+            <div className="flex-none px-4 py-2 border-b border-border bg-gradient-to-r from-primary/10 to-primary/5">
               <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 text-gray-600">
+                <div className="flex items-center gap-2 text-muted-foreground">
                   <Calendar className="w-3 h-3" />
                   <span className="font-medium">{formatDate(currentTrace.timestamp)}</span>
                   <span>•</span>
                   <span>{formatDuration(currentTrace.duration_ms)}</span>
                 </div>
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-[#4ECFA5] rounded-full">
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-primary rounded-full">
                   <TrendingUp className="w-3 h-3 text-white" />
                   <span className="text-xs font-bold text-white">
                     {Math.round(currentTrace.score * 100)}%
@@ -570,23 +570,23 @@ function ReviewPageContent() {
               <div className="grid md:grid-cols-2 gap-4 h-full">
                 {/* USER INPUT Section */}
                 <div className="flex flex-col">
-                  <div className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 bg-[#4ECFA5] rounded-full"></div>
+                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
                     USER INPUT
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200 flex-1 overflow-auto">
-                    <p className="text-sm text-[#2A2D35] leading-relaxed">{currentTrace.input}</p>
+                  <div className="bg-muted rounded-lg p-3 border border-border flex-1 overflow-auto">
+                    <p className="text-sm text-foreground leading-relaxed">{currentTrace.input}</p>
                   </div>
                 </div>
 
                 {/* AGENT RESPONSE Section */}
                 <div className="flex flex-col">
-                  <div className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 bg-[#E8967A] rounded-full"></div>
+                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 bg-secondary rounded-full"></div>
                     AGENT RESPONSE
                   </div>
-                  <div className="bg-gradient-to-br from-gray-50 to-white rounded-lg p-3 border border-gray-200 flex-1 overflow-auto">
-                    <p className="text-xs text-[#2A2D35] leading-relaxed whitespace-pre-wrap font-mono">
+                  <div className="bg-gradient-to-br from-muted to-card rounded-lg p-3 border border-border flex-1 overflow-auto">
+                    <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap font-mono">
                       {currentTrace.output}
                     </p>
                   </div>
@@ -594,30 +594,30 @@ function ReviewPageContent() {
               </div>
 
               {/* Compact Metadata */}
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <p className="text-xs text-gray-600">
+              <div className="mt-3 pt-3 border-t border-border">
+                <p className="text-xs text-muted-foreground">
                   <span className="font-semibold">Model:</span> {currentTrace.metadata.model || 'N/A'}
                   {currentTrace.metadata.tokens && (
                     <> • <span className="font-semibold">Tokens:</span> {currentTrace.metadata.tokens}</>
                   )}
-                  <span className="float-right text-gray-500">
-                    <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border text-xs font-mono">1</kbd> Bad
+                  <span className="float-right text-muted-foreground">
+                    <kbd className="px-1.5 py-0.5 bg-muted rounded border text-xs font-mono">1</kbd> Bad
                     <span className="mx-1">•</span>
-                    <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border text-xs font-mono">2</kbd> Okay
+                    <kbd className="px-1.5 py-0.5 bg-muted rounded border text-xs font-mono">2</kbd> Okay
                     <span className="mx-1">•</span>
-                    <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border text-xs font-mono">3</kbd> Good
+                    <kbd className="px-1.5 py-0.5 bg-muted rounded border text-xs font-mono">3</kbd> Good
                   </span>
                 </p>
               </div>
             </div>
 
             {/* Quick Notes - collapsed at bottom */}
-            <div className="flex-none px-4 py-2 border-t border-gray-200 bg-gray-50">
+            <div className="flex-none px-4 py-2 border-t border-border bg-muted">
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value.slice(0, 500))}
                 placeholder="Quick notes (optional)..."
-                className="w-full h-12 px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[#4ECFA5] focus:border-transparent resize-none"
+                className="w-full h-12 px-2 py-1 text-xs border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
                 maxLength={500}
               />
             </div>
@@ -626,13 +626,13 @@ function ReviewPageContent() {
       </div>
 
       {/* Fixed Footer with Feedback Buttons */}
-      <div className="flex-none px-4 py-3 border-t bg-white">
+      <div className="flex-none px-4 py-3 border-t bg-card">
         <div className="max-w-5xl mx-auto">
           <div className="grid grid-cols-3 gap-3">
             <Button
               onClick={() => handleFeedback('bad')}
               disabled={submitFeedbackMutation.isPending}
-              className="h-14 text-base font-bold bg-red-500 hover:bg-red-600 text-white border-2 border-red-600 shadow-lg hover:shadow-xl transition-all"
+              className="h-14 text-base font-bold bg-destructive hover:bg-destructive/90 text-destructive-foreground border-2 border-destructive shadow-lg hover:shadow-xl transition-all"
             >
               <div className="flex flex-col items-center">
                 <div className="text-xl">❌</div>
@@ -642,7 +642,7 @@ function ReviewPageContent() {
             <Button
               onClick={() => handleFeedback('okay')}
               disabled={submitFeedbackMutation.isPending}
-              className="h-14 text-base font-bold bg-amber-600 hover:bg-amber-700 text-white border-2 border-amber-700 shadow-lg hover:shadow-xl transition-all"
+              className="h-14 text-base font-bold bg-warning hover:bg-warning/90 text-warning-foreground border-2 border-warning shadow-lg hover:shadow-xl transition-all"
             >
               <div className="flex flex-col items-center">
                 <div className="text-xl">➖</div>
@@ -652,7 +652,7 @@ function ReviewPageContent() {
             <Button
               onClick={() => handleFeedback('good')}
               disabled={submitFeedbackMutation.isPending}
-              className="h-14 text-base font-bold bg-green-500 hover:bg-green-600 text-white border-2 border-green-600 shadow-lg hover:shadow-xl transition-all"
+              className="h-14 text-base font-bold bg-success hover:bg-success/90 text-success-foreground border-2 border-success shadow-lg hover:shadow-xl transition-all"
             >
               <div className="flex flex-col items-center">
                 <div className="text-xl">✅</div>

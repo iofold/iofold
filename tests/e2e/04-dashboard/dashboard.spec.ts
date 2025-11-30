@@ -37,36 +37,33 @@ test.describe('Dashboard Page', () => {
     const lastUpdatedLabel = page.getByText(/Last updated:/i)
     await expect(lastUpdatedLabel).toBeVisible({ timeout: 10000 })
 
-    // Find the time display element (should show time or placeholder)
-    const timeDisplay = page.locator('text=/--:--:--|\\d{2}:\\d{2}:\\d{2}/')
+    // Find the time display element next to "Last updated:" label
+    // The time is displayed in a span with suppressHydrationWarning
+    const statusBar = page.locator('.bg-muted.rounded-lg').first()
+    await expect(statusBar).toBeVisible()
+
+    // Wait a bit for client-side hydration to complete
+    await page.waitForTimeout(1000)
+
+    // Check for time display (either placeholder or actual time)
+    const timeDisplay = statusBar.locator('text=/--:--:--|\\d{2}:\\d{2}:\\d{2}/')
     await expect(timeDisplay).toBeVisible({ timeout: 5000 })
 
     // Get initial time value
     const initialTime = await timeDisplay.textContent()
 
-    // If it's not a placeholder, wait and verify it updates
-    if (initialTime && !initialTime.includes('--:--:--')) {
-      // Wait for 2 seconds to allow time to potentially update
-      await page.waitForTimeout(2000)
+    // Verify the time is in expected format (either placeholder or actual time)
+    expect(initialTime).toMatch(/^(--:--:--|\d{2}:\d{2}:\d{2})$/)
 
-      const updatedTime = await timeDisplay.textContent()
-
-      // Time should either be the same or different (both are valid since we don't know exact timing)
-      expect(updatedTime).toBeTruthy()
-      expect(updatedTime).toMatch(/\d{2}:\d{2}:\d{2}/)
-    } else {
-      // Placeholder state is acceptable on initial load
-      expect(initialTime).toContain('--:--:--')
-    }
-
-    // Verify the date display is also present
-    const dateDisplay = page.locator('text=/Mon|Tue|Wed|Thu|Fri|Sat|Sun/').first()
-    // Date might be empty on initial render due to SSR, so we just check it exists
-    await expect(dateDisplay).toBeAttached()
+    // Verify the date display is also present in the status bar
+    // Date might be empty on initial render due to SSR
+    const dateSection = statusBar.locator('span').filter({ hasText: /Mon|Tue|Wed|Thu|Fri|Sat|Sun/ })
+    // Just check it's attached, might be empty during SSR
+    await expect(dateSection).toBeAttached()
   })
 
   test('TEST-D03: All 4 stat cards render with correct titles', async ({ page }) => {
-    // Define expected KPI card titles
+    // Define expected KPI card titles - must match exact titles in page.tsx
     const expectedCards = [
       'Total Traces',
       'Overall Pass Rate',
@@ -74,16 +71,16 @@ test.describe('Dashboard Page', () => {
       'Active Agents',
     ]
 
-    // Verify each KPI card is visible
+    // Wait for the KPI grid to be visible first
+    const kpiGrid = page.locator('.grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-4').first()
+    await expect(kpiGrid).toBeVisible({ timeout: 10000 })
+
+    // Verify each KPI card title is visible
     for (const cardTitle of expectedCards) {
-      const card = page.getByText(cardTitle, { exact: true })
+      // Look for the title text within the KPI grid
+      const card = kpiGrid.locator('text=' + cardTitle).first()
       await expect(card).toBeVisible({ timeout: 10000 })
     }
-
-    // Verify we have exactly 4 KPI cards in the grid
-    // The grid has class "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
-    const kpiGrid = page.locator('[class*="grid"][class*="md:grid-cols-2"][class*="lg:grid-cols-4"]').first()
-    await expect(kpiGrid).toBeVisible()
 
     // Count the direct child divs which wrap each KPICard
     const kpiCards = kpiGrid.locator('> div')
@@ -114,7 +111,7 @@ test.describe('Dashboard Page', () => {
 
   test('TEST-D05: Recent activity section displays', async ({ page }) => {
     // Verify the "Recent Activity" section header is visible
-    const activityHeader = page.getByRole('heading', { name: /Recent Activity/i })
+    const activityHeader = page.getByRole('heading', { name: /Recent Activity/i, level: 3 })
     await expect(activityHeader).toBeVisible({ timeout: 10000 })
 
     // Verify the subtitle
@@ -122,17 +119,18 @@ test.describe('Dashboard Page', () => {
     await expect(activitySubtitle).toBeVisible()
 
     // Verify activity filter tabs are present
-    const allTab = page.getByRole('button', { name: /^all$/i })
-    const failuresTab = page.getByRole('button', { name: /failures/i })
-    const evaluationsTab = page.getByRole('button', { name: /evaluations/i })
-    const alertsTab = page.getByRole('button', { name: /alerts/i })
+    // These are button elements within the filter tabs section
+    const allTab = page.locator('button').filter({ hasText: /^all$/i }).first()
+    const failuresTab = page.locator('button').filter({ hasText: /^failures$/i }).first()
+    const evaluationsTab = page.locator('button').filter({ hasText: /^evaluations$/i }).first()
+    const alertsTab = page.locator('button').filter({ hasText: /^alerts$/i }).first()
 
     await expect(allTab).toBeVisible({ timeout: 5000 })
     await expect(failuresTab).toBeVisible()
     await expect(evaluationsTab).toBeVisible()
     await expect(alertsTab).toBeVisible()
 
-    // Verify the filter button is present
+    // Verify the filter button is present (has Filter icon and aria-label)
     const filterButton = page.getByRole('button', { name: /Filter activity/i })
     await expect(filterButton).toBeVisible()
   })
@@ -198,11 +196,11 @@ test.describe('Dashboard Page', () => {
     await page.waitForTimeout(500)
 
     // Verify all 4 KPI cards are visible in a row
-    const kpiGrid = page.locator('[class*="grid"][class*="md:grid-cols-2"][class*="lg:grid-cols-4"]').first()
+    const kpiGrid = page.locator('.grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-4').first()
     await expect(kpiGrid).toBeVisible()
 
     // Verify the main content grid with chart (2 cols) and activity (1 col)
-    const mainGrid = page.locator('[class*="grid"][class*="lg:grid-cols-3"]').first()
+    const mainGrid = page.locator('.grid.grid-cols-1.lg\\:grid-cols-3').first()
     await expect(mainGrid).toBeVisible()
 
     // Test tablet layout

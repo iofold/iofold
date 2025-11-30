@@ -108,7 +108,7 @@ export function AddIntegrationModal({ children }: AddIntegrationModalProps) {
 
           <div className="space-y-4 py-4 px-6">
             {error && (
-              <div className="bg-red-50 text-red-600 px-4 py-3 rounded-md text-sm">
+              <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-md text-sm">
                 {error}
               </div>
             )}
@@ -149,7 +149,7 @@ export function AddIntegrationModal({ children }: AddIntegrationModalProps) {
               <>
                 <div className="space-y-2">
                   <Label htmlFor="public-key">
-                    Public Key <span className="text-red-500">*</span>
+                    Public Key <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="public-key"
@@ -164,7 +164,7 @@ export function AddIntegrationModal({ children }: AddIntegrationModalProps) {
 
                 <div className="space-y-2">
                   <Label htmlFor="secret-key">
-                    Secret Key <span className="text-red-500">*</span>
+                    Secret Key <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="secret-key"

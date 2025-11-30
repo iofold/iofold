@@ -52,7 +52,7 @@ export function ToolCallsList({ toolCalls }: ToolCallsListProps) {
     <div className="px-4 pb-4 space-y-2">
       <div className="flex items-center gap-2 mb-2">
         <span role="img" aria-label="Tools" className="text-lg">🔧</span>
-        <span className="text-sm font-semibold text-gray-700">
+        <span className="text-sm font-semibold text-muted-foreground">
           Tool Calls ({toolCalls.length}):
         </span>
       </div>
@@ -60,17 +60,17 @@ export function ToolCallsList({ toolCalls }: ToolCallsListProps) {
       {toolCalls.map((toolCall, index) => (
         <div
           key={index}
-          className="bg-gray-50 border border-gray-200 rounded p-3"
+          className="bg-muted border border-border rounded p-3"
         >
           {/* Tool Name and Module */}
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
-                <code className="font-mono text-sm font-semibold text-gray-900">
+                <code className="font-mono text-sm font-semibold text-foreground">
                   {toolCall.name}
                 </code>
                 {toolCall.module && (
-                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
                     {toolCall.module}
                   </span>
                 )}
@@ -79,11 +79,11 @@ export function ToolCallsList({ toolCalls }: ToolCallsListProps) {
               {/* Result or Error */}
               {toolCall.error ? (
                 <div className="mt-2 text-sm">
-                  <div className="flex items-center gap-1 text-red-600">
+                  <div className="flex items-center gap-1 text-destructive">
                     <span role="img" aria-label="Error">❌</span>
                     <span className="font-semibold">Error:</span>
                   </div>
-                  <div className="mt-1 text-red-700 bg-red-50 border border-red-200 rounded p-2">
+                  <div className="mt-1 text-destructive bg-destructive/10 border border-destructive/20 rounded p-2">
                     <code className="text-xs font-mono whitespace-pre-wrap break-words">
                       {toolCall.error}
                     </code>
@@ -91,19 +91,19 @@ export function ToolCallsList({ toolCalls }: ToolCallsListProps) {
                 </div>
               ) : toolCall.result !== undefined ? (
                 <div className="mt-2 text-sm">
-                  <div className="flex items-center gap-1 text-green-600">
+                  <div className="flex items-center gap-1 text-success">
                     <span>→</span>
                     <span className="font-semibold">Result:</span>
                   </div>
-                  <div className="mt-1 text-gray-700">
+                  <div className="mt-1 text-muted-foreground">
                     {expandedIndex === index ? (
-                      <div className="bg-white border border-gray-200 rounded p-2">
+                      <div className="bg-card border border-border rounded p-2">
                         <code className="text-xs font-mono whitespace-pre-wrap break-words">
                           {JSON.stringify(toolCall.result, null, 2)}
                         </code>
                       </div>
                     ) : (
-                      <code className="text-xs font-mono text-gray-600">
+                      <code className="text-xs font-mono text-muted-foreground">
                         {formatResult(toolCall.result)}
                       </code>
                     )}
@@ -114,11 +114,11 @@ export function ToolCallsList({ toolCalls }: ToolCallsListProps) {
               {/* Arguments (collapsed by default) */}
               {toolCall.arguments && expandedIndex === index && (
                 <div className="mt-2 text-sm">
-                  <div className="flex items-center gap-1 text-gray-600">
+                  <div className="flex items-center gap-1 text-muted-foreground">
                     <span className="font-semibold">Arguments:</span>
                   </div>
-                  <div className="mt-1 bg-white border border-gray-200 rounded p-2">
-                    <code className="text-xs font-mono whitespace-pre-wrap break-words text-gray-700">
+                  <div className="mt-1 bg-card border border-border rounded p-2">
+                    <code className="text-xs font-mono whitespace-pre-wrap break-words text-muted-foreground">
                       {JSON.stringify(toolCall.arguments, null, 2)}
                     </code>
                   </div>
@@ -130,7 +130,7 @@ export function ToolCallsList({ toolCalls }: ToolCallsListProps) {
             {(toolCall.arguments || (toolCall.result && typeof toolCall.result === 'object')) && (
               <button
                 onClick={() => toggleExpand(index)}
-                className="text-xs text-gray-500 hover:text-gray-700 font-medium shrink-0"
+                className="text-xs text-muted-foreground hover:text-foreground font-medium shrink-0"
                 aria-label={expandedIndex === index ? 'Collapse details' : 'Expand details'}
               >
                 {expandedIndex === index ? '▲ Less' : '▼ More'}

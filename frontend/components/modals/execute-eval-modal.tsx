@@ -201,7 +201,7 @@ export function ExecuteEvalModal({ children, evalId, agentId }: ExecuteEvalModal
 
             <div className="space-y-4 py-4 px-6">
               {error && (
-                <div className="bg-red-50 text-red-600 px-4 py-3 rounded-md text-sm">
+                <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-md text-sm">
                   {error}
                 </div>
               )}
@@ -247,7 +247,7 @@ export function ExecuteEvalModal({ children, evalId, agentId }: ExecuteEvalModal
                       {tracesData?.traces.map((trace) => (
                         <label
                           key={trace.id}
-                          className="flex items-center gap-2 cursor-pointer p-2 hover:bg-accent rounded"
+                          className="flex items-center gap-2 cursor-pointer p-2 hover:bg-muted rounded"
                         >
                           <input
                             type="checkbox"
@@ -302,11 +302,11 @@ export function ExecuteEvalModal({ children, evalId, agentId }: ExecuteEvalModal
               {/* Status indicator */}
               <div className="flex items-center gap-3 mb-6">
                 {isExecuting || isQueued ? (
-                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" aria-hidden="true" />
+                  <Loader2 className="w-6 h-6 animate-spin text-info" aria-hidden="true" />
                 ) : isCompleted ? (
-                  <CheckCircle2 className="w-6 h-6 text-green-600" aria-hidden="true" />
+                  <CheckCircle2 className="w-6 h-6 text-success" aria-hidden="true" />
                 ) : isFailed ? (
-                  <XCircle className="w-6 h-6 text-red-600" aria-hidden="true" />
+                  <XCircle className="w-6 h-6 text-destructive" aria-hidden="true" />
                 ) : null}
 
                 <div className="flex-1">
@@ -325,9 +325,9 @@ export function ExecuteEvalModal({ children, evalId, agentId }: ExecuteEvalModal
               {/* Progress bar */}
               {(isExecuting || isQueued) && (
                 <div className="mb-6">
-                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-blue-600 transition-all duration-500"
+                      className="h-full bg-info transition-all duration-500"
                       style={{ width: `${jobData?.progress || 0}%` }}
                     />
                   </div>
@@ -339,7 +339,7 @@ export function ExecuteEvalModal({ children, evalId, agentId }: ExecuteEvalModal
 
               {/* Error message */}
               {isFailed && jobData?.error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-6">
+                <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-md mb-6">
                   <p className="font-medium mb-1">Error</p>
                   <p className="text-sm">{jobData.error}</p>
                 </div>
@@ -348,7 +348,7 @@ export function ExecuteEvalModal({ children, evalId, agentId }: ExecuteEvalModal
               {/* Success info */}
               {isCompleted && jobData?.result && (
                 <div className="space-y-4">
-                  <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-md">
+                  <div className="bg-success/10 border border-success/30 text-success px-4 py-3 rounded-md">
                     <p className="font-medium mb-1">Execution Completed</p>
                     <p className="text-sm">
                       Your eval has been executed on the selected traces.
@@ -369,7 +369,7 @@ export function ExecuteEvalModal({ children, evalId, agentId }: ExecuteEvalModal
                           <li>Errors: {jobData.result.error_count}</li>
                         )}
                         {jobData.result.contradiction_count !== undefined && (
-                          <li className="text-red-600 font-medium">
+                          <li className="text-destructive font-medium">
                             Contradictions: {jobData.result.contradiction_count}
                           </li>
                         )}

@@ -186,7 +186,7 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-purple-600" />
+            <Sparkles className="w-5 h-5 text-primary" />
             Generate Eval
           </DialogTitle>
           <DialogDescription>
@@ -199,13 +199,13 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
           <div className="my-4 p-4 rounded-lg border bg-muted/50">
             <div className="flex items-center gap-2 mb-2">
               {jobData?.status === 'completed' && (
-                <CheckCircle2 className="h-5 w-5 text-green-600" aria-hidden="true" />
+                <CheckCircle2 className="h-5 w-5 text-success" aria-hidden="true" />
               )}
               {jobData?.status === 'failed' && (
-                <AlertCircle className="h-5 w-5 text-red-600" aria-hidden="true" />
+                <AlertCircle className="h-5 w-5 text-destructive" aria-hidden="true" />
               )}
               {(jobData?.status === 'running' || jobData?.status === 'queued') && (
-                <Loader2 className="h-5 w-5 animate-spin text-purple-600" aria-hidden="true" />
+                <Loader2 className="h-5 w-5 animate-spin text-primary" aria-hidden="true" />
               )}
               <span className="font-medium">Generation Status</span>
             </div>
@@ -233,14 +233,14 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
               )}
 
               {jobData?.error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-800 text-sm">
+                <div className="p-3 bg-destructive/10 border border-destructive/30 rounded text-destructive text-sm">
                   <p className="font-medium mb-1">Generation Failed</p>
                   <p>{jobData.error}</p>
                 </div>
               )}
 
               {jobData?.status === 'completed' && jobData?.result && (
-                <div className="p-3 bg-green-50 border border-green-200 rounded text-green-800 text-sm">
+                <div className="p-3 bg-success/10 border border-success/30 rounded text-success text-sm">
                   <p className="font-medium mb-1">Eval Generated Successfully!</p>
                   <div className="space-y-1">
                     {jobData.result.eval_name && (
@@ -326,7 +326,7 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
             </div>
 
             {generateMutation.isError && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm">
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm">
                 <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
                 <div>
                   <p className="font-medium">Generation failed</p>

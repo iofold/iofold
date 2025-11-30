@@ -63,13 +63,13 @@ export default function MatrixPage() {
   const getStatusColor = (status: VersionStatus) => {
     switch (status) {
       case 'deployed':
-        return 'bg-[#2D9B78] text-white border-[#2D9B78]'
+        return 'bg-success text-white border-success'
       case 'testing':
-        return 'bg-[#F2B8A2] text-[#8B4513] border-[#F2B8A2]'
+        return 'bg-warning text-warning-foreground border-warning'
       case 'draft':
-        return 'bg-gray-200 text-gray-800 border-gray-300'
+        return 'bg-muted text-foreground border-border'
       default:
-        return 'bg-gray-200 text-gray-700 border-gray-300'
+        return 'bg-muted text-muted-foreground border-border'
     }
   }
 
@@ -90,23 +90,23 @@ export default function MatrixPage() {
     <div className="container mx-auto px-4 py-8">
       {/* Header Section */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-[#2A2D35] mb-2">
+        <h1 className="text-3xl font-bold text-foreground mb-2">
           Agent Version Performance Overview
         </h1>
-        <p className="text-[#4B5563]">
+        <p className="text-muted-foreground">
           Compare evaluation scores across different agent versions
         </p>
       </div>
 
       {/* Info Box */}
-      <div className="bg-white rounded-lg border border-[#D1D5DB] p-6 mb-8 shadow-sm">
+      <div className="bg-card rounded-lg border border-border p-6 mb-8 shadow-sm">
         <div className="flex items-start space-x-3">
-          <Info className="text-[#4ECFA5] mt-1 flex-shrink-0" size={20} />
+          <Info className="text-primary mt-1 flex-shrink-0" size={20} />
           <div>
-            <h3 className="font-semibold text-[#2A2D35] mb-2">
+            <h3 className="font-semibold text-foreground mb-2">
               How to Use This View
             </h3>
-            <p className="text-sm text-[#4B5563]">
+            <p className="text-sm text-muted-foreground">
               This overview shows evaluation performance metrics across different agent versions.
               Click on any version card to view detailed per-trace evaluation outputs, contradictions, and reasoning.
             </p>
@@ -123,16 +123,16 @@ export default function MatrixPage() {
             className="block group"
             aria-label={`View details for ${version.name}`}
           >
-            <div className="bg-white rounded-lg border border-[#D1D5DB] shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden h-full flex flex-col cursor-pointer">
+            <div className="bg-card rounded-lg border border-border shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden h-full flex flex-col cursor-pointer">
               {/* Card Header */}
-              <div className="border-b border-[#D1D5DB] p-6">
+              <div className="border-b border-border p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
-                    <h3 className="font-semibold text-lg text-[#2A2D35] mb-1 group-hover:text-[#4ECFA5] transition-colors">
+                    <h3 className="font-semibold text-lg text-foreground mb-1 group-hover:text-primary transition-colors">
                       {version.name}
                     </h3>
                     <div className="flex items-center space-x-2">
-                      <span className="text-xs text-[#4B5563]">
+                      <span className="text-xs text-muted-foreground">
                         v{version.version} • {formatDate(version.created_at)}
                       </span>
                     </div>
@@ -147,15 +147,15 @@ export default function MatrixPage() {
                 </div>
 
                 {/* Overall Accuracy */}
-                <div className="bg-[#F5EFE6] rounded-lg p-4">
-                  <div className="text-sm text-[#4B5563] mb-1">
+                <div className="bg-muted rounded-lg p-4">
+                  <div className="text-sm text-muted-foreground mb-1">
                     Overall Accuracy
                   </div>
                   <div className="flex items-baseline space-x-2">
-                    <span className="text-3xl font-bold text-[#2A2D35]">
+                    <span className="text-3xl font-bold text-foreground">
                       {version.accuracy}%
                     </span>
-                    <span className="text-sm text-[#4B5563]">
+                    <span className="text-sm text-muted-foreground">
                       ({version.avgConfidence}% confidence)
                     </span>
                   </div>
@@ -166,21 +166,21 @@ export default function MatrixPage() {
               <div className="p-6 flex-1 flex flex-col space-y-4">
                 {/* Evaluation Distribution */}
                 <div>
-                  <div className="text-sm font-medium text-[#4B5563] mb-3">
+                  <div className="text-sm font-medium text-muted-foreground mb-3">
                     Evaluation Distribution
                   </div>
                   <div className="space-y-2">
                     {/* Positive */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <ThumbsUp size={14} className="text-[#2D9B78]" />
-                        <span className="text-sm text-[#2A2D35]">Positive</span>
+                        <ThumbsUp size={14} className="text-success" />
+                        <span className="text-sm text-foreground">Positive</span>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium text-[#2A2D35]">
+                        <span className="text-sm font-medium text-foreground">
                           {version.positiveCount}
                         </span>
-                        <span className="text-xs text-[#4B5563]">
+                        <span className="text-xs text-muted-foreground">
                           ({calculatePercentage(version.positiveCount, version.totalTraces)}%)
                         </span>
                       </div>
@@ -189,14 +189,14 @@ export default function MatrixPage() {
                     {/* Neutral */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <Minus size={14} className="text-[#F2B8A2]" />
-                        <span className="text-sm text-[#2A2D35]">Neutral</span>
+                        <Minus size={14} className="text-warning" />
+                        <span className="text-sm text-foreground">Neutral</span>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium text-[#2A2D35]">
+                        <span className="text-sm font-medium text-foreground">
                           {version.neutralCount}
                         </span>
-                        <span className="text-xs text-[#4B5563]">
+                        <span className="text-xs text-muted-foreground">
                           ({calculatePercentage(version.neutralCount, version.totalTraces)}%)
                         </span>
                       </div>
@@ -205,14 +205,14 @@ export default function MatrixPage() {
                     {/* Negative */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <ThumbsDown size={14} className="text-[#D4705A]" />
-                        <span className="text-sm text-[#2A2D35]">Negative</span>
+                        <ThumbsDown size={14} className="text-destructive" />
+                        <span className="text-sm text-foreground">Negative</span>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium text-[#2A2D35]">
+                        <span className="text-sm font-medium text-foreground">
                           {version.negativeCount}
                         </span>
-                        <span className="text-xs text-[#4B5563]">
+                        <span className="text-xs text-muted-foreground">
                           ({calculatePercentage(version.negativeCount, version.totalTraces)}%)
                         </span>
                       </div>
@@ -221,19 +221,19 @@ export default function MatrixPage() {
                 </div>
 
                 {/* Contradictions */}
-                <div className="pt-4 border-t border-[#D1D5DB]">
+                <div className="pt-4 border-t border-border">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
-                      <AlertTriangle size={16} className="text-[#D4705A]" />
-                      <span className="text-sm font-medium text-[#2A2D35]">
+                      <AlertTriangle size={16} className="text-destructive" />
+                      <span className="text-sm font-medium text-foreground">
                         Contradictions
                       </span>
                     </div>
                     <div className="text-right">
-                      <div className="text-lg font-bold text-[#D4705A]">
+                      <div className="text-lg font-bold text-destructive">
                         {version.contradictions}
                       </div>
-                      <div className="text-xs text-[#4B5563]">
+                      <div className="text-xs text-muted-foreground">
                         {calculatePercentage(version.contradictions, version.totalTraces)}% rate
                       </div>
                     </div>
@@ -241,12 +241,12 @@ export default function MatrixPage() {
                 </div>
 
                 {/* Total Traces */}
-                <div className="pt-2 border-t border-[#D1D5DB]">
+                <div className="pt-2 border-t border-border">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-[#4B5563]">
+                    <span className="text-sm text-muted-foreground">
                       Total Traces Evaluated
                     </span>
-                    <span className="text-sm font-medium text-[#2A2D35]">
+                    <span className="text-sm font-medium text-foreground">
                       {version.totalTraces}
                     </span>
                   </div>
@@ -256,7 +256,7 @@ export default function MatrixPage() {
               {/* Card Footer */}
               <div className="p-6 pt-0">
                 <div
-                  className="w-full py-2 px-4 border border-[#D1D5DB] rounded-lg text-[#2A2D35] group-hover:bg-[#4ECFA5] group-hover:text-white group-hover:border-[#4ECFA5] transition-colors flex items-center justify-center space-x-2"
+                  className="w-full py-2 px-4 border border-border rounded-lg text-foreground group-hover:bg-primary group-hover:text-white group-hover:border-primary transition-colors flex items-center justify-center space-x-2"
                   role="button"
                   aria-label={`View trace details for ${version.name}`}
                 >
@@ -271,15 +271,15 @@ export default function MatrixPage() {
 
       {/* Empty State (hidden when we have data) */}
       {mockVersions.length === 0 && (
-        <div className="bg-white rounded-lg border border-[#D1D5DB] p-12 text-center">
-          <Layers size={48} className="text-[#4B5563] mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-[#2A2D35] mb-2">
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <Layers size={48} className="text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-foreground mb-2">
             No Agent Versions Found
           </h3>
-          <p className="text-[#4B5563] mb-4">
+          <p className="text-muted-foreground mb-4">
             There are no evaluation versions available to display.
           </p>
-          <button className="py-2 px-4 border border-[#D1D5DB] rounded-lg text-[#2A2D35] hover:bg-[#4ECFA5] hover:text-white hover:border-[#4ECFA5] transition-colors">
+          <button className="py-2 px-4 border border-border rounded-lg text-foreground hover:bg-primary hover:text-white hover:border-primary transition-colors">
             Create New Version
           </button>
         </div>

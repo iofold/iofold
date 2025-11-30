@@ -14,8 +14,8 @@ export function Progress({ value, className = '', showLabel = false, label = 'Pr
     <div className={`w-full ${className}`}>
       {showLabel && (
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-700">{label}</span>
-          <span className="text-sm text-gray-500">{Math.round(clampedValue)}%</span>
+          <span className="text-sm font-medium">{label}</span>
+          <span className="text-sm text-muted-foreground">{Math.round(clampedValue)}%</span>
         </div>
       )}
       <div
@@ -24,11 +24,14 @@ export function Progress({ value, className = '', showLabel = false, label = 'Pr
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={`${label}: ${Math.round(clampedValue)}% complete`}
-        className="w-full h-3 bg-gray-200 rounded-full overflow-hidden"
+        className="w-full h-3 bg-muted rounded-full overflow-hidden"
       >
         <div
-          className="h-full bg-gradient-to-r from-green-500 to-blue-500 transition-all duration-300"
-          style={{ width: `${clampedValue}%` }}
+          className="h-full transition-all duration-300"
+          style={{
+            width: `${clampedValue}%`,
+            background: 'linear-gradient(to right, hsl(var(--success)), hsl(var(--info)))'
+          }}
         />
       </div>
     </div>

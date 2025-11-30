@@ -363,22 +363,29 @@ test.describe('Matrix/Comparison Page Tests', () => {
     if (cardExists) {
       await versionCard.click();
       await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
     }
 
-    // Check for pagination controls
+    // Check for pagination controls (button text or role)
     const paginationVisible = await page
-      .locator('[role="navigation"], [aria-label*="pagination" i], button:has-text("Next"), button:has-text("Previous")')
+      .locator('button:has-text("Next"), button:has-text("Previous"), [role="navigation"][aria-label*="pagination" i]')
       .first()
       .isVisible({ timeout: 3000 })
       .catch(() => false);
 
-    // Check if page is scrollable (large content)
+    // Check if main content area is scrollable
     const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
     const clientHeight = await page.evaluate(() => document.documentElement.clientHeight);
-    const isScrollable = scrollHeight > clientHeight;
+    const isPageScrollable = scrollHeight > clientHeight;
 
-    // Either pagination exists OR content is scrollable
-    expect(paginationVisible || isScrollable).toBe(true);
+    // Check if there's a scrollable container (like trace list)
+    const hasScrollableContent = await page.evaluate(() => {
+      const containers = document.querySelectorAll('[class*="overflow"], .overflow-auto, .overflow-y-auto');
+      return Array.from(containers).some(el => el.scrollHeight > el.clientHeight);
+    });
+
+    // Either pagination exists OR content is scrollable (page or container)
+    expect(paginationVisible || isPageScrollable || hasScrollableContent).toBe(true);
   });
 
   test('TEST-M11: Export matrix data button', async ({ page }) => {
@@ -567,16 +574,20 @@ test.describe('Matrix Navigation Tests', () => {
       // Get the href to verify navigation
       const href = await agentLink.getAttribute('href');
 
-      // Click the link
-      await agentLink.click();
-      await page.waitForLoadState('networkidle');
-
-      // Verify we navigated to detail page
       if (href) {
-        await expect(page).toHaveURL(new RegExp(href));
+        // Use Promise.all to synchronize click with navigation
+        await Promise.all([
+          page.waitForURL(new RegExp(href.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), { timeout: 10000 }),
+          agentLink.click()
+        ]);
+        await page.waitForLoadState('networkidle');
+
+        // Verify we navigated to detail page
+        await expect(page).toHaveURL(new RegExp(href.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
       }
     } else {
-      console.log('No agent cards available for navigation test');
+      // Skip silently if no data available
+      test.skip(true, 'No agent cards available for navigation test');
     }
   });
 

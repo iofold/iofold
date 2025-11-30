@@ -22,7 +22,7 @@ export function MessageDisplay({ lastExchange, onExpand }: MessageDisplayProps) 
   // If no messages, show empty state
   if (!human && !assistant) {
     return (
-      <div className="p-4 text-center text-gray-500">
+      <div className="p-4 text-center text-muted-foreground">
         <p className="text-sm">No messages in this trace</p>
       </div>
     )
@@ -31,8 +31,8 @@ export function MessageDisplay({ lastExchange, onExpand }: MessageDisplayProps) 
   return (
     <div className="p-4 space-y-4">
       <div className="flex items-start gap-2 mb-2">
-        <span className="text-lg font-semibold text-gray-700">💬</span>
-        <span className="text-sm font-semibold text-gray-700">Last Messages:</span>
+        <span className="text-lg font-semibold text-muted-foreground">💬</span>
+        <span className="text-sm font-semibold text-muted-foreground">Last Messages:</span>
       </div>
 
       {/* Human Message */}
@@ -40,16 +40,16 @@ export function MessageDisplay({ lastExchange, onExpand }: MessageDisplayProps) 
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span role="img" aria-label="Human" className="text-lg">👤</span>
-            <span className="text-sm font-semibold text-blue-700">Human:</span>
+            <span className="text-sm font-semibold text-info">Human:</span>
           </div>
-          <div className="ml-7 bg-blue-50 border-l-4 border-blue-500 p-3 rounded-r">
-            <p className="text-gray-800 text-sm leading-relaxed whitespace-pre-wrap">
+          <div className="ml-7 bg-info/10 border-l-4 border-info p-3 rounded-r">
+            <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
               {showFullHuman && human.fullContent ? human.fullContent : human.content}
             </p>
             {human.truncated && !showFullHuman && (
               <button
                 onClick={() => setShowFullHuman(true)}
-                className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                className="mt-2 text-xs text-info hover:text-info/80 font-medium"
                 aria-label="Show full human message"
               >
                 Show more →
@@ -58,7 +58,7 @@ export function MessageDisplay({ lastExchange, onExpand }: MessageDisplayProps) 
             {human.truncated && showFullHuman && (
               <button
                 onClick={() => setShowFullHuman(false)}
-                className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                className="mt-2 text-xs text-info hover:text-info/80 font-medium"
                 aria-label="Show less"
               >
                 Show less ←
@@ -76,7 +76,7 @@ export function MessageDisplay({ lastExchange, onExpand }: MessageDisplayProps) 
             <span className="text-sm font-semibold text-purple-700">Assistant:</span>
           </div>
           <div className="ml-7 bg-purple-50 border-l-4 border-purple-500 p-3 rounded-r">
-            <p className="text-gray-800 text-sm leading-relaxed whitespace-pre-wrap">
+            <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
               {showFullAssistant && assistant.fullContent ? assistant.fullContent : assistant.content}
             </p>
             {assistant.truncated && !showFullAssistant && (
@@ -106,9 +106,9 @@ export function MessageDisplay({ lastExchange, onExpand }: MessageDisplayProps) 
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span role="img" aria-label="Human" className="text-lg">👤</span>
-            <span className="text-sm font-semibold text-gray-500">Human:</span>
+            <span className="text-sm font-semibold text-muted-foreground">Human:</span>
           </div>
-          <div className="ml-7 text-sm text-gray-600 italic">
+          <div className="ml-7 text-sm text-muted-foreground italic">
             No human message
           </div>
         </div>
@@ -118,9 +118,9 @@ export function MessageDisplay({ lastExchange, onExpand }: MessageDisplayProps) 
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span role="img" aria-label="Assistant" className="text-lg">🤖</span>
-            <span className="text-sm font-semibold text-gray-500">Assistant:</span>
+            <span className="text-sm font-semibold text-muted-foreground">Assistant:</span>
           </div>
-          <div className="ml-7 text-sm text-gray-600 italic">
+          <div className="ml-7 text-sm text-muted-foreground italic">
             No assistant response
           </div>
         </div>

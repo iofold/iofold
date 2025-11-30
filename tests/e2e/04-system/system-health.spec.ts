@@ -69,8 +69,8 @@ test.describe('System Health Monitoring', () => {
     await expect(firstCard.locator('text=Last Sync')).toBeVisible()
     await expect(firstCard.locator('text=Error Rate')).toBeVisible()
 
-    // Verify version badge is present (should be a span with text content)
-    const versionBadge = firstCard.locator('span.inline-flex.items-center.rounded-full.bg-slate-100')
+    // Verify version badge is present (uses semantic class bg-muted)
+    const versionBadge = firstCard.locator('span.inline-flex.items-center.rounded-full.bg-muted')
     await expect(versionBadge).toBeVisible()
   })
 
@@ -82,8 +82,8 @@ test.describe('System Health Monitoring', () => {
     const healthLabel = firstCard.locator('text=Health')
     await expect(healthLabel).toBeVisible()
 
-    // Verify health percentage value (should be between 0-100)
-    const healthValue = firstCard.locator('.font-medium.text-slate-900', { hasText: '%' }).first()
+    // Verify health percentage value (should be between 0-100) - uses semantic class text-foreground
+    const healthValue = firstCard.locator('.font-medium.text-foreground', { hasText: '%' }).first()
     await expect(healthValue).toBeVisible()
     const healthText = await healthValue.textContent()
     expect(healthText).toMatch(/\d+%/)
@@ -167,8 +167,8 @@ test.describe('System Health Monitoring', () => {
       const statusBar = card.locator('.h-1.w-full.rounded-full')
       const statusBarClass = await statusBar.getAttribute('class')
 
-      // Check for warning (amber) or critical (rose) status
-      if (statusBarClass?.includes('bg-amber-500') || statusBarClass?.includes('bg-rose-500')) {
+      // Check for warning or critical status (uses semantic classes)
+      if (statusBarClass?.includes('bg-warning') || statusBarClass?.includes('bg-destructive')) {
         foundWarningCard = true
 
         // Verify card is visible
@@ -252,8 +252,8 @@ test.describe('System Health Monitoring', () => {
     const connectedBadge = page.locator('text=Connected')
     await expect(connectedBadge).toBeVisible()
 
-    // Verify pulse animation dot is present
-    const pulseDot = page.locator('.h-2.w-2.rounded-full.bg-emerald-500.animate-pulse')
+    // Verify pulse animation dot is present (uses semantic class bg-success)
+    const pulseDot = page.locator('.h-2.w-2.rounded-full.bg-success.animate-pulse')
     await expect(pulseDot).toBeVisible()
   })
 
@@ -325,7 +325,9 @@ test.describe('System Health Monitoring', () => {
 
   test('TEST-SYS12: Alert banner dismissal', async ({ page }) => {
     // Verify alert banner is visible - find it by the specific heading text to distinguish from alert cards
-    const alertBanner = page.locator('div.rounded-lg.border-l-4.border-l-amber-500', {
+    // Uses semantic class border-l-warning instead of border-l-amber-500
+    // The banner has mb-6 class which distinguishes it from sidebar alerts
+    const alertBanner = page.locator('div.mb-6.rounded-lg.border-l-4.border-l-warning', {
       has: page.locator('h3:has-text("High Memory Usage Detected")')
     })
     await expect(alertBanner).toBeVisible()
@@ -333,10 +335,13 @@ test.describe('System Health Monitoring', () => {
     // Verify banner content (h3 with font-semibold class)
     await expect(alertBanner.locator('h3.font-semibold:has-text("High Memory Usage Detected")')).toBeVisible()
 
-    // Find and click dismiss button (the X button) - it's the last button in the banner
-    const dismissButton = alertBanner.locator('button').last()
+    // Find and click dismiss button (the X button) - it's the button with the X icon
+    const dismissButton = alertBanner.locator('button', { has: page.locator('svg') }).last()
     await expect(dismissButton).toBeVisible()
     await dismissButton.click()
+
+    // Wait a moment for the state to update
+    await page.waitForTimeout(200)
 
     // Verify banner is removed
     await expect(alertBanner).not.toBeVisible()
@@ -382,13 +387,16 @@ test.describe('System Health Monitoring', () => {
   })
 
   test('TEST-SYS16: Dark mode support', async ({ page }) => {
-    // Check that dark mode classes are present in the HTML
-    // (actual dark mode toggle would require theme implementation)
-    const mainContainer = page.locator('.min-h-screen.bg-slate-50.dark\\:bg-slate-950')
+    // Check that semantic background classes are present in the HTML
+    // The UI uses semantic classes like bg-background and bg-card instead of specific colors
+    // Need to be more specific since multiple elements have this class - look for the system page container
+    const mainContainer = page.locator('div.min-h-screen.bg-background').filter({
+      has: page.locator('h1:has-text("System Monitoring")')
+    })
     await expect(mainContainer).toBeVisible()
 
-    // Verify service cards have dark mode classes
-    const serviceCard = page.locator('.dark\\:bg-slate-900').first()
+    // Verify service cards use semantic card background class
+    const serviceCard = page.locator('.bg-card').first()
     await expect(serviceCard).toBeVisible()
   })
 })

@@ -100,15 +100,18 @@ test.describe('TEST-N01: Sidebar Navigation', () => {
     const sidebar = page.locator('aside').first();
 
     for (const nav of navigationTests) {
-      // Click the navigation item
+      // Wait for the navigation link to be visible and stable
       const navLink = sidebar.getByRole('link', { name: nav.label, exact: true });
-      await navLink.click();
+      await navLink.waitFor({ state: 'visible' });
 
-      // Wait for navigation to complete
+      // Click and wait for navigation
+      await Promise.all([
+        page.waitForURL(nav.expectedUrl, { timeout: 10000 }),
+        navLink.click()
+      ]);
+
+      // Wait for page to stabilize
       await page.waitForLoadState('networkidle');
-
-      // Verify URL changed
-      await expect(page).toHaveURL(nav.expectedUrl);
 
       // Verify the link is now marked as active
       const activeLink = sidebar.getByRole('link', { name: nav.label, exact: true });
@@ -132,9 +135,15 @@ test.describe('TEST-N01: Sidebar Navigation', () => {
     // Click the overview/dashboard link instead (since logo might not be clickable)
     const sidebar = page.locator('aside').first();
     const dashboardLink = sidebar.getByRole('link', { name: 'Overview', exact: true });
-    await dashboardLink.click();
+    await dashboardLink.waitFor({ state: 'visible' });
 
-    // Wait for navigation
+    // Click and wait for navigation
+    await Promise.all([
+      page.waitForURL(/\/$/, { timeout: 10000 }),
+      dashboardLink.click()
+    ]);
+
+    // Wait for page to stabilize
     await page.waitForLoadState('networkidle');
 
     // Verify we're back at dashboard
@@ -236,14 +245,18 @@ test.describe('TEST-N01: Sidebar Navigation', () => {
     const sidebar = page.locator('aside').first();
     const userSection = sidebar.locator('.border-t').last();
 
-    // Click settings link
+    // Click settings link with proper synchronization
     const settingsLink = userSection.getByRole('link', { name: /Settings/i });
-    await settingsLink.click();
+    await settingsLink.waitFor({ state: 'visible' });
 
-    // Wait for navigation
-    await page.waitForLoadState('networkidle');
+    // Use Promise.all to synchronize click with navigation
+    await Promise.all([
+      page.waitForURL(/\/settings/, { timeout: 10000 }),
+      settingsLink.click()
+    ]);
 
     // Verify navigation to settings page
+    await page.waitForLoadState('networkidle');
     await expect(page).toHaveURL(/\/settings/);
   });
 
@@ -316,11 +329,17 @@ test.describe('TEST-N01: Sidebar Navigation', () => {
     ];
 
     for (const workflow of workflowTests) {
-      // Click the workflow navigation item
+      // Wait for the workflow link to be visible and stable
       const workflowLink = page.getByRole('link', { name: workflow.label });
-      await workflowLink.click();
+      await workflowLink.waitFor({ state: 'visible' });
 
-      // Wait for navigation to complete
+      // Click and wait for navigation
+      await Promise.all([
+        page.waitForURL(workflow.expectedUrl, { timeout: 10000 }),
+        workflowLink.click()
+      ]);
+
+      // Wait for page to stabilize
       await page.waitForLoadState('networkidle');
 
       // Verify URL changed

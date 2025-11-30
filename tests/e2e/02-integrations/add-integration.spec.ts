@@ -191,9 +191,9 @@ test.describe('Integration Management - Add Integration', () => {
       await expect(card1.getByTestId('integration-name')).toHaveText(integration1Name)
       await expect(card2.getByTestId('integration-name')).toHaveText(integration2Name)
 
-      // Verify platform is shown with correct capitalization
-      await expect(card1.getByText('langfuse')).toBeVisible()
-      await expect(card2.getByText('langfuse')).toBeVisible()
+      // Verify platform is shown (displayed capitalized in UI as "Langfuse")
+      await expect(card1.getByText('Langfuse')).toBeVisible()
+      await expect(card2.getByText('Langfuse')).toBeVisible()
 
       // Verify status badges are visible
       await expect(card1.getByTestId('integration-status')).toBeVisible()
@@ -240,10 +240,10 @@ test.describe('Integration Management - Add Integration', () => {
       const statusText = await statusBadge.textContent()
       expect(statusText?.trim()).toBe('active')
 
-      // Verify badge has green styling for active status
+      // Verify badge has semantic styling for active status
       const badgeClasses = await statusBadge.getAttribute('class')
-      expect(badgeClasses).toContain('bg-green-100')
-      expect(badgeClasses).toContain('text-green-700')
+      expect(badgeClasses).toContain('bg-success')
+      expect(badgeClasses).toContain('text-success')
 
     } finally {
       integrationId = null

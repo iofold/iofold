@@ -45,8 +45,8 @@ export function TraceEvaluationDetails({
   }
 
   const getRatingColor = (result: boolean | null) => {
-    if (result === null) return 'text-gray-600 bg-gray-50'
-    return result ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'
+    if (result === null) return 'text-muted-foreground bg-muted'
+    return result ? 'text-success bg-success/10' : 'text-destructive bg-destructive/10'
   }
 
   const getRatingLabel = (result: boolean | null) => {
@@ -65,10 +65,10 @@ export function TraceEvaluationDetails({
 
   const getHumanRatingColor = (rating: 'positive' | 'negative' | 'neutral') => {
     switch (rating) {
-      case 'positive': return 'text-green-600 bg-green-50'
-      case 'negative': return 'text-red-600 bg-red-50'
-      case 'neutral': return 'text-yellow-600 bg-yellow-50'
-      default: return 'text-gray-600 bg-gray-50'
+      case 'positive': return 'text-success bg-success/10'
+      case 'negative': return 'text-destructive bg-destructive/10'
+      case 'neutral': return 'text-warning bg-warning/10'
+      default: return 'text-muted-foreground bg-muted'
     }
   }
 
@@ -124,7 +124,7 @@ export function TraceEvaluationDetails({
             <Card
               key={trace.trace_id}
               className={`overflow-hidden transition-all ${
-                hasContradiction ? 'border-red-200 bg-red-50/20' : ''
+                hasContradiction ? 'border-destructive bg-destructive/5' : ''
               } ${isSelected ? 'ring-2 ring-primary' : ''}`}
             >
               {/* Trace Header */}
@@ -148,7 +148,7 @@ export function TraceEvaluationDetails({
                             {trace.trace_id}
                           </span>
                           {hasContradiction && (
-                            <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded border border-red-200 flex items-center space-x-1">
+                            <span className="px-2 py-1 text-xs font-medium bg-destructive/10 text-destructive rounded border border-destructive flex items-center space-x-1">
                               <AlertTriangle size={12} />
                               <span>Contradiction</span>
                             </span>
@@ -266,7 +266,7 @@ export function TraceEvaluationDetails({
                       Agent Evaluation Reasoning
                     </h4>
                     <div className={`bg-background p-4 rounded-lg border ${
-                      hasContradiction ? 'border-red-200 bg-red-50/30' : ''
+                      hasContradiction ? 'border-destructive bg-destructive/5' : ''
                     }`}>
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center space-x-2">
@@ -283,8 +283,8 @@ export function TraceEvaluationDetails({
                         {prediction?.reason || 'No reasoning provided'}
                       </p>
                       {prediction?.error && (
-                        <div className="mt-3 pt-3 border-t border-red-200">
-                          <div className="flex items-start space-x-2 text-red-700">
+                        <div className="mt-3 pt-3 border-t border-destructive">
+                          <div className="flex items-start space-x-2 text-destructive">
                             <AlertCircle size={16} className="mt-0.5" />
                             <div>
                               <div className="font-medium text-sm">Execution Error</div>
@@ -294,8 +294,8 @@ export function TraceEvaluationDetails({
                         </div>
                       )}
                       {hasContradiction && (
-                        <div className="mt-3 pt-3 border-t border-red-200">
-                          <div className="flex items-start space-x-2 text-red-700">
+                        <div className="mt-3 pt-3 border-t border-destructive">
+                          <div className="flex items-start space-x-2 text-destructive">
                             <AlertTriangle size={16} className="mt-0.5" />
                             <div>
                               <div className="font-medium text-sm">Contradiction Detected</div>
@@ -323,7 +323,7 @@ export function TraceEvaluationDetails({
                       <Button
                         variant="outline"
                         size="sm"
-                        className="text-red-600 border-red-200 hover:bg-red-50"
+                        className="text-destructive border-destructive hover:bg-destructive/5"
                       >
                         <AlertCircle size={16} className="mr-2" />
                         Resolve Contradiction

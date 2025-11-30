@@ -90,7 +90,7 @@ export default function EvalDetailPage() {
               <div className="text-sm text-muted-foreground">Executions</div>
             </Card>
             <Card className="p-4">
-              <div className="text-2xl font-bold text-red-600 mb-1">
+              <div className="text-2xl font-bold text-destructive mb-1">
                 {evalData.contradiction_count}
               </div>
               <div className="text-sm text-muted-foreground">Contradictions</div>
@@ -108,19 +108,19 @@ export default function EvalDetailPage() {
             <Card className="p-6">
               <div className="grid grid-cols-4 gap-4 mb-4">
                 <div>
-                  <div className="text-lg font-bold text-green-600">
+                  <div className="text-lg font-bold text-success">
                     {evalData.test_results.correct}
                   </div>
                   <div className="text-sm text-muted-foreground">Correct</div>
                 </div>
                 <div>
-                  <div className="text-lg font-bold text-red-600">
+                  <div className="text-lg font-bold text-destructive">
                     {evalData.test_results.incorrect}
                   </div>
                   <div className="text-sm text-muted-foreground">Incorrect</div>
                 </div>
                 <div>
-                  <div className="text-lg font-bold text-yellow-600">
+                  <div className="text-lg font-bold text-warning">
                     {evalData.test_results.errors}
                   </div>
                   <div className="text-sm text-muted-foreground">Errors</div>
@@ -183,25 +183,25 @@ export default function EvalDetailPage() {
                           <tr
                             key={execution.id}
                             className={`border-b hover:bg-accent ${
-                              isContradiction ? 'bg-red-50' : hasError ? 'bg-yellow-50' : ''
+                              isContradiction ? 'bg-destructive/10' : hasError ? 'bg-warning/10' : ''
                             }`}
                           >
                             <td className="px-4 py-3 text-sm font-mono">
                               <Link
                                 href={`/traces/${execution.trace_id}`}
-                                className="text-blue-600 hover:underline"
+                                className="text-info hover:underline"
                               >
                                 {execution.trace_summary?.trace_id?.slice(0, 12) || execution.trace_id.slice(0, 12)}...
                               </Link>
                             </td>
                             <td className="px-4 py-3 text-sm">
                               {hasError ? (
-                                <span className="text-red-600 flex items-center gap-1">
+                                <span className="text-destructive flex items-center gap-1">
                                   <XCircle className="w-4 h-4" aria-hidden="true" />
                                   Error
                                 </span>
                               ) : (
-                                <span className={execution.predicted_result ? 'text-green-600' : 'text-red-600'}>
+                                <span className={execution.predicted_result ? 'text-success' : 'text-destructive'}>
                                   {execution.predicted_result ? 'Pass' : 'Fail'}
                                 </span>
                               )}
@@ -210,25 +210,25 @@ export default function EvalDetailPage() {
                               {expectedResult === null ? (
                                 <span className="text-muted-foreground">-</span>
                               ) : (
-                                <span className={expectedResult ? 'text-green-600' : 'text-red-600'}>
+                                <span className={expectedResult ? 'text-success' : 'text-destructive'}>
                                   {expectedResult ? 'Pass' : 'Fail'}
                                 </span>
                               )}
                             </td>
                             <td className="px-4 py-3 text-sm">
                               {hasError ? (
-                                <XCircle className="w-5 h-5 text-red-600" aria-hidden="true" />
+                                <XCircle className="w-5 h-5 text-destructive" aria-hidden="true" />
                               ) : match === null ? (
                                 <span className="text-muted-foreground">-</span>
                               ) : match ? (
-                                <CheckCircle className="w-5 h-5 text-green-600" aria-hidden="true" />
+                                <CheckCircle className="w-5 h-5 text-success" aria-hidden="true" />
                               ) : (
-                                <AlertTriangle className="w-5 h-5 text-red-600" aria-hidden="true" />
+                                <AlertTriangle className="w-5 h-5 text-destructive" aria-hidden="true" />
                               )}
                             </td>
                             <td className="px-4 py-3 text-sm max-w-xs truncate">
                               {hasError ? (
-                                <span className="text-red-600" title={execution.error}>
+                                <span className="text-destructive" title={execution.error}>
                                   {execution.error}
                                 </span>
                               ) : (

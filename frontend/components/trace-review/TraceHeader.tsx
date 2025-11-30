@@ -25,23 +25,23 @@ export function TraceHeader({ header }: TraceHeaderProps) {
   const durationText = formatDuration(header.duration)
 
   return (
-    <div className="bg-gray-50 p-4 rounded-t-lg border-b border-gray-200">
+    <div className="bg-muted p-4 rounded-t-lg border-b border-border">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-2xl" role="img" aria-label={`Status: ${header.status}`}>
             {statusEmoji}
           </span>
-          <span className="font-bold text-gray-900">
+          <span className="font-bold text-foreground">
             Trace #{header.traceNumber}
           </span>
-          <span className="text-gray-500 text-sm">·</span>
-          <span className="text-gray-600 text-sm">
+          <span className="text-muted-foreground text-sm">·</span>
+          <span className="text-muted-foreground text-sm">
             {relativeTime}
           </span>
         </div>
       </div>
 
-      <div className="flex items-center gap-3 text-sm text-gray-600">
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
         <div className="flex items-center gap-1">
           <span role="img" aria-label="Steps">📊</span>
           <span>
@@ -51,7 +51,7 @@ export function TraceHeader({ header }: TraceHeaderProps) {
 
         {header.duration !== undefined && (
           <>
-            <span className="text-gray-600">·</span>
+            <span className="text-muted-foreground">·</span>
             <div className="flex items-center gap-1">
               <span role="img" aria-label="Duration">⏱️</span>
               <span>{durationText}</span>
