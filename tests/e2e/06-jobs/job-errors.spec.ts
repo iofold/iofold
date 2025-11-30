@@ -152,7 +152,7 @@ test.describe('Job Failure Handling (TEST-J04)', () => {
       await page.waitForLoadState('networkidle');
 
       // Open import modal
-      const importButton = page.getByRole('button', { name: /import traces/i });
+      const importButton = page.getByRole('button', { name: /import traces/i }).first();
       await importButton.click();
 
       const dialog = page.getByRole('dialog');
