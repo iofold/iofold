@@ -65,9 +65,9 @@ export default function MatrixPage() {
       case 'deployed':
         return 'bg-[#2D9B78] text-white border-[#2D9B78]'
       case 'testing':
-        return 'bg-[#F2B8A2] text-[#2A2D35] border-[#F2B8A2]'
+        return 'bg-[#F2B8A2] text-[#8B4513] border-[#F2B8A2]'
       case 'draft':
-        return 'bg-gray-200 text-gray-700 border-gray-300'
+        return 'bg-gray-200 text-gray-800 border-gray-300'
       default:
         return 'bg-gray-200 text-gray-700 border-gray-300'
     }
@@ -121,6 +121,7 @@ export default function MatrixPage() {
             key={version.id}
             href={`/matrix/${version.id}`}
             className="block group"
+            aria-label={`View details for ${version.name}`}
           >
             <div className="bg-white rounded-lg border border-[#D1D5DB] shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden h-full flex flex-col cursor-pointer">
               {/* Card Header */}
@@ -254,7 +255,11 @@ export default function MatrixPage() {
 
               {/* Card Footer */}
               <div className="p-6 pt-0">
-                <div className="w-full py-2 px-4 border border-[#D1D5DB] rounded-lg text-[#2A2D35] group-hover:bg-[#4ECFA5] group-hover:text-white group-hover:border-[#4ECFA5] transition-colors flex items-center justify-center space-x-2">
+                <div
+                  className="w-full py-2 px-4 border border-[#D1D5DB] rounded-lg text-[#2A2D35] group-hover:bg-[#4ECFA5] group-hover:text-white group-hover:border-[#4ECFA5] transition-colors flex items-center justify-center space-x-2"
+                  role="button"
+                  aria-label={`View trace details for ${version.name}`}
+                >
                   <span>View Trace Details</span>
                   <ArrowRight size={16} />
                 </div>

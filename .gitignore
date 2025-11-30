@@ -5,3 +5,4 @@ dist/
 .dev.vars
 .tmp/
 .playwright-mcp/
+.tmp

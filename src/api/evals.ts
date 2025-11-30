@@ -37,6 +37,14 @@ const UpdateEvalSchema = z.object({
   code: z.string().optional()
 });
 
+const CreateEvalSchema = z.object({
+  agent_id: z.string().min(1),
+  name: z.string().min(1).max(255),
+  description: z.string().optional(),
+  code: z.string().min(1),
+  model_used: z.string().optional().default('manual'),
+});
+
 const ListEvalsSchema = z.object({
   agent_id: z.string().optional(),
   cursor: z.string().optional(),
@@ -134,6 +142,55 @@ export class EvalsAPI {
           headers: { 'Content-Type': 'application/json' }
         }
       );
+    } catch (error) {
+      return handleError(error);
+    }
+  }
+
+  // POST /api/evals - Create eval directly (for testing/seeding)
+  async createEval(body: any): Promise<Response> {
+    try {
+      const validated = CreateEvalSchema.parse(body);
+
+      // Check if agent exists
+      const agent = await this.db
+        .prepare('SELECT id FROM agents WHERE id = ?')
+        .bind(validated.agent_id)
+        .first();
+
+      if (!agent) {
+        return notFoundError('Agent', validated.agent_id);
+      }
+
+      // Get next version number for this agent
+      const versionResult = await this.db
+        .prepare('SELECT COALESCE(MAX(version), 0) + 1 as next_version FROM evals WHERE agent_id = ?')
+        .bind(validated.agent_id)
+        .first();
+      const version = (versionResult?.next_version as number) || 1;
+
+      const evalId = `eval_${crypto.randomUUID()}`;
+      const now = new Date().toISOString();
+
+      await this.db
+        .prepare(
+          `INSERT INTO evals (id, agent_id, version, name, description, code, model_used, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)`
+        )
+        .bind(
+          evalId,
+          validated.agent_id,
+          version,
+          validated.name,
+          validated.description || null,
+          validated.code,
+          validated.model_used,
+          now,
+          now
+        )
+        .run();
+
+      return this.getEval(evalId);
     } catch (error) {
       return handleError(error);
     }

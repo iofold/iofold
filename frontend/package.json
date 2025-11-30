@@ -9,11 +9,18 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "pages:build": "npx @cloudflare/next-on-pages",
-    "pages:deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static"
+    "pages:deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:accessibility": "playwright test e2e/04-accessibility",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.35.5",
     "@monaco-editor/react": "^4.6.0",
+    "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tailwindcss/postcss": "^4.1.17",
@@ -37,6 +44,7 @@
   },
   "devDependencies": {
     "@cloudflare/next-on-pages": "^1.13.5",
+    "@playwright/test": "^1.48.2",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

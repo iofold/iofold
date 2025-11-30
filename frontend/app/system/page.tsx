@@ -119,15 +119,16 @@ export default function SystemMonitoringPage() {
   const [showBanner, setShowBanner] = useState(true)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [nextRefresh, setNextRefresh] = useState(30)
-  const [lastUpdated, setLastUpdated] = useState(new Date())
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [responseTimeData] = useState(generateResponseTimeData())
   const [memoryData] = useState(generateMemoryData())
   const [services] = useState(mockServices)
   const [alerts] = useState(mockAlerts)
   const [mounted, setMounted] = useState(false)
 
-  // Delay rendering charts until after hydration to prevent SSR dimension issues
+  // Initialize lastUpdated and mounted state on client only
   useEffect(() => {
+    setLastUpdated(new Date())
     setMounted(true)
   }, [])
 
@@ -235,7 +236,7 @@ export default function SystemMonitoringPage() {
           <div className="mt-4 flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
             <Clock className="h-4 w-4" />
             <span suppressHydrationWarning>
-              Last updated: {mounted ? lastUpdated.toLocaleTimeString() : '--:--:--'}
+              Last updated: {mounted && lastUpdated ? lastUpdated.toLocaleTimeString() : '--:--:--'}
             </span>
             {autoRefresh && <span suppressHydrationWarning>• Next refresh in {nextRefresh}s</span>}
           </div>

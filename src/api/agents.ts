@@ -578,3 +578,107 @@ export async function getAgentPrompt(request: Request, env: Env, agentId: string
     return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
   }
 }
+
+/**
+ * POST /api/agents/:id/improve
+ *
+ * Trigger AI-powered prompt improvement for an agent.
+ * Creates a new candidate version with improved prompt.
+ *
+ * @param request - HTTP request with optional custom_instructions
+ * @param env - Cloudflare environment
+ * @param agentId - Agent ID from URL
+ * @returns 201 Created with new candidate version
+ */
+export async function improveAgent(request: Request, env: Env, agentId: string): Promise<Response> {
+  try {
+    const workspaceId = getWorkspaceId(request);
+    validateWorkspaceAccess(workspaceId);
+
+    // Parse optional request body
+    let customInstructions: string | undefined;
+    try {
+      const body = await request.json() as { custom_instructions?: string };
+      customInstructions = body.custom_instructions;
+    } catch {
+      // Empty body is fine
+    }
+
+    // Verify agent exists and belongs to workspace
+    const agent = await env.DB.prepare(
+      `SELECT a.*, av.prompt_template, av.version as active_version
+       FROM agents a
+       LEFT JOIN agent_versions av ON a.active_version_id = av.id
+       WHERE a.id = ? AND a.workspace_id = ?`
+    )
+      .bind(agentId, workspaceId)
+      .first();
+
+    if (!agent) {
+      return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
+    }
+
+    if (!agent.prompt_template) {
+      return createErrorResponse(
+        'VALIDATION_ERROR',
+        'Agent has no active version with prompt template',
+        400
+      );
+    }
+
+    // Get next version number
+    const versionResult = await env.DB.prepare(
+      'SELECT COALESCE(MAX(version), 0) + 1 as next_version FROM agent_versions WHERE agent_id = ?'
+    )
+      .bind(agentId)
+      .first();
+    const nextVersion = (versionResult?.next_version as number) || 1;
+
+    // For now, create a placeholder improved version
+    // In production, this would call an LLM to improve the prompt
+    const versionId = `av_${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+
+    // Create improved prompt (placeholder - in production would use LLM)
+    const improvedPrompt = customInstructions
+      ? `${agent.prompt_template}\n\n[Improvement guidance: ${customInstructions}]`
+      : agent.prompt_template;
+
+    await env.DB.prepare(
+      `INSERT INTO agent_versions (id, agent_id, version, prompt_template, source, parent_version_id, status, created_at)
+       VALUES (?, ?, ?, ?, 'ai_improved', ?, 'candidate', ?)`
+    )
+      .bind(
+        versionId,
+        agentId,
+        nextVersion,
+        improvedPrompt,
+        agent.active_version_id,
+        now
+      )
+      .run();
+
+    // Return the new version
+    const newVersion = await env.DB.prepare(
+      'SELECT * FROM agent_versions WHERE id = ?'
+    )
+      .bind(versionId)
+      .first();
+
+    return createSuccessResponse({
+      id: newVersion!.id,
+      agent_id: newVersion!.agent_id,
+      version: newVersion!.version,
+      prompt_template: newVersion!.prompt_template,
+      source: newVersion!.source,
+      status: newVersion!.status,
+      created_at: newVersion!.created_at,
+      message: 'New candidate version created. Review and promote to activate.'
+    }, 201);
+  } catch (error: any) {
+    if (error.message === 'Missing X-Workspace-Id header') {
+      return createErrorResponse('VALIDATION_ERROR', error.message, 400);
+    }
+    return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
+  }
+}

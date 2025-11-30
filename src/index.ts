@@ -146,6 +146,12 @@ export default {
       return evalsAPI.generateEval(agentId, workspaceId, body);
     }
 
+    // POST /api/evals - Create eval directly
+    if (url.pathname === '/api/evals' && request.method === 'POST') {
+      const body = await request.json();
+      return evalsAPI.createEval(body);
+    }
+
     // GET /api/evals - List evals
     if (url.pathname === '/api/evals' && request.method === 'GET') {
       return evalsAPI.listEvals(url.searchParams);

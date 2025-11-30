@@ -28,7 +28,8 @@ import {
   CheckCircle2,
   XCircle,
   Clock3,
-  MoreHorizontal
+  MoreHorizontal,
+  FileSearch
 } from 'lucide-react'
 import { formatRelativeTime, truncate } from '@/lib/utils'
 import { ImportTracesModal } from '@/components/import-traces-modal'
@@ -154,9 +155,9 @@ function TracesPageContent() {
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
-  const [sourceFilter, setSourceFilter] = useState<string>('')
-  const [modelFilter, setModelFilter] = useState<string>('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [sourceFilter, setSourceFilter] = useState<string>('all')
+  const [modelFilter, setModelFilter] = useState<string>('all')
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
 
@@ -179,7 +180,7 @@ function TracesPageContent() {
   // Build query params based on filters
   const queryParams = useMemo(() => {
     const params: any = { limit: 50 }
-    if (sourceFilter) params.source = sourceFilter
+    if (sourceFilter && sourceFilter !== 'all') params.source = sourceFilter
     if (dateFrom) params.date_from = dateFrom
     if (dateTo) params.date_to = dateTo
     return params
@@ -189,9 +190,9 @@ function TracesPageContent() {
   const activeFilterCount = useMemo(() => {
     let count = 0
     if (searchQuery) count++
-    if (statusFilter) count++
-    if (sourceFilter) count++
-    if (modelFilter) count++
+    if (statusFilter && statusFilter !== 'all') count++
+    if (sourceFilter && sourceFilter !== 'all') count++
+    if (modelFilter && modelFilter !== 'all') count++
     if (dateFrom) count++
     if (dateTo) count++
     return count
@@ -200,9 +201,9 @@ function TracesPageContent() {
   // Clear all filters
   const clearFilters = () => {
     setSearchQuery('')
-    setStatusFilter('')
-    setSourceFilter('')
-    setModelFilter('')
+    setStatusFilter('all')
+    setSourceFilter('all')
+    setModelFilter('all')
     setDateFrom('')
     setDateTo('')
   }
@@ -226,7 +227,7 @@ function TracesPageContent() {
         t.trace_id.toLowerCase().includes(searchQuery.toLowerCase())
       )
     }
-    if (statusFilter) {
+    if (statusFilter && statusFilter !== 'all') {
       if (statusFilter === 'error') {
         filtered = filtered.filter(t => t.summary.has_errors || t.feedback?.rating === 'negative')
       } else if (statusFilter === 'success') {
@@ -235,7 +236,7 @@ function TracesPageContent() {
         filtered = filtered.filter(t => !t.summary.has_errors && !t.feedback)
       }
     }
-    if (sourceFilter) {
+    if (sourceFilter && sourceFilter !== 'all') {
       filtered = filtered.filter(t => t.source === sourceFilter)
     }
 
@@ -440,7 +441,7 @@ function TracesPageContent() {
                     <SelectValue placeholder="All statuses" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All statuses</SelectItem>
+                    <SelectItem value="all">All statuses</SelectItem>
                     <SelectItem value="success">Success</SelectItem>
                     <SelectItem value="error">Error</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
@@ -455,7 +456,7 @@ function TracesPageContent() {
                     <SelectValue placeholder="All sources" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All sources</SelectItem>
+                    <SelectItem value="all">All sources</SelectItem>
                     <SelectItem value="langfuse">Langfuse</SelectItem>
                     <SelectItem value="langsmith">Langsmith</SelectItem>
                     <SelectItem value="openai">OpenAI</SelectItem>
@@ -470,7 +471,7 @@ function TracesPageContent() {
                     <SelectValue placeholder="All models" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All models</SelectItem>
+                    <SelectItem value="all">All models</SelectItem>
                     <SelectItem value="gpt-4o">GPT-4o</SelectItem>
                     <SelectItem value="gpt-4o-mini">GPT-4o Mini</SelectItem>
                     <SelectItem value="claude-4.5-sonnet">Claude 4.5 Sonnet</SelectItem>
@@ -543,6 +544,30 @@ function TracesPageContent() {
             error={error as Error}
             onRetry={() => window.location.reload()}
           />
+        ) : filteredTraces.length === 0 ? (
+          <Card className="overflow-hidden">
+            <div className="text-center py-12">
+              <FileSearch className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">No traces found</h3>
+              <p className="text-muted-foreground mb-4">
+                {traces.length === 0
+                  ? "Import traces from your observability platform to get started."
+                  : "Try adjusting your filters to see more results."}
+              </p>
+              {traces.length === 0 && (
+                <Button onClick={() => setImportModalOpen(true)}>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Import Traces
+                </Button>
+              )}
+              {traces.length > 0 && (
+                <Button variant="outline" onClick={clearFilters}>
+                  <X className="w-4 h-4 mr-2" />
+                  Clear Filters
+                </Button>
+              )}
+            </div>
+          </Card>
         ) : (
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
@@ -680,12 +705,10 @@ function TracesPageContent() {
                                   size="sm"
                                   onClick={(e) => {
                                     e.stopPropagation()
+                                    setSelectedTrace(trace)
                                   }}
-                                  asChild
                                 >
-                                  <Link href={`/traces/${trace.id}`}>
-                                    <Eye className="h-3 w-3" />
-                                  </Link>
+                                  <Eye className="h-3 w-3" />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>View details</TooltipContent>
@@ -708,43 +731,6 @@ function TracesPageContent() {
                           </div>
                         </td>
                       </tr>
-                      {expandedRows.has(trace.id) && (
-                        <tr className="bg-muted/20">
-                          <td colSpan={10} className="px-4 py-4">
-                            <div className="grid grid-cols-3 gap-4 text-sm">
-                              <div>
-                                <p className="text-muted-foreground mb-1">Source Platform</p>
-                                <p className="font-medium capitalize">{trace.source}</p>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground mb-1">Full Trace ID</p>
-                                <code className="text-xs bg-muted px-2 py-1 rounded font-mono break-all">
-                                  {trace.id}
-                                </code>
-                              </div>
-                              <div>
-                                <p className="text-muted-foreground mb-1">Imported At</p>
-                                <p className="font-medium">{trace.imported_at ? new Date(trace.imported_at).toLocaleString() : 'N/A'}</p>
-                              </div>
-                              <div className="col-span-3">
-                                <p className="text-muted-foreground mb-1">Output Preview</p>
-                                <p className="font-medium text-foreground/80 line-clamp-3">
-                                  {trace.summary.output_preview || 'No output recorded'}
-                                </p>
-                              </div>
-                              {trace.feedback && (
-                                <div className="col-span-3">
-                                  <p className="text-muted-foreground mb-1">Feedback Notes</p>
-                                  <p className="font-medium text-foreground/80">
-                                    {trace.feedback.notes || 'No notes provided'}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -782,6 +768,103 @@ function TracesPageContent() {
           open={importModalOpen}
           onOpenChange={setImportModalOpen}
         />
+
+        {/* Side Sheet for Trace Details */}
+        <Sheet open={!!selectedTrace} onOpenChange={(open) => !open && setSelectedTrace(null)}>
+          <SheetContent side="right" className="w-[600px] sm:max-w-[600px] overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Trace Details</SheetTitle>
+              <SheetDescription>Full trace information</SheetDescription>
+            </SheetHeader>
+            {selectedTrace && (
+              <div className="mt-6 space-y-6">
+                {/* Trace ID with copy button */}
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Trace ID</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <code className="text-xs bg-muted px-2 py-1 rounded font-mono flex-1 break-all">
+                      {selectedTrace.id}
+                    </code>
+                    <Button variant="ghost" size="sm" onClick={() => copyToClipboard(selectedTrace.id)}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Source */}
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Source</label>
+                  <p className="mt-1 capitalize">{selectedTrace.source}</p>
+                </div>
+
+                {/* Timestamp */}
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Timestamp</label>
+                  <p className="mt-1" suppressHydrationWarning>{new Date(selectedTrace.timestamp || selectedTrace.imported_at || '').toLocaleString()}</p>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Status</label>
+                  <div className="mt-1">
+                    <StatusBadge hasError={selectedTrace.summary.has_errors} feedback={selectedTrace.feedback} />
+                  </div>
+                </div>
+
+                {/* Step Count */}
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Step Count</label>
+                  <p className="mt-1">{selectedTrace.step_count}</p>
+                </div>
+
+                {/* Input Preview */}
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Input</label>
+                  <div className="mt-1 p-4 bg-muted/30 rounded-lg border">
+                    <p className="text-sm">{selectedTrace.summary.input_preview || 'No input recorded'}</p>
+                  </div>
+                </div>
+
+                {/* Output Preview */}
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">Output</label>
+                  <div className="mt-1 p-4 bg-muted/30 rounded-lg border">
+                    <p className="text-sm whitespace-pre-wrap">{selectedTrace.summary.output_preview || 'No output recorded'}</p>
+                  </div>
+                </div>
+
+                {/* Feedback */}
+                {selectedTrace.feedback && (
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Feedback</label>
+                    <div className="mt-1 space-y-2">
+                      <span className={`inline-flex px-2 py-1 rounded text-xs capitalize ${
+                        selectedTrace.feedback.rating === 'positive' ? 'bg-success/10 text-success' :
+                        selectedTrace.feedback.rating === 'negative' ? 'bg-error/10 text-error' :
+                        'bg-muted text-muted-foreground'
+                      }`}>
+                        {selectedTrace.feedback.rating}
+                      </span>
+                      {selectedTrace.feedback.notes && (
+                        <p className="text-sm text-muted-foreground">{selectedTrace.feedback.notes}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-2 pt-4 border-t">
+                  <Button variant="outline" asChild>
+                    <Link href={`/traces/${selectedTrace.id}`}>
+                      <Eye className="h-4 w-4 mr-2" />
+                      View Full Details
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            )}
+          </SheetContent>
+        </Sheet>
       </div>
     </TooltipProvider>
   )

@@ -92,10 +92,10 @@ const KPICard = ({
   <Card className="p-6 bg-white border-[var(--color-border)] shadow-[var(--shadow-elevation-1)]">
     <div className="flex items-start justify-between mb-4">
       <div>
-        <p className="text-sm font-medium text-[var(--color-muted-foreground)] mb-1">{title}</p>
+        <p className="text-sm font-medium text-gray-600 mb-1">{title}</p>
         <div className="flex items-baseline gap-2">
           <span className="text-3xl font-bold text-[var(--color-foreground)]">{value}</span>
-          {unit && <span className="text-sm text-[var(--color-muted-foreground)]">{unit}</span>}
+          {unit && <span className="text-sm text-gray-600">{unit}</span>}
         </div>
       </div>
       <div className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/10 flex items-center justify-center">
@@ -104,7 +104,7 @@ const KPICard = ({
     </div>
 
     {subtitle && (
-      <p className="text-xs text-[var(--color-muted-foreground)] mb-3">{subtitle}</p>
+      <p className="text-xs text-gray-600 mb-3">{subtitle}</p>
     )}
 
     <div className="mb-3">
@@ -123,7 +123,7 @@ const KPICard = ({
         </span>
       </div>
       {vsBaseline && (
-        <span className="text-[var(--color-muted-foreground)]">{vsBaseline}</span>
+        <span className="text-gray-600">{vsBaseline}</span>
       )}
     </div>
   </Card>
@@ -174,7 +174,7 @@ export default function EvalsPage() {
               <h1 className="text-4xl font-bold text-[var(--color-foreground)] mb-2">
                 Evaluation Results
               </h1>
-              <p className="text-base text-[var(--color-muted-foreground)]">
+              <p className="text-base text-gray-600">
                 Comprehensive results visualization with trend analysis
               </p>
             </div>
@@ -332,7 +332,7 @@ export default function EvalsPage() {
               <h3 className="text-lg font-semibold text-[var(--color-foreground)] mb-4">
                 Score Distribution
               </h3>
-              <p className="text-sm text-[var(--color-muted-foreground)] mb-6">
+              <p className="text-sm text-gray-600 mb-6">
                 Distribution of evaluation scores across all runs
               </p>
 
@@ -366,7 +366,7 @@ export default function EvalsPage() {
                                 <p className="text-sm font-medium text-[var(--color-foreground)] mb-1">
                                   Score: {data.range}
                                 </p>
-                                <p className="text-sm text-[var(--color-muted-foreground)]">
+                                <p className="text-sm text-gray-600">
                                   Count: {data.value}
                                 </p>
                               </div>
@@ -402,7 +402,7 @@ export default function EvalsPage() {
                         <span className="text-sm font-medium text-[var(--color-foreground)]">
                           {item.value}
                         </span>
-                        <span className="text-xs text-[var(--color-muted-foreground)] w-12 text-right">
+                        <span className="text-xs text-gray-600 w-12 text-right">
                           {Math.round((item.value / scoreDistribution.reduce((sum, d) => sum + d.value, 0)) * 100)}%
                         </span>
                       </div>
@@ -412,19 +412,19 @@ export default function EvalsPage() {
 
                 <div className="border-t border-[var(--color-border)] pt-4">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm text-[var(--color-muted-foreground)]">Total Evaluations</span>
+                    <span className="text-sm text-gray-600">Total Evaluations</span>
                     <span className="text-sm font-semibold text-[var(--color-foreground)]">
                       {scoreDistribution.reduce((sum, d) => sum + d.value, 0)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm text-[var(--color-muted-foreground)]">Mean Score</span>
+                    <span className="text-sm text-gray-600">Mean Score</span>
                     <span className="text-sm font-semibold text-[var(--color-foreground)]">
                       78.4
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-[var(--color-muted-foreground)]">Median Score</span>
+                    <span className="text-sm text-gray-600">Median Score</span>
                     <span className="text-sm font-semibold text-[var(--color-foreground)]">
                       82.0
                     </span>

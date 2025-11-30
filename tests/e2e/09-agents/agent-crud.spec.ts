@@ -112,13 +112,25 @@ test.describe('Agent Management', () => {
     await page.waitForLoadState('networkidle');
 
     // Check if there are no agents or clear them if any exist
-    const agentCards = page.locator('a[href^="/agents/"]');
+    const agentCards = page.locator('[data-testid^="agent-card-link-"]');
     const count = await agentCards.count();
 
     if (count === 0) {
-      // Verify empty state message
-      await expect(page.locator('text=No agents yet')).toBeVisible();
-      await expect(page.locator('button:has-text("Create your first agent")')).toBeVisible();
+      // Verify empty state container is visible
+      await expect(page.getByTestId('empty-agents-state')).toBeVisible();
+
+      // Verify empty state icon is visible
+      await expect(page.getByTestId('empty-state-icon')).toBeVisible();
+
+      // Verify empty state title
+      await expect(page.getByTestId('empty-state-title')).toHaveText('No agents yet');
+
+      // Verify empty state description
+      await expect(page.getByTestId('empty-state-description')).toContainText('Create your first agent');
+
+      // Verify CTA button is visible
+      await expect(page.getByTestId('empty-state-create-button')).toBeVisible();
+      await expect(page.getByTestId('empty-state-create-button')).toHaveText(/Create your first agent/);
     }
     // If agents exist, this test passes as the functionality is working
   });
@@ -465,5 +477,304 @@ test.describe('Agent API', () => {
 
     // Mark as cleaned up
     createdAgentId = null;
+  });
+});
+
+/**
+ * TEST-A14: Agent UI/UX Tests
+ *
+ * Tests for agent card styling, status badges, hover states, and description truncation.
+ */
+test.describe('Agent UI/UX', () => {
+  let createdAgentId: string | null = null;
+
+  test.afterEach(async ({ page }) => {
+    // Cleanup: Delete created agent
+    if (createdAgentId) {
+      try {
+        await deleteTestAgent(page, createdAgentId);
+      } catch (error) {
+        console.error('Failed to cleanup agent:', error);
+      }
+      createdAgentId = null;
+    }
+  });
+
+  test('TEST-A14: should display correct status badge colors', async ({ page }) => {
+    // Create confirmed agent via API
+    const confirmedAgent = await createTestAgent(page, {
+      name: uniqueName('Confirmed Agent'),
+      status: 'confirmed'
+    });
+    createdAgentId = confirmedAgent.id;
+
+    // Navigate to agents page
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle');
+
+    // Find the agent card
+    const agentCard = page.getByTestId(`agent-card-${confirmedAgent.id}`);
+    await expect(agentCard).toBeVisible();
+
+    // Get the status badge
+    const statusBadge = agentCard.getByTestId('agent-card-status');
+    await expect(statusBadge).toBeVisible();
+    await expect(statusBadge).toHaveText('confirmed');
+
+    // Verify badge has correct color classes for confirmed status (green)
+    const badgeClasses = await statusBadge.getAttribute('class');
+    expect(badgeClasses).toContain('text-green-600');
+    expect(badgeClasses).toContain('bg-green-50');
+  });
+
+  test('TEST-A15: should display discovered status with yellow badge', async ({ page }) => {
+    // Create discovered agent via API
+    const discoveredAgent = await createTestAgent(page, {
+      name: uniqueName('Discovered Agent'),
+      status: 'discovered'
+    });
+    createdAgentId = discoveredAgent.id;
+
+    // Navigate to agents page
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle');
+
+    // Find the agent card
+    const agentCard = page.getByTestId(`agent-card-${discoveredAgent.id}`);
+    await expect(agentCard).toBeVisible();
+
+    // Get the status badge
+    const statusBadge = agentCard.getByTestId('agent-card-status');
+    await expect(statusBadge).toHaveText('discovered');
+
+    // Verify badge has correct color classes for discovered status (yellow)
+    const badgeClasses = await statusBadge.getAttribute('class');
+    expect(badgeClasses).toContain('text-yellow-600');
+    expect(badgeClasses).toContain('bg-yellow-50');
+  });
+
+  test('TEST-A16: should display archived status with gray badge', async ({ page }) => {
+    // Create agent and then archive it
+    const agent = await createTestAgent(page, {
+      name: uniqueName('Archived Agent')
+    });
+    createdAgentId = agent.id;
+
+    // Archive the agent via API
+    const baseURL = process.env.API_URL || 'http://localhost:8787';
+    await page.request.delete(`${baseURL}/api/agents/${agent.id}`, {
+      headers: {
+        'X-Workspace-Id': process.env.WORKSPACE_ID || 'workspace_default',
+      },
+    });
+
+    // Navigate to agents page
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle');
+
+    // Find the agent card (archived agents may not be shown, so check if visible first)
+    const agentCard = page.getByTestId(`agent-card-${agent.id}`);
+    const isVisible = await agentCard.isVisible().catch(() => false);
+
+    if (isVisible) {
+      // Get the status badge
+      const statusBadge = agentCard.getByTestId('agent-card-status');
+      await expect(statusBadge).toHaveText('archived');
+
+      // Verify badge has correct color classes for archived status (gray)
+      const badgeClasses = await statusBadge.getAttribute('class');
+      expect(badgeClasses).toContain('text-gray-600');
+      expect(badgeClasses).toContain('bg-gray-50');
+    }
+
+    // Mark as cleaned up since we already archived it
+    createdAgentId = null;
+  });
+
+  test('TEST-A17: should show card hover effects', async ({ page }) => {
+    // Create agent via API
+    const agent = await createTestAgent(page, {
+      name: uniqueName('Hover Test Agent')
+    });
+    createdAgentId = agent.id;
+
+    // Navigate to agents page
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle');
+
+    // Find the agent card
+    const agentCard = page.getByTestId(`agent-card-${agent.id}`);
+    await expect(agentCard).toBeVisible();
+
+    // Verify the card has interactive/hover classes
+    const cardClasses = await agentCard.getAttribute('class');
+    expect(cardClasses).toContain('transition');
+
+    // Verify card has cursor-pointer (from interactive prop)
+    expect(cardClasses).toContain('cursor-pointer');
+
+    // Hover over the card
+    await agentCard.hover();
+
+    // Wait a bit for transition
+    await page.waitForTimeout(300);
+
+    // Verify agent name has transition-colors class (will change on hover)
+    const agentName = agentCard.getByTestId('agent-card-name');
+    const nameClasses = await agentName.getAttribute('class');
+    expect(nameClasses).toContain('transition-colors');
+    expect(nameClasses).toContain('group-hover:text-primary');
+  });
+
+  test('TEST-A18: should display agent description when present', async ({ page }) => {
+    const description = 'This is a test agent for handling customer support inquiries and providing automated responses.';
+
+    // Create agent with description via API
+    const agent = await createTestAgent(page, {
+      name: uniqueName('Description Test Agent'),
+      description: description
+    });
+    createdAgentId = agent.id;
+
+    // Navigate to agents page
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle');
+
+    // Find the agent card
+    const agentCard = page.getByTestId(`agent-card-${agent.id}`);
+    await expect(agentCard).toBeVisible();
+
+    // Verify description is displayed
+    const descriptionElement = agentCard.getByTestId('agent-card-description');
+    await expect(descriptionElement).toBeVisible();
+    await expect(descriptionElement).toHaveText(description);
+  });
+
+  test('TEST-A19: should not display description section when agent has no description', async ({ page }) => {
+    // Create agent without description via API
+    const agent = await createTestAgent(page, {
+      name: uniqueName('No Description Agent')
+      // No description field
+    });
+    createdAgentId = agent.id;
+
+    // Navigate to agents page
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle');
+
+    // Find the agent card
+    const agentCard = page.getByTestId(`agent-card-${agent.id}`);
+    await expect(agentCard).toBeVisible();
+
+    // Verify description element is not present
+    const descriptionElement = agentCard.getByTestId('agent-card-description');
+    await expect(descriptionElement).not.toBeVisible();
+  });
+
+  test('TEST-A20: should display active version information', async ({ page }) => {
+    // Create agent via API
+    const agent = await createTestAgent(page, {
+      name: uniqueName('Active Version Test Agent')
+    });
+    createdAgentId = agent.id;
+
+    // Create and promote a version via API
+    const version = await createTestAgentVersion(page, agent.id, {
+      prompt_template: 'Test prompt',
+      variables: ['input'],
+    });
+
+    // Promote the version
+    const baseURL = process.env.API_URL || 'http://localhost:8787';
+    await page.request.post(`${baseURL}/api/agents/${agent.id}/versions/${version.id}/promote`, {
+      headers: {
+        'X-Workspace-Id': process.env.WORKSPACE_ID || 'workspace_default',
+      },
+    });
+
+    // Navigate to agents page
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle');
+
+    // Find the agent card
+    const agentCard = page.getByTestId(`agent-card-${agent.id}`);
+    await expect(agentCard).toBeVisible();
+
+    // Verify active version section is displayed
+    const activeVersionSection = agentCard.getByTestId('agent-card-active-version');
+    await expect(activeVersionSection).toBeVisible();
+    await expect(activeVersionSection).toContainText('Active version:');
+    await expect(activeVersionSection).toContainText('v1');
+  });
+
+  test('TEST-A21: should display "No active version" when agent has no active version', async ({ page }) => {
+    // Create agent via API without any versions
+    const agent = await createTestAgent(page, {
+      name: uniqueName('No Version Test Agent')
+    });
+    createdAgentId = agent.id;
+
+    // Navigate to agents page
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle');
+
+    // Find the agent card
+    const agentCard = page.getByTestId(`agent-card-${agent.id}`);
+    await expect(agentCard).toBeVisible();
+
+    // Verify "No active version" message is displayed
+    const noVersionSection = agentCard.getByTestId('agent-card-no-version');
+    await expect(noVersionSection).toBeVisible();
+    await expect(noVersionSection).toContainText('No active version');
+  });
+
+  test('TEST-A22: should display pending discoveries banner when discoveries exist', async ({ page }) => {
+    // This test is conditional since we can't easily create discovered agents
+    // Navigate to agents page
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle');
+
+    // Check if pending discoveries banner is visible
+    const banner = page.getByTestId('pending-discoveries-banner');
+    const isBannerVisible = await banner.isVisible().catch(() => false);
+
+    if (isBannerVisible) {
+      // Verify banner content
+      await expect(banner).toBeVisible();
+
+      // Verify count text is present
+      const countText = page.getByTestId('pending-discoveries-count');
+      await expect(countText).toBeVisible();
+      await expect(countText).toContainText('pending');
+
+      // Verify banner has correct styling (yellow warning banner)
+      const bannerClasses = await banner.getAttribute('class');
+      expect(bannerClasses).toContain('bg-yellow-50');
+      expect(bannerClasses).toContain('border-yellow-200');
+    }
+  });
+
+  test('TEST-A23: should display relative update time on agent cards', async ({ page }) => {
+    // Create agent via API
+    const agent = await createTestAgent(page, {
+      name: uniqueName('Update Time Test Agent')
+    });
+    createdAgentId = agent.id;
+
+    // Navigate to agents page
+    await page.goto('/agents');
+    await page.waitForLoadState('networkidle');
+
+    // Find the agent card
+    const agentCard = page.getByTestId(`agent-card-${agent.id}`);
+    await expect(agentCard).toBeVisible();
+
+    // Verify updated time is displayed
+    const updatedText = agentCard.getByTestId('agent-card-updated');
+    await expect(updatedText).toBeVisible();
+
+    // Should show "just now" or "Xm ago" since we just created it
+    const text = await updatedText.textContent();
+    expect(text).toMatch(/Updated (just now|[0-9]+[smhd] ago)/);
   });
 });

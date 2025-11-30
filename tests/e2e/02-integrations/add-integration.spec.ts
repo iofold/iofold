@@ -86,11 +86,15 @@ test.describe('Integration Management - Add Integration', () => {
     await page.goto('/integrations')
     await page.waitForLoadState('networkidle')
 
-    // Wait for integration name to appear (data may take time to load)
-    await expect(page.getByText(integrationName)).toBeVisible({ timeout: 10000 })
+    // Wait for integration card to appear using data-testid
+    const integrationCard = page.locator(`[data-testid="integration-card-${integration.id}"]`)
+    await expect(integrationCard).toBeVisible({ timeout: 10000 })
+
+    // Verify integration name is visible
+    await expect(integrationCard.getByTestId('integration-name')).toHaveText(integrationName)
 
     // Find the Test button within the integration card
-    const testButton = page.locator('[data-testid="test-integration-button"]').first()
+    const testButton = integrationCard.getByTestId('test-integration-button')
     await expect(testButton).toBeVisible({ timeout: 5000 })
     await testButton.click()
 
@@ -167,17 +171,181 @@ test.describe('Integration Management - Add Integration', () => {
       await page.goto('/integrations')
       await page.waitForLoadState('networkidle')
 
-      // Verify both integrations are visible
-      await expect(page.getByText(integration1Name)).toBeVisible({ timeout: 10000 })
-      await expect(page.getByText(integration2Name)).toBeVisible({ timeout: 10000 })
+      // Verify both integration cards are visible using data-testid
+      const card1 = page.locator(`[data-testid="integration-card-${integration1.id}"]`)
+      const card2 = page.locator(`[data-testid="integration-card-${integration2.id}"]`)
 
-      // Verify platform is shown (case-insensitive)
-      await expect(page.getByText(/langfuse/i).first()).toBeVisible()
+      await expect(card1).toBeVisible({ timeout: 10000 })
+      await expect(card2).toBeVisible({ timeout: 10000 })
+
+      // Verify integration names are visible using data-testid
+      await expect(card1.getByTestId('integration-name')).toHaveText(integration1Name)
+      await expect(card2.getByTestId('integration-name')).toHaveText(integration2Name)
+
+      // Verify platform is shown with correct capitalization
+      await expect(card1.getByText('langfuse')).toBeVisible()
+      await expect(card2.getByText('langfuse')).toBeVisible()
+
+      // Verify status badges are visible
+      await expect(card1.getByTestId('integration-status')).toBeVisible()
+      await expect(card2.getByTestId('integration-status')).toBeVisible()
 
     } finally {
       // Cleanup via API
       await apiRequest(page, `/api/integrations/${integration1.id}`, { method: 'DELETE' }).catch(() => {})
       await apiRequest(page, `/api/integrations/${integration2.id}`, { method: 'DELETE' }).catch(() => {})
+    }
+  })
+
+  test('TEST-I06: Verify status badge styling', async ({ page }) => {
+    // Create an active integration via API
+    const integrationName = uniqueName('Status Test Integration')
+    const apiKey = process.env.TEST_LANGFUSE_KEY || 'test_key'
+    const baseUrl = process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com'
+
+    const integration = await apiRequest<any>(page, '/api/integrations', {
+      method: 'POST',
+      data: {
+        platform: 'langfuse',
+        name: integrationName,
+        api_key: apiKey,
+        base_url: baseUrl,
+      },
+    })
+    integrationId = integration.id
+
+    try {
+      // Navigate to integrations page
+      await page.goto('/integrations')
+      await page.waitForLoadState('networkidle')
+
+      // Wait for integration card to appear
+      const integrationCard = page.locator(`[data-testid="integration-card-${integration.id}"]`)
+      await expect(integrationCard).toBeVisible({ timeout: 10000 })
+
+      // Get the status badge
+      const statusBadge = integrationCard.getByTestId('integration-status')
+      await expect(statusBadge).toBeVisible()
+
+      // Verify status text (should be 'active' by default)
+      const statusText = await statusBadge.textContent()
+      expect(statusText?.trim()).toBe('active')
+
+      // Verify badge has green styling for active status
+      const badgeClasses = await statusBadge.getAttribute('class')
+      expect(badgeClasses).toContain('bg-green-100')
+      expect(badgeClasses).toContain('text-green-700')
+
+    } finally {
+      integrationId = null
+    }
+  })
+
+  test('TEST-I07: Verify last synced timestamp displays', async ({ page }) => {
+    // Create an integration via API
+    const integrationName = uniqueName('Timestamp Test Integration')
+    const apiKey = process.env.TEST_LANGFUSE_KEY || 'test_key'
+    const baseUrl = process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com'
+
+    const integration = await apiRequest<any>(page, '/api/integrations', {
+      method: 'POST',
+      data: {
+        platform: 'langfuse',
+        name: integrationName,
+        api_key: apiKey,
+        base_url: baseUrl,
+      },
+    })
+    integrationId = integration.id
+
+    try {
+      // Navigate to integrations page
+      await page.goto('/integrations')
+      await page.waitForLoadState('networkidle')
+
+      // Wait for integration card to appear
+      const integrationCard = page.locator(`[data-testid="integration-card-${integration.id}"]`)
+      await expect(integrationCard).toBeVisible({ timeout: 10000 })
+
+      // If last_synced_at is present, verify it displays correctly
+      const lastSyncedText = integrationCard.locator('text=/Last synced:/')
+
+      // Only check if the integration has been synced
+      const count = await lastSyncedText.count()
+      if (count > 0) {
+        await expect(lastSyncedText).toBeVisible()
+        const text = await lastSyncedText.textContent()
+        expect(text).toMatch(/Last synced: \d+\/\d+\/\d+/)
+      }
+
+    } finally {
+      integrationId = null
+    }
+  })
+
+  test('TEST-I08: Verify empty integrations state', async ({ page }) => {
+    // Delete all integrations first
+    const integrations = await apiRequest<{ integrations: any[] }>(page, '/api/integrations')
+    for (const integration of integrations.integrations) {
+      await apiRequest(page, `/api/integrations/${integration.id}`, { method: 'DELETE' }).catch(() => {})
+    }
+
+    // Navigate to integrations page
+    await page.goto('/integrations')
+    await page.waitForLoadState('networkidle')
+
+    // Verify empty state is displayed
+    await expect(page.getByText('No integrations connected')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/Connect your observability platform/)).toBeVisible()
+
+    // Verify "Add your first integration" button is visible
+    const addFirstButton = page.getByRole('button', { name: /Add your first integration/i })
+    await expect(addFirstButton).toBeVisible()
+
+    // Verify clicking the button opens the add integration modal
+    await addFirstButton.click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible({ timeout: 5000 })
+  })
+
+  test('TEST-I09: Verify integration actions buttons', async ({ page }) => {
+    // Create an integration via API
+    const integrationName = uniqueName('Actions Test Integration')
+    const apiKey = process.env.TEST_LANGFUSE_KEY || 'test_key'
+    const baseUrl = process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com'
+
+    const integration = await apiRequest<any>(page, '/api/integrations', {
+      method: 'POST',
+      data: {
+        platform: 'langfuse',
+        name: integrationName,
+        api_key: apiKey,
+        base_url: baseUrl,
+      },
+    })
+    integrationId = integration.id
+
+    try {
+      // Navigate to integrations page
+      await page.goto('/integrations')
+      await page.waitForLoadState('networkidle')
+
+      // Wait for integration card to appear
+      const integrationCard = page.locator(`[data-testid="integration-card-${integration.id}"]`)
+      await expect(integrationCard).toBeVisible({ timeout: 10000 })
+
+      // Verify Test button is visible
+      const testButton = integrationCard.getByTestId('test-integration-button')
+      await expect(testButton).toBeVisible()
+      await expect(testButton).toHaveText(/Test/)
+
+      // Verify Delete button is visible
+      const deleteButton = integrationCard.getByTestId('delete-integration-button')
+      await expect(deleteButton).toBeVisible()
+      await expect(deleteButton).toHaveText(/Delete/)
+
+    } finally {
+      integrationId = null
     }
   })
 })

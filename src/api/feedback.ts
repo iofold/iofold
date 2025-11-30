@@ -300,3 +300,113 @@ export async function deleteFeedback(request: Request, env: Env, feedbackId: str
     return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
   }
 }
+
+/**
+ * GET /api/feedback
+ *
+ * List feedback with filtering and cursor-based pagination.
+ *
+ * @param request - HTTP request with optional query params: trace_id, agent_id, rating, cursor, limit
+ * @param env - Cloudflare environment with D1 database
+ * @returns 200 OK with paginated feedback list
+ */
+export async function listFeedback(request: Request, env: Env): Promise<Response> {
+  try {
+    const workspaceId = getWorkspaceId(request);
+    validateWorkspaceAccess(workspaceId);
+
+    const url = new URL(request.url);
+    const trace_id = url.searchParams.get('trace_id');
+    const agent_id = url.searchParams.get('agent_id');
+    const rating = url.searchParams.get('rating');
+    const cursor = url.searchParams.get('cursor');
+    const limitParam = url.searchParams.get('limit');
+
+    // Parse and validate limit
+    let limit = 50; // default
+    if (limitParam) {
+      const parsedLimit = parseInt(limitParam, 10);
+      if (isNaN(parsedLimit) || parsedLimit < 1) {
+        return createErrorResponse('VALIDATION_ERROR', 'limit must be a positive integer', 400);
+      }
+      limit = Math.min(parsedLimit, 200); // max 200
+    }
+
+    // Validate rating if provided
+    if (rating && !['positive', 'negative', 'neutral'].includes(rating)) {
+      return createErrorResponse(
+        'VALIDATION_ERROR',
+        'rating must be positive, negative, or neutral',
+        400
+      );
+    }
+
+    // Build query with filters
+    const conditions: string[] = ['a.workspace_id = ?'];
+    const params: any[] = [workspaceId];
+
+    if (trace_id) {
+      conditions.push('f.trace_id = ?');
+      params.push(trace_id);
+    }
+
+    if (agent_id) {
+      conditions.push('f.agent_id = ?');
+      params.push(agent_id);
+    }
+
+    if (rating) {
+      conditions.push('f.rating = ?');
+      params.push(rating);
+    }
+
+    if (cursor) {
+      conditions.push('f.id > ?');
+      params.push(cursor);
+    }
+
+    // Fetch limit + 1 to determine has_more
+    const query = `
+      SELECT f.id, f.agent_id, f.trace_id, f.rating, f.rating_detail, f.created_at
+      FROM feedback f
+      JOIN agents a ON f.agent_id = a.id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY f.id ASC
+      LIMIT ?
+    `;
+    params.push(limit + 1);
+
+    const result = await env.DB.prepare(query)
+      .bind(...params)
+      .all();
+
+    const rows = result.results || [];
+    const has_more = rows.length > limit;
+    const feedback = rows.slice(0, limit);
+
+    // Format response
+    const formattedFeedback = feedback.map((row: any) => ({
+      id: row.id,
+      trace_id: row.trace_id,
+      agent_id: row.agent_id,
+      rating: row.rating,
+      notes: row.rating_detail,
+      created_at: row.created_at,
+    }));
+
+    const next_cursor = has_more && feedback.length > 0
+      ? feedback[feedback.length - 1].id
+      : null;
+
+    return createSuccessResponse({
+      feedback: formattedFeedback,
+      next_cursor,
+      has_more,
+    });
+  } catch (error: any) {
+    if (error.message === 'Missing X-Workspace-Id header') {
+      return createErrorResponse('VALIDATION_ERROR', error.message, 400);
+    }
+    return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
+  }
+}

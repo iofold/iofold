@@ -48,7 +48,7 @@ const MOCK_TRACES = [
     input: 'What are the best practices for writing unit tests in TypeScript?',
     output: 'Here are the key best practices for writing unit tests in TypeScript:\n\n1. Use a testing framework like Jest or Vitest\n2. Follow the AAA pattern (Arrange, Act, Assert)\n3. Keep tests isolated and independent\n4. Use descriptive test names\n5. Mock external dependencies\n6. Test edge cases and error conditions\n7. Maintain good test coverage (70-80%)\n8. Use type-safe mocks with TypeScript',
     score: 0.85,
-    timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(), // 5 minutes ago
+    timestamp: '2025-11-30T12:00:00.000Z',
     duration_ms: 2340,
     metadata: { model: 'gpt-4', tokens: 245 }
   },
@@ -58,7 +58,7 @@ const MOCK_TRACES = [
     input: 'How do I center a div in CSS?',
     output: 'To center a div in CSS, you can use flexbox:\n\n```css\n.container {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  height: 100vh;\n}\n```\n\nOr use CSS Grid:\n\n```css\n.container {\n  display: grid;\n  place-items: center;\n  height: 100vh;\n}\n```',
     score: 0.92,
-    timestamp: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
+    timestamp: '2025-11-30T11:55:00.000Z',
     duration_ms: 1850,
     metadata: { model: 'gpt-4', tokens: 180 }
   },
@@ -68,7 +68,7 @@ const MOCK_TRACES = [
     input: 'Explain the difference between var, let, and const in JavaScript',
     output: 'Here\'s the difference:\n\n- var: Function-scoped, can be redeclared, hoisted\n- let: Block-scoped, cannot be redeclared, not hoisted\n- const: Block-scoped, cannot be reassigned or redeclared\n\nBest practice: Use const by default, let when you need to reassign, avoid var.',
     score: 0.78,
-    timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    timestamp: '2025-11-30T11:50:00.000Z',
     duration_ms: 1920,
     metadata: { model: 'gpt-3.5-turbo', tokens: 156 }
   },
@@ -78,7 +78,7 @@ const MOCK_TRACES = [
     input: 'What is the purpose of async/await in JavaScript?',
     output: 'async/await is syntactic sugar for working with Promises in JavaScript. It makes asynchronous code look and behave more like synchronous code, improving readability.\n\nKey points:\n- async functions always return a Promise\n- await pauses execution until the Promise resolves\n- Error handling uses try/catch blocks\n- Makes code more maintainable than .then() chains',
     score: 0.88,
-    timestamp: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
+    timestamp: '2025-11-30T11:45:00.000Z',
     duration_ms: 2100,
     metadata: { model: 'gpt-4', tokens: 198 }
   },
@@ -88,7 +88,7 @@ const MOCK_TRACES = [
     input: 'How do I handle errors in React components?',
     output: 'In React, you can handle errors using:\n\n1. Error Boundaries (class components)\n2. Try/catch in async functions\n3. Error states in hooks\n4. Global error handlers\n\nExample with Error Boundary:\n```jsx\nclass ErrorBoundary extends React.Component {\n  componentDidCatch(error, errorInfo) {\n    // Log error\n  }\n  render() {\n    if (this.state.hasError) {\n      return <h1>Something went wrong.</h1>;\n    }\n    return this.props.children;\n  }\n}\n```',
     score: 0.81,
-    timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
+    timestamp: '2025-11-30T11:40:00.000Z',
     duration_ms: 2650,
     metadata: { model: 'gpt-4', tokens: 267 }
   }
@@ -134,7 +134,14 @@ function ReviewPageContent() {
   const [displayedTrace, setDisplayedTrace] = useState<TraceData | null>(null)
 
   const autoAdvanceTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const sessionStartTimeRef = useRef(new Date())
+  const sessionStartTimeRef = useRef<Date | null>(null)
+
+  // Initialize session start time on client only
+  useEffect(() => {
+    if (!sessionStartTimeRef.current) {
+      sessionStartTimeRef.current = new Date()
+    }
+  }, [])
 
   // Fetch real traces without feedback (when not using mock data)
   const {
@@ -343,7 +350,9 @@ function ReviewPageContent() {
 
   // Completion state
   if (reviewedCount >= totalTraces) {
-    const sessionDuration = Math.round((new Date().getTime() - sessionStartTimeRef.current.getTime()) / 1000)
+    const sessionDuration = sessionStartTimeRef.current
+      ? Math.round((new Date().getTime() - sessionStartTimeRef.current.getTime()) / 1000)
+      : 0
     const averageTimePerTrace = reviewedCount > 0 ? Math.round(sessionDuration / reviewedCount) : 0
 
     return (
@@ -447,55 +456,67 @@ function ReviewPageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FDF8F0] p-4 md:p-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
+    <div className="h-screen bg-[#FDF8F0] flex flex-col overflow-hidden">
+      {/* Compact Header - fixed height */}
+      <div className="flex-none px-4 py-3 border-b bg-white/80 backdrop-blur">
+        <div className="max-w-5xl mx-auto">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => router.push('/agents')}
-                className="bg-white"
+                className="bg-white h-8 px-3"
               >
-                <ArrowLeft className="w-4 h-4 mr-2" aria-hidden="true" />
-                Back
+                <ArrowLeft className="w-3 h-3 mr-1" aria-hidden="true" />
+                <span className="text-xs">Back</span>
               </Button>
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5 text-[#4ECFA5]" />
+                <h1 className="text-lg font-bold text-[#2A2D35]">Daily Quick Review</h1>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {/* Progress Inline */}
+              <div className="text-xs text-gray-600 font-medium">
+                <span className="text-[#4ECFA5] font-bold">{reviewedCount}</span>/{totalTraces}
+              </div>
+              <div className="flex items-center gap-1 text-xs">
+                <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-semibold">Good: {feedbackCounts.good}</span>
+                <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded font-semibold">Okay: {feedbackCounts.okay}</span>
+                <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-semibold">Bad: {feedbackCounts.bad}</span>
+              </div>
+
               {/* Auto Mode Toggle */}
               <Button
                 variant={isAutoMode ? "default" : "outline"}
                 size="sm"
                 onClick={toggleAutoMode}
                 className={cn(
+                  "h-8 px-3 text-xs",
                   isAutoMode && "bg-[#4ECFA5] hover:bg-[#2D9B78] text-white",
                   !isAutoMode && "bg-white"
                 )}
               >
                 {isAutoMode ? (
                   <>
-                    <Pause className="w-4 h-4 mr-2" aria-hidden="true" />
-                    Pause Auto
+                    <Pause className="w-3 h-3 mr-1" aria-hidden="true" />
+                    Pause
                   </>
                 ) : (
                   <>
-                    <Play className="w-4 h-4 mr-2" aria-hidden="true" />
-                    Auto Mode
+                    <Play className="w-3 h-3 mr-1" aria-hidden="true" />
+                    Auto
                   </>
                 )}
               </Button>
 
               {/* Remaining Time */}
-              <div className="text-right bg-white px-4 py-2 rounded-lg border-2 border-gray-200 shadow-sm">
+              <div className="bg-white px-3 py-1 rounded border border-gray-200">
                 <div className="text-xs text-gray-600 flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  Remaining
-                </div>
-                <div className="font-bold text-[#2A2D35] text-sm">
-                  ~{estimatedMinutes}m
+                  <span className="font-semibold text-[#2A2D35]">~{estimatedMinutes}m</span>
                 </div>
               </div>
 
@@ -505,212 +526,139 @@ function ReviewPageContent() {
                 size="sm"
                 onClick={() => setUseMockData(!useMockData)}
                 className={cn(
-                  "bg-white text-xs",
+                  "bg-white text-xs h-8 px-3",
                   useMockData && "border-[#4ECFA5] text-[#4ECFA5]"
                 )}
               >
-                {useMockData ? 'Demo Mode' : 'Live Mode'}
+                {useMockData ? 'Demo' : 'Live'}
               </Button>
             </div>
           </div>
-
-          {/* Title */}
-          <div className="flex items-center gap-3 mb-4">
-            <Zap className="w-8 h-8 text-[#4ECFA5]" />
-            <div>
-              <h1 className="text-3xl font-bold text-[#2A2D35]">Daily Quick Review</h1>
-              <p className="text-gray-600">Rapid trace evaluation - Optimized for speed</p>
-            </div>
-          </div>
-
-          {/* Progress Section */}
-          <div className="bg-white rounded-xl p-5 shadow-elevation-2 border border-gray-200">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-semibold text-[#2A2D35]">
-                Progress: {reviewedCount}/{totalTraces} traces
-              </span>
-              <span className="text-sm text-gray-600 font-medium">
-                {Math.round(progress)}% complete
-              </span>
-            </div>
-            <Progress value={progress} className="mb-4" />
-
-            {/* Stats Counters */}
-            <div className="flex items-center justify-center gap-4">
-              <div className="flex items-center gap-2 px-4 py-2 bg-green-50 rounded-lg border-2 border-green-200">
-                <TrendingUp className="w-5 h-5 text-green-600" />
-                <div>
-                  <div className="text-xl font-bold text-green-700">{feedbackCounts.good}</div>
-                  <div className="text-xs text-green-600 font-medium">Good</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 rounded-lg border-2 border-yellow-200">
-                <div className="w-5 h-5 flex items-center justify-center text-yellow-600 font-bold text-lg">–</div>
-                <div>
-                  <div className="text-xl font-bold text-yellow-700">{feedbackCounts.okay}</div>
-                  <div className="text-xs text-yellow-600 font-medium">Okay</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 px-4 py-2 bg-red-50 rounded-lg border-2 border-red-200">
-                <div className="w-5 h-5 flex items-center justify-center text-red-600 font-bold text-xl">✕</div>
-                <div>
-                  <div className="text-xl font-bold text-red-700">{feedbackCounts.bad}</div>
-                  <div className="text-xs text-red-600 font-medium">Bad</div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
+      </div>
 
-        {/* Trace Review Card */}
-        <div className="bg-white rounded-xl shadow-elevation-3 border-2 border-gray-200 overflow-hidden mb-6">
-          {/* Card Header */}
-          <div className="bg-gradient-to-r from-[#4ECFA5]/10 to-[#8EDCC4]/10 px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <Calendar className="w-4 h-4" />
+      {/* Main Content - flex container */}
+      <div className="flex-1 overflow-auto px-4 py-3">
+        <div className="max-w-5xl mx-auto h-full flex flex-col">
+          {/* Trace Card with animation */}
+          <div
+            className={cn(
+              "bg-white rounded-lg shadow-elevation-2 border border-gray-200 overflow-hidden transition-all duration-300 ease-out transform flex-1 flex flex-col",
+              isTransitioning ? "opacity-0 scale-95 translate-x-4" : "opacity-100 scale-100 translate-x-0"
+            )}
+          >
+            {/* Compact Card Header */}
+            <div className="flex-none px-4 py-2 border-b border-gray-200 bg-gradient-to-r from-[#4ECFA5]/10 to-[#8EDCC4]/10">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Calendar className="w-3 h-3" />
                   <span className="font-medium">{formatDate(currentTrace.timestamp)}</span>
+                  <span>•</span>
+                  <span>{formatDuration(currentTrace.duration_ms)}</span>
                 </div>
-                <div className="text-sm text-gray-600">
-                  • {formatDuration(currentTrace.duration_ms)}
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-[#4ECFA5] rounded-full">
+                  <TrendingUp className="w-3 h-3 text-white" />
+                  <span className="text-xs font-bold text-white">
+                    {Math.round(currentTrace.score * 100)}%
+                  </span>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#4ECFA5] rounded-full">
-                <span className="text-xs font-medium text-white/90 mr-1">Score:</span>
-                <TrendingUp className="w-4 h-4 text-white" />
-                <span className="text-sm font-bold text-white">
-                  {Math.round(currentTrace.score * 100)}%
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Card Body */}
-          <div className="p-6 space-y-6">
-            {/* USER INPUT Section */}
-            <div>
-              <div className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2 flex items-center gap-2">
-                <div className="w-2 h-2 bg-[#4ECFA5] rounded-full"></div>
-                USER INPUT
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4 border-2 border-gray-200">
-                <p className="text-[#2A2D35] leading-relaxed">{currentTrace.input}</p>
               </div>
             </div>
 
-            {/* AGENT RESPONSE Section */}
-            <div>
-              <div className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2 flex items-center gap-2">
-                <div className="w-2 h-2 bg-[#E8967A] rounded-full"></div>
-                AGENT RESPONSE
+            {/* Card Body - scrollable */}
+            <div className="flex-1 overflow-auto p-4">
+              <div className="grid md:grid-cols-2 gap-4 h-full">
+                {/* USER INPUT Section */}
+                <div className="flex flex-col">
+                  <div className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 bg-[#4ECFA5] rounded-full"></div>
+                    USER INPUT
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200 flex-1 overflow-auto">
+                    <p className="text-sm text-[#2A2D35] leading-relaxed">{currentTrace.input}</p>
+                  </div>
+                </div>
+
+                {/* AGENT RESPONSE Section */}
+                <div className="flex flex-col">
+                  <div className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 bg-[#E8967A] rounded-full"></div>
+                    AGENT RESPONSE
+                  </div>
+                  <div className="bg-gradient-to-br from-gray-50 to-white rounded-lg p-3 border border-gray-200 flex-1 overflow-auto">
+                    <p className="text-xs text-[#2A2D35] leading-relaxed whitespace-pre-wrap font-mono">
+                      {currentTrace.output}
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div className="bg-gradient-to-br from-gray-50 to-white rounded-lg p-4 border-2 border-gray-200">
-                <p className="text-[#2A2D35] leading-relaxed whitespace-pre-wrap font-mono text-sm">
-                  {currentTrace.output}
+
+              {/* Compact Metadata */}
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <p className="text-xs text-gray-600">
+                  <span className="font-semibold">Model:</span> {currentTrace.metadata.model || 'N/A'}
+                  {currentTrace.metadata.tokens && (
+                    <> • <span className="font-semibold">Tokens:</span> {currentTrace.metadata.tokens}</>
+                  )}
+                  <span className="float-right text-gray-500">
+                    <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border text-xs font-mono">1</kbd> Bad
+                    <span className="mx-1">•</span>
+                    <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border text-xs font-mono">2</kbd> Okay
+                    <span className="mx-1">•</span>
+                    <kbd className="px-1.5 py-0.5 bg-gray-100 rounded border text-xs font-mono">3</kbd> Good
+                  </span>
                 </p>
               </div>
             </div>
 
-            {/* Summary */}
-            <div className="pt-4 border-t border-gray-200">
-              <p className="text-sm text-gray-600">
-                <span className="font-semibold text-gray-700">Model:</span> {currentTrace.metadata.model || 'N/A'}
-                {currentTrace.metadata.tokens && (
-                  <> • <span className="font-semibold text-gray-700">Tokens:</span> {currentTrace.metadata.tokens}</>
-                )}
-              </p>
+            {/* Quick Notes - collapsed at bottom */}
+            <div className="flex-none px-4 py-2 border-t border-gray-200 bg-gray-50">
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value.slice(0, 500))}
+                placeholder="Quick notes (optional)..."
+                className="w-full h-12 px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[#4ECFA5] focus:border-transparent resize-none"
+                maxLength={500}
+              />
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Quick Notes Section */}
-        <div className="bg-white rounded-xl shadow-elevation-2 border-2 border-gray-200 p-6 mb-6">
-          <div className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">
-            Quick Notes
-          </div>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value.slice(0, 500))}
-            placeholder="Any observations? Issues? Context?"
-            className="w-full h-24 px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4ECFA5] focus:border-transparent resize-none text-sm"
-            maxLength={500}
-          />
-          <div className="flex justify-between items-center mt-2">
-            <div className="text-xs text-gray-600">
-              Optional: Add context for this review
-            </div>
-            <div className={cn(
-              "text-xs font-medium",
-              notes.length >= 450 ? "text-red-600" : "text-gray-600"
-            )}>
-              {notes.length}/500
-            </div>
-          </div>
-        </div>
-
-        {/* Feedback Buttons */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <Button
-            onClick={() => handleFeedback('bad')}
-            disabled={submitFeedbackMutation.isPending}
-            className="h-20 text-lg font-bold bg-red-500 hover:bg-red-600 text-white border-4 border-red-600 shadow-lg hover:shadow-xl transition-all"
-          >
-            <div className="flex flex-col items-center gap-1">
-              <div className="text-2xl">❌</div>
-              <div>Bad</div>
-            </div>
-          </Button>
-          <Button
-            onClick={() => handleFeedback('okay')}
-            disabled={submitFeedbackMutation.isPending}
-            className="h-20 text-lg font-bold bg-amber-500 hover:bg-amber-600 text-white border-4 border-amber-600 shadow-lg hover:shadow-xl transition-all"
-          >
-            <div className="flex flex-col items-center gap-1">
-              <div className="text-2xl">➖</div>
-              <div>Okay</div>
-            </div>
-          </Button>
-          <Button
-            onClick={() => handleFeedback('good')}
-            disabled={submitFeedbackMutation.isPending}
-            className="h-20 text-lg font-bold bg-green-500 hover:bg-green-600 text-white border-4 border-green-600 shadow-lg hover:shadow-xl transition-all"
-          >
-            <div className="flex flex-col items-center gap-1">
-              <div className="text-2xl">✅</div>
-              <div>Good</div>
-            </div>
-          </Button>
-        </div>
-
-        {/* Keyboard Shortcuts */}
-        <div className="bg-white rounded-xl shadow-elevation-2 border-2 border-gray-200 p-6">
-          <div className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4">
-            Keyboard Shortcuts
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <kbd className="px-2 py-1 bg-gray-100 rounded border-2 border-gray-300 text-xs font-mono">1</kbd>
-              <span className="text-gray-600">Bad</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <kbd className="px-2 py-1 bg-gray-100 rounded border-2 border-gray-300 text-xs font-mono">2</kbd>
-              <span className="text-gray-600">Okay</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <kbd className="px-2 py-1 bg-gray-100 rounded border-2 border-gray-300 text-xs font-mono">3</kbd>
-              <span className="text-gray-600">Good</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <kbd className="px-2 py-1 bg-gray-100 rounded border-2 border-gray-300 text-xs font-mono">A</kbd>
-              <span className="text-gray-600">Toggle Auto</span>
-            </div>
-          </div>
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <p className="text-xs text-gray-600">
-              <strong className="text-[#4ECFA5]">Pro tip:</strong> Use keyboard shortcuts for rapid reviewing.
-              Auto mode advances automatically after each review. Current trace: {currentIndex + 1}/{totalTraces}
-            </p>
+      {/* Fixed Footer with Feedback Buttons */}
+      <div className="flex-none px-4 py-3 border-t bg-white">
+        <div className="max-w-5xl mx-auto">
+          <div className="grid grid-cols-3 gap-3">
+            <Button
+              onClick={() => handleFeedback('bad')}
+              disabled={submitFeedbackMutation.isPending}
+              className="h-14 text-base font-bold bg-red-500 hover:bg-red-600 text-white border-2 border-red-600 shadow-lg hover:shadow-xl transition-all"
+            >
+              <div className="flex flex-col items-center">
+                <div className="text-xl">❌</div>
+                <div className="text-xs">Bad</div>
+              </div>
+            </Button>
+            <Button
+              onClick={() => handleFeedback('okay')}
+              disabled={submitFeedbackMutation.isPending}
+              className="h-14 text-base font-bold bg-amber-600 hover:bg-amber-700 text-white border-2 border-amber-700 shadow-lg hover:shadow-xl transition-all"
+            >
+              <div className="flex flex-col items-center">
+                <div className="text-xl">➖</div>
+                <div className="text-xs">Okay</div>
+              </div>
+            </Button>
+            <Button
+              onClick={() => handleFeedback('good')}
+              disabled={submitFeedbackMutation.isPending}
+              className="h-14 text-base font-bold bg-green-500 hover:bg-green-600 text-white border-2 border-green-600 shadow-lg hover:shadow-xl transition-all"
+            >
+              <div className="flex flex-col items-center">
+                <div className="text-xl">✅</div>
+                <div className="text-xs">Good</div>
+              </div>
+            </Button>
           </div>
         </div>
       </div>

@@ -45,7 +45,7 @@ const navSections: NavSection[] = [
       { href: '/', label: 'Overview', icon: LayoutDashboard },
       { href: '/agents', label: 'Agents', icon: Bot },
       { href: '/traces', label: 'Traces', icon: Search },
-      { href: '/evals', label: 'Results', icon: BarChart3 },
+      { href: '/evals', label: 'Evals', icon: BarChart3 },
       { href: '/system', label: 'System', icon: Activity },
       { href: '/resources', label: 'Resources', icon: DollarSign },
     ],
@@ -100,6 +100,7 @@ function NavSectionComponent({
                 key={item.href}
                 href={item.href}
                 onClick={() => NProgress.start()}
+                aria-current={isActive ? 'page' : undefined}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-200',
                   isActive

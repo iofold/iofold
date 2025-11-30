@@ -46,7 +46,12 @@ import {
   getRefinementHistory,
 } from './monitoring';
 
-import { getComparisonMatrix } from './matrix';
+import {
+  getComparisonMatrix,
+  getEvalExecutions,
+  getTraceExecutions,
+  getEvalExecutionDetail
+} from './matrix';
 
 import {
   createAgent,
@@ -107,6 +112,12 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   // DELETE /api/traces/:id
   if (traceMatch && method === 'DELETE') {
     return deleteTrace(request, env, traceMatch[1]);
+  }
+
+  // GET /api/traces/:id/executions - List eval executions for trace
+  const traceExecutionsMatch = path.match(/^\/api\/traces\/([^\/]+)\/executions$/);
+  if (traceExecutionsMatch && method === 'GET') {
+    return getTraceExecutions(env.DB, traceExecutionsMatch[1]);
   }
 
   // ============================================================================
@@ -202,6 +213,12 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   const evalsAPI = new EvalsAPI(env.DB, null as any, null as any);
 
+  // POST /api/evals - Create eval directly
+  if (path === '/api/evals' && method === 'POST') {
+    const body = await request.json();
+    return evalsAPI.createEval(body);
+  }
+
   // GET /api/evals - List evals
   if (path === '/api/evals' && method === 'GET') {
     return evalsAPI.listEvals(url.searchParams);
@@ -224,6 +241,12 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return evalsAPI.deleteEval(evalMatch[1]);
   }
 
+  // GET /api/evals/:id/executions - List executions for eval
+  const evalExecutionsMatch = path.match(/^\/api\/evals\/([^\/]+)\/executions$/);
+  if (evalExecutionsMatch && method === 'GET') {
+    return getEvalExecutions(env.DB, evalExecutionsMatch[1], url.searchParams);
+  }
+
   // POST /api/evals/:id/execute - Execute eval
   const evalExecuteMatch = path.match(/^\/api\/evals\/([^\/]+)\/execute$/);
   if (evalExecuteMatch && method === 'POST') {
@@ -238,6 +261,16 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     const body = await request.json();
     const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
     return evalsAPI.generateEval(generateEvalMatch[1], workspaceId, body);
+  }
+
+  // ============================================================================
+  // Eval Execution Endpoints
+  // ============================================================================
+
+  // GET /api/eval-executions/:trace_id/:eval_id - Get specific execution detail
+  const evalExecutionDetailMatch = path.match(/^\/api\/eval-executions\/([^\/]+)\/([^\/]+)$/);
+  if (evalExecutionDetailMatch && method === 'GET') {
+    return getEvalExecutionDetail(env.DB, evalExecutionDetailMatch[1], evalExecutionDetailMatch[2]);
   }
 
   // ============================================================================

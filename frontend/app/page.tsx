@@ -114,7 +114,7 @@ function getJobDescription(job: Job): string {
 }
 
 export default function DashboardPage() {
-  const [currentTime, setCurrentTime] = useState(new Date())
+  const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [mounted, setMounted] = useState(false)
   const [selectedProject, setSelectedProject] = useState('all')
   const [dateRange, setDateRange] = useState('7d')
@@ -147,8 +147,9 @@ export default function DashboardPage() {
     setMounted(true)
   }, [])
 
-  // Update time every second
+  // Update time every second (only on client)
   useEffect(() => {
+    setCurrentTime(new Date()) // Set initial time on client
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
@@ -273,7 +274,8 @@ export default function DashboardPage() {
       }))
   }, [agents, mounted])
 
-  const formatTime = (date: Date) => {
+  const formatTime = (date: Date | null) => {
+    if (!date) return '--:--:--'
     return date.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
@@ -282,7 +284,8 @@ export default function DashboardPage() {
     })
   }
 
-  const formatDate = (date: Date) => {
+  const formatDate = (date: Date | null) => {
+    if (!date) return ''
     return date.toLocaleDateString('en-US', {
       weekday: 'short',
       year: 'numeric',
@@ -404,7 +407,7 @@ export default function DashboardPage() {
               </div>
               <div className="flex items-center gap-3">
                 <Select value={selectedProject} onValueChange={setSelectedProject}>
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger className="w-[180px]" aria-label="Select project filter">
                     <SelectValue placeholder="Select project" />
                   </SelectTrigger>
                   <SelectContent>
@@ -415,7 +418,7 @@ export default function DashboardPage() {
                   </SelectContent>
                 </Select>
                 <Select value={dateRange} onValueChange={setDateRange}>
-                  <SelectTrigger className="w-[160px]">
+                  <SelectTrigger className="w-[160px]" aria-label="Select date range">
                     <Calendar className="w-4 h-4 mr-2" />
                     <SelectValue placeholder="Select range" />
                   </SelectTrigger>
@@ -426,7 +429,7 @@ export default function DashboardPage() {
                     <SelectItem value="90d">Last 90 days</SelectItem>
                   </SelectContent>
                 </Select>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-success/10 border border-success/20">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-success/10 border border-success/20" aria-label="Live data indicator">
                   <div className="w-2 h-2 bg-success rounded-full animate-pulse-subtle" />
                   <span className="text-sm font-medium text-success">Live</span>
                 </div>
@@ -443,27 +446,27 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between py-3 px-4 bg-muted rounded-lg">
               <div className="flex items-center gap-6 text-sm">
                 <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Last updated:</span>
+                  <Clock className="w-4 h-4 text-gray-600" />
+                  <span className="text-gray-600">Last updated:</span>
                   <span className="font-medium text-foreground" suppressHydrationWarning>
                     {mounted ? formatTime(currentTime) : '--:--:--'}
                   </span>
                 </div>
                 <div className="h-4 w-px bg-border" />
                 <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Active evaluations:</span>
-                  <span className="font-medium text-foreground">--</span>
+                  <Activity className="w-4 h-4 text-gray-600" />
+                  <span className="text-gray-600">Active evaluations:</span>
+                  <span className="font-medium text-foreground"><span className="text-gray-500">Loading...</span></span>
                 </div>
                 <div className="h-4 w-px bg-border" />
                 <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Online users:</span>
+                  <Users className="w-4 h-4 text-gray-600" />
+                  <span className="text-gray-600">Online users:</span>
                   <span className="font-medium text-foreground">3</span>
                 </div>
               </div>
               <div className="text-sm">
-                <span className="text-muted-foreground" suppressHydrationWarning>
+                <span className="text-gray-600" suppressHydrationWarning>
                   {mounted ? formatDate(currentTime) : ''}
                 </span>
               </div>
@@ -493,7 +496,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-3">
               {/* Project Selector */}
               <Select value={selectedProject} onValueChange={setSelectedProject}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-[180px]" aria-label="Select project filter">
                   <SelectValue placeholder="Select project" />
                 </SelectTrigger>
                 <SelectContent>
@@ -506,7 +509,7 @@ export default function DashboardPage() {
 
               {/* Date Range Selector */}
               <Select value={dateRange} onValueChange={setDateRange}>
-                <SelectTrigger className="w-[160px]">
+                <SelectTrigger className="w-[160px]" aria-label="Select date range">
                   <Calendar className="w-4 h-4 mr-2" />
                   <SelectValue placeholder="Select range" />
                 </SelectTrigger>
@@ -519,7 +522,7 @@ export default function DashboardPage() {
               </Select>
 
               {/* Live Indicator */}
-              <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-success/10 border border-success/20">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-success/10 border border-success/20" aria-label="Live data indicator">
                 <div className="w-2 h-2 bg-success rounded-full animate-pulse-subtle" />
                 <span className="text-sm font-medium text-success">Live</span>
               </div>
@@ -542,27 +545,27 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between py-3 px-4 bg-muted rounded-lg">
             <div className="flex items-center gap-6 text-sm">
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Last updated:</span>
+                <Clock className="w-4 h-4 text-gray-600" />
+                <span className="text-gray-600">Last updated:</span>
                 <span className="font-medium text-foreground" suppressHydrationWarning>
                   {mounted ? formatTime(currentTime) : '--:--:--'}
                 </span>
               </div>
               <div className="h-4 w-px bg-border" />
               <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Active evaluations:</span>
+                <Activity className="w-4 h-4 text-gray-600" />
+                <span className="text-gray-600">Active evaluations:</span>
                 <span className="font-medium text-foreground">{kpiMetrics.activeEvals}</span>
               </div>
               <div className="h-4 w-px bg-border" />
               <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Online users:</span>
+                <Users className="w-4 h-4 text-gray-600" />
+                <span className="text-gray-600">Online users:</span>
                 <span className="font-medium text-foreground">3</span>
               </div>
             </div>
             <div className="text-sm">
-              <span className="text-muted-foreground" suppressHydrationWarning>
+              <span className="text-gray-600" suppressHydrationWarning>
                 {mounted ? formatDate(currentTime) : ''}
               </span>
             </div>
@@ -638,9 +641,9 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-lg font-semibold text-foreground">Recent Activity</h3>
-                  <p className="text-sm text-muted-foreground">Real-time event feed</p>
+                  <p className="text-sm text-gray-600">Real-time event feed</p>
                 </div>
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" aria-label="Filter activity">
                   <Filter className="w-4 h-4" />
                 </Button>
               </div>
@@ -698,7 +701,7 @@ export default function DashboardPage() {
                           )}
                         </div>
 
-                        <p className="text-xs text-muted-foreground mb-2">
+                        <p className="text-xs text-gray-600 mb-2">
                           {activity.description}
                         </p>
 
@@ -707,20 +710,20 @@ export default function DashboardPage() {
                             {activity.tags?.map((tag) => (
                               <span
                                 key={tag}
-                                className="px-2 py-0.5 rounded-full bg-muted text-xs text-muted-foreground font-medium"
+                                className="px-2 py-0.5 rounded-full bg-muted text-xs text-gray-600 font-medium"
                               >
                                 {tag}
                               </span>
                             ))}
                           </div>
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0" suppressHydrationWarning>
+                          <div className="flex items-center gap-1 text-xs text-gray-600 flex-shrink-0" suppressHydrationWarning>
                             <Clock className="w-3 h-3" />
                             {activity.timestamp}
                           </div>
                         </div>
                       </div>
 
-                      <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                      <ChevronRight className="w-4 h-4 text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
                     </div>
                   </div>
                 ))}
@@ -741,7 +744,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
           <Card className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-muted-foreground">Top Performing Evals</h3>
+              <h3 className="text-sm font-medium text-gray-600">Top Performing Evals</h3>
               <TrendingUp className="w-4 h-4 text-success" />
             </div>
             <div className="space-y-3">
@@ -753,14 +756,14 @@ export default function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground">No data available</p>
+                <p className="text-sm text-gray-600">No evals have been executed yet. Import traces and generate evals to see performance data.</p>
               )}
             </div>
           </Card>
 
           <Card className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-muted-foreground">Needs Attention</h3>
+              <h3 className="text-sm font-medium text-gray-600">Needs Attention</h3>
               <TrendingDown className="w-4 h-4 text-error" />
             </div>
             <div className="space-y-3">
@@ -772,14 +775,14 @@ export default function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground">All evals performing well</p>
+                <p className="text-sm text-gray-600">{evals.length > 0 && evals.some(e => e.execution_count > 0) ? 'All evals performing well! No evaluations below 85% accuracy.' : 'No eval performance data yet. Execute evals to monitor accuracy.'}</p>
               )}
             </div>
           </Card>
 
           <Card className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-muted-foreground">Recent Agent Deployments</h3>
+              <h3 className="text-sm font-medium text-gray-600">Recent Agent Deployments</h3>
               <PlayCircle className="w-4 h-4 text-info" />
             </div>
             <div className="space-y-3">
@@ -792,16 +795,16 @@ export default function DashboardPage() {
                           'w-2 h-2 fill-current',
                           deploy.status === 'live' && 'text-success',
                           deploy.status === 'stable' && 'text-info',
-                          deploy.status === 'deprecated' && 'text-muted-foreground'
+                          deploy.status === 'deprecated' && 'text-gray-600'
                         )}
                       />
                       <span className="text-sm font-medium text-foreground">{deploy.agent}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground" suppressHydrationWarning>{deploy.time}</span>
+                    <span className="text-xs text-gray-600" suppressHydrationWarning>{deploy.time}</span>
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground">No agents deployed yet</p>
+                <p className="text-sm text-gray-600">No agents discovered yet. Connect your observability platform to start tracking agents.</p>
               )}
             </div>
           </Card>

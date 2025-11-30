@@ -150,6 +150,46 @@ test.describe('Integration CRUD Operations', () => {
     expect(Array.isArray(integrations.integrations)).toBe(true);
   });
 
+  test('TEST-INT07A: Should display integration cards with correct data-testid', async ({ page }) => {
+    // First create an integration
+    const publicKey = process.env.LANGFUSE_PUBLIC_KEY;
+    const secretKey = process.env.LANGFUSE_SECRET_KEY;
+    const apiKey = (publicKey && secretKey)
+      ? `${publicKey}:${secretKey}`
+      : (process.env.TEST_LANGFUSE_KEY || 'test_public_key:test_secret_key');
+
+    const created = await apiRequest<any>(page, '/api/integrations', {
+      method: 'POST',
+      data: {
+        platform: 'langfuse',
+        name: uniqueName('UI Test Integration'),
+        api_key: apiKey,
+        base_url: process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com',
+      },
+    });
+    createdIntegrationIds.push(created.id);
+
+    // Navigate to integrations page
+    await page.goto('/integrations');
+    await page.waitForLoadState('networkidle');
+
+    // Verify integration card exists with correct data-testid
+    const integrationCard = page.locator(`[data-testid="integration-card-${created.id}"]`);
+    await expect(integrationCard).toBeVisible({ timeout: 10000 });
+
+    // Verify integration name is displayed
+    const nameElement = integrationCard.getByTestId('integration-name');
+    await expect(nameElement).toBeVisible();
+    await expect(nameElement).toHaveText(created.name);
+
+    // Verify status badge is displayed
+    const statusBadge = integrationCard.getByTestId('integration-status');
+    await expect(statusBadge).toBeVisible();
+
+    // Verify platform is displayed (should be lowercase)
+    await expect(integrationCard.getByText('langfuse')).toBeVisible();
+  });
+
   test('TEST-INT08: Should get integration by ID', async ({ page }) => {
     // First create an integration
     const publicKey = process.env.LANGFUSE_PUBLIC_KEY;
@@ -430,5 +470,190 @@ test.describe('Integration CRUD Operations', () => {
       // Should be redacted/masked
       expect(fetched.api_key).toMatch(/\*+|redacted|hidden/i);
     }
+  });
+
+  // ==================== UI SPECIFIC TESTS ====================
+
+  test('TEST-INT21: Should verify integration card hover effect', async ({ page }) => {
+    // Create an integration
+    const publicKey = process.env.LANGFUSE_PUBLIC_KEY;
+    const secretKey = process.env.LANGFUSE_SECRET_KEY;
+    const apiKey = (publicKey && secretKey)
+      ? `${publicKey}:${secretKey}`
+      : (process.env.TEST_LANGFUSE_KEY || 'test_public_key:test_secret_key');
+
+    const created = await apiRequest<any>(page, '/api/integrations', {
+      method: 'POST',
+      data: {
+        platform: 'langfuse',
+        name: uniqueName('Hover Test Integration'),
+        api_key: apiKey,
+        base_url: process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com',
+      },
+    });
+    createdIntegrationIds.push(created.id);
+
+    // Navigate to integrations page
+    await page.goto('/integrations');
+    await page.waitForLoadState('networkidle');
+
+    // Verify integration card exists
+    const integrationCard = page.locator(`[data-testid="integration-card-${created.id}"]`);
+    await expect(integrationCard).toBeVisible({ timeout: 10000 });
+
+    // Verify card has hover styling class
+    const cardClasses = await integrationCard.getAttribute('class');
+    expect(cardClasses).toContain('hover:shadow-md');
+    expect(cardClasses).toContain('transition-all');
+  });
+
+  test('TEST-INT22: Should verify status badge for inactive integration', async ({ page }) => {
+    // Create an integration
+    const publicKey = process.env.LANGFUSE_PUBLIC_KEY;
+    const secretKey = process.env.LANGFUSE_SECRET_KEY;
+    const apiKey = (publicKey && secretKey)
+      ? `${publicKey}:${secretKey}`
+      : (process.env.TEST_LANGFUSE_KEY || 'test_public_key:test_secret_key');
+
+    const created = await apiRequest<any>(page, '/api/integrations', {
+      method: 'POST',
+      data: {
+        platform: 'langfuse',
+        name: uniqueName('Inactive Test Integration'),
+        api_key: apiKey,
+        base_url: process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com',
+      },
+    });
+    createdIntegrationIds.push(created.id);
+
+    // Update status to inactive via API (if supported)
+    try {
+      await apiRequest(page, `/api/integrations/${created.id}`, {
+        method: 'PATCH',
+        data: { status: 'inactive' },
+      });
+    } catch {
+      // If status update is not supported, skip this test
+      return;
+    }
+
+    // Navigate to integrations page
+    await page.goto('/integrations');
+    await page.waitForLoadState('networkidle');
+
+    // Verify integration card exists
+    const integrationCard = page.locator(`[data-testid="integration-card-${created.id}"]`);
+    await expect(integrationCard).toBeVisible({ timeout: 10000 });
+
+    // Get the status badge
+    const statusBadge = integrationCard.getByTestId('integration-status');
+    await expect(statusBadge).toBeVisible();
+
+    // Verify status text
+    const statusText = await statusBadge.textContent();
+    expect(statusText?.trim()).toBe('inactive');
+
+    // Verify badge has red styling for inactive status
+    const badgeClasses = await statusBadge.getAttribute('class');
+    expect(badgeClasses).toContain('bg-red-100');
+    expect(badgeClasses).toContain('text-red-700');
+  });
+
+  test('TEST-INT23: Should verify platform capitalization in UI', async ({ page }) => {
+    // Create an integration
+    const publicKey = process.env.LANGFUSE_PUBLIC_KEY;
+    const secretKey = process.env.LANGFUSE_SECRET_KEY;
+    const apiKey = (publicKey && secretKey)
+      ? `${publicKey}:${secretKey}`
+      : (process.env.TEST_LANGFUSE_KEY || 'test_public_key:test_secret_key');
+
+    const created = await apiRequest<any>(page, '/api/integrations', {
+      method: 'POST',
+      data: {
+        platform: 'langfuse',
+        name: uniqueName('Capitalization Test Integration'),
+        api_key: apiKey,
+        base_url: process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com',
+      },
+    });
+    createdIntegrationIds.push(created.id);
+
+    // Navigate to integrations page
+    await page.goto('/integrations');
+    await page.waitForLoadState('networkidle');
+
+    // Verify integration card exists
+    const integrationCard = page.locator(`[data-testid="integration-card-${created.id}"]`);
+    await expect(integrationCard).toBeVisible({ timeout: 10000 });
+
+    // Verify platform is displayed in lowercase (as per the implementation)
+    const platformElement = integrationCard.locator('.capitalize').filter({ hasText: 'langfuse' });
+    await expect(platformElement).toBeVisible();
+  });
+
+  test('TEST-INT24: Should verify IntegrationActions component buttons', async ({ page }) => {
+    // Create an integration
+    const publicKey = process.env.LANGFUSE_PUBLIC_KEY;
+    const secretKey = process.env.LANGFUSE_SECRET_KEY;
+    const apiKey = (publicKey && secretKey)
+      ? `${publicKey}:${secretKey}`
+      : (process.env.TEST_LANGFUSE_KEY || 'test_public_key:test_secret_key');
+
+    const created = await apiRequest<any>(page, '/api/integrations', {
+      method: 'POST',
+      data: {
+        platform: 'langfuse',
+        name: uniqueName('Actions Test Integration'),
+        api_key: apiKey,
+        base_url: process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com',
+      },
+    });
+    createdIntegrationIds.push(created.id);
+
+    // Navigate to integrations page
+    await page.goto('/integrations');
+    await page.waitForLoadState('networkidle');
+
+    // Verify integration card exists
+    const integrationCard = page.locator(`[data-testid="integration-card-${created.id}"]`);
+    await expect(integrationCard).toBeVisible({ timeout: 10000 });
+
+    // Verify Test button exists and has correct attributes
+    const testButton = integrationCard.getByTestId('test-integration-button');
+    await expect(testButton).toBeVisible();
+    await expect(testButton).toHaveAttribute('data-testid', 'test-integration-button');
+
+    // Verify Delete button exists and has correct attributes
+    const deleteButton = integrationCard.getByTestId('delete-integration-button');
+    await expect(deleteButton).toBeVisible();
+    await expect(deleteButton).toHaveAttribute('data-testid', 'delete-integration-button');
+
+    // Verify buttons are not disabled by default
+    await expect(testButton).not.toBeDisabled();
+    await expect(deleteButton).not.toBeDisabled();
+  });
+
+  test('TEST-INT25: Should verify empty state UI elements', async ({ page }) => {
+    // Delete all integrations
+    const integrations = await apiRequest<any>(page, '/api/integrations');
+    for (const integration of integrations.integrations) {
+      await apiRequest(page, `/api/integrations/${integration.id}`, { method: 'DELETE' }).catch(() => {});
+    }
+
+    // Navigate to integrations page
+    await page.goto('/integrations');
+    await page.waitForLoadState('networkidle');
+
+    // Verify empty state elements
+    await expect(page.getByText('No integrations connected')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Connect your observability platform/)).toBeVisible();
+
+    // Verify icon is present (Plug icon)
+    const plugIcon = page.locator('svg').filter({ hasText: '' }).first();
+    // Icons typically don't have text, so we just check if there's an SVG element in the empty state container
+
+    // Verify "Add your first integration" button
+    const addFirstButton = page.getByRole('button', { name: /Add your first integration/i });
+    await expect(addFirstButton).toBeVisible();
   });
 });

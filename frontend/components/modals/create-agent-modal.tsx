@@ -45,11 +45,11 @@ export function CreateAgentModal({ open, onOpenChange }: CreateAgentModalProps) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent data-testid="create-agent-modal">
         <DialogHeader>
           <DialogTitle>Create Agent</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} data-testid="create-agent-form">
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
@@ -61,6 +61,7 @@ export function CreateAgentModal({ open, onOpenChange }: CreateAgentModalProps) 
                 placeholder="My AI Agent"
                 required
                 autoFocus
+                data-testid="create-agent-name-input"
               />
             </div>
             <div className="space-y-2">
@@ -72,14 +73,15 @@ export function CreateAgentModal({ open, onOpenChange }: CreateAgentModalProps) 
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe what this agent does..."
                 rows={3}
+                data-testid="create-agent-description-input"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={createMutation.isPending}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={createMutation.isPending} data-testid="create-agent-cancel-button">
               Cancel
             </Button>
-            <Button type="submit" disabled={createMutation.isPending} loading={createMutation.isPending}>
+            <Button type="submit" disabled={createMutation.isPending} loading={createMutation.isPending} data-testid="create-agent-submit-button">
               {createMutation.isPending ? 'Creating...' : 'Create'}
             </Button>
           </DialogFooter>

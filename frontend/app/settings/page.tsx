@@ -229,6 +229,9 @@ export default function SettingsPage() {
                 </div>
               </div>
               <button
+                role="switch"
+                aria-checked={emailNotifications}
+                aria-label="Toggle email notifications"
                 onClick={() => setEmailNotifications(!emailNotifications)}
                 className={cn(
                   "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
@@ -256,6 +259,9 @@ export default function SettingsPage() {
                 </div>
               </div>
               <button
+                role="switch"
+                aria-checked={slackIntegration}
+                aria-label="Toggle Slack integration"
                 onClick={() => setSlackIntegration(!slackIntegration)}
                 className={cn(
                   "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
@@ -330,6 +336,7 @@ export default function SettingsPage() {
                   />
                   <button
                     onClick={() => setShowApiKey(!showApiKey)}
+                    aria-label={showApiKey ? "Hide API key" : "Show API key"}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
                     {showApiKey ? (

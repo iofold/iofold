@@ -614,3 +614,60 @@ export async function deleteTrace(request: Request, env: Env, traceId: string): 
     return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
   }
 }
+
+/**
+ * DELETE /api/traces
+ *
+ * Bulk delete multiple traces by IDs.
+ *
+ * @param request - HTTP request with trace_ids array
+ * @param env - Cloudflare environment
+ * @returns 200 OK with deleted count
+ */
+export async function deleteTraces(request: Request, env: Env): Promise<Response> {
+  try {
+    const workspaceId = getWorkspaceId(request);
+    validateWorkspaceAccess(workspaceId);
+
+    const body = await parseJsonBody<{ trace_ids: string[] }>(request);
+
+    if (!body.trace_ids || !Array.isArray(body.trace_ids) || body.trace_ids.length === 0) {
+      return createErrorResponse(
+        'VALIDATION_ERROR',
+        'trace_ids array is required and must not be empty',
+        400
+      );
+    }
+
+    // Limit bulk operations to prevent abuse
+    if (body.trace_ids.length > 100) {
+      return createErrorResponse(
+        'VALIDATION_ERROR',
+        'Cannot delete more than 100 traces at once',
+        400
+      );
+    }
+
+    // Build placeholders for IN clause
+    const placeholders = body.trace_ids.map(() => '?').join(',');
+
+    // Delete only traces belonging to this workspace
+    const result = await env.DB.prepare(
+      `DELETE FROM traces WHERE id IN (${placeholders}) AND workspace_id = ?`
+    )
+      .bind(...body.trace_ids, workspaceId)
+      .run();
+
+    return createSuccessResponse({
+      deleted_count: result.meta.changes || 0
+    });
+  } catch (error: any) {
+    if (error.message === 'Missing X-Workspace-Id header') {
+      return createErrorResponse('VALIDATION_ERROR', error.message, 400);
+    }
+    if (error.message === 'Invalid JSON in request body') {
+      return createErrorResponse('VALIDATION_ERROR', error.message, 400);
+    }
+    return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
+  }
+}
