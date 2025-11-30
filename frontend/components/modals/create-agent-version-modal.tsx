@@ -58,7 +58,7 @@ export function CreateAgentVersionModal({ open, onOpenChange, agentId }: CreateA
           <DialogTitle>Create New Version</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 px-6 py-4">
             <div className="space-y-2">
               <Label htmlFor="prompt_template">Prompt Template</Label>
               <Textarea

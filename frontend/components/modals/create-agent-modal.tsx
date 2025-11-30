@@ -50,7 +50,7 @@ export function CreateAgentModal({ open, onOpenChange }: CreateAgentModalProps) 
           <DialogTitle>Create Agent</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} data-testid="create-agent-form">
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 px-6 py-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input

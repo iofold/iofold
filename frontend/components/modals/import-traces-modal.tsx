@@ -82,7 +82,7 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
           <DialogTitle>Import Traces</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 px-6 py-4">
             <div className="space-y-2">
               <Label htmlFor="integration">Integration</Label>
               <Select name="integration_id" value={integrationId} onValueChange={setIntegrationId}>

@@ -212,6 +212,8 @@ export default function DashboardPage() {
     // Group traces by day
     traces.forEach(trace => {
       const traceDate = new Date(trace.timestamp)
+      // Skip traces with invalid timestamps
+      if (isNaN(traceDate.getTime())) return
       const dayKey = traceDate.toISOString().split('T')[0]
       if (dayGroups[dayKey]) {
         dayGroups[dayKey].push(trace)

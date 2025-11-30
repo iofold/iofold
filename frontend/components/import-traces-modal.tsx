@@ -154,13 +154,13 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
           <div className="my-4 p-4 rounded-lg border bg-muted/50">
             <div className="flex items-center gap-2 mb-2">
               {(syncCompleted || jobData?.status === 'completed') && (
-                <CheckCircle2 className="h-5 w-5 text-green-600" aria-hidden="true" />
+                <CheckCircle2 className="h-5 w-5 text-success" aria-hidden="true" />
               )}
               {jobData?.status === 'failed' && (
-                <AlertCircle className="h-5 w-5 text-red-600" aria-hidden="true" />
+                <AlertCircle className="h-5 w-5 text-destructive" aria-hidden="true" />
               )}
               {!syncCompleted && (jobData?.status === 'running' || jobData?.status === 'queued') && (
-                <Loader2 className="h-5 w-5 animate-spin text-blue-600" aria-hidden="true" />
+                <Loader2 className="h-5 w-5 animate-spin text-info" aria-hidden="true" />
               )}
               <span className="font-medium">Import Status</span>
             </div>
@@ -185,19 +185,19 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Connection:</span>
                   <span className="text-xs">
-                    {isSSEActive && <span className="text-green-600">Real-time (SSE)</span>}
-                    {isPolling && <span className="text-yellow-600">Polling fallback</span>}
-                    {!isSSEActive && !isPolling && <span className="text-gray-500">Connecting...</span>}
+                    {isSSEActive && <span className="text-success">Real-time (SSE)</span>}
+                    {isPolling && <span className="text-warning">Polling fallback</span>}
+                    {!isSSEActive && !isPolling && <span className="text-muted-foreground">Connecting...</span>}
                   </span>
                 </div>
               )}
               {jobData?.error && (
-                <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-red-800">
+                <div className="mt-2 p-2 bg-destructive/10 border border-destructive/30 rounded text-destructive">
                   {jobData.error}
                 </div>
               )}
               {(syncCompleted || jobData?.status === 'completed') && (
-                <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-green-800">
+                <div className="mt-2 p-2 bg-success/10 border border-success/30 rounded text-success">
                   Import completed successfully
                 </div>
               )}
@@ -207,7 +207,8 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
 
         {/* Import form - hide if job is running/completed */}
         {!jobId && (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-4 px-6 py-4">
             <div className="space-y-2">
               <Label htmlFor="integration">Integration *</Label>
               {loadingIntegrations ? (
@@ -271,11 +272,11 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
             </div>
 
             {importMutation.isError && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm">
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm">
                 <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
                 <div>
                   <p className="font-medium">Import failed</p>
-                  <p className="text-xs mt-1">
+                  <p className="text-xs mt-1 text-destructive/80">
                     {importMutation.error instanceof Error
                       ? importMutation.error.message
                       : 'An error occurred during import'}
@@ -283,6 +284,7 @@ export function ImportTracesModal({ open, onOpenChange }: ImportTracesModalProps
                 </div>
               </div>
             )}
+            </div>
 
             <DialogFooter>
               <Button

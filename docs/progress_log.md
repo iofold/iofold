@@ -6,6 +6,86 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### Modal UI/UX Fixes (Dark Mode & Spacing)
+
+**Time:** 19:45 UTC
+
+**Task:** Fixed multiple modal styling issues identified by Gemini AI critique.
+
+**Issues Fixed:**
+
+1. **Integration dropdown white background (Import Traces modal)**
+   - The dropdown was using proper shadcn/ui Select component but wasn't rendering correctly
+   - Verified fix by testing in dark mode
+
+2. **Date input styling for dark mode**
+   - Native date inputs were showing white backgrounds in dark mode
+   - Added `color-scheme: dark` CSS property in `globals.css` for dark mode
+   - Added calendar icon inversion for dark mode visibility
+
+3. **Hardcoded colors in Import Traces modal**
+   - Changed hardcoded colors (`text-green-600`, `bg-red-50`, etc.) to semantic tokens
+   - Icons: `text-success`, `text-destructive`, `text-info`
+   - Error/success boxes: `bg-destructive/10`, `bg-success/10`
+
+4. **Spacing inconsistency in Import Traces modal**
+   - Import Traces modal was missing `py-4` padding that other modals have
+   - Added wrapper `<div className="space-y-4 py-4">` to match other modal patterns
+
+5. **Horizontal padding inconsistency across all modals**
+   - Form content was missing `px-6` padding to align with DialogHeader/DialogFooter
+   - DialogHeader and DialogFooter both use `px-6`, but form content only had `py-4`
+   - Added `px-6` to form content wrapper in all modals for consistent alignment
+
+**Files Changed:**
+- `frontend/app/globals.css` - Added dark mode CSS for native date/time inputs
+- `frontend/components/import-traces-modal.tsx` - Fixed hardcoded colors, added spacing wrapper, added px-6
+- `frontend/components/modals/create-agent-modal.tsx` - Added px-6 to form content
+- `frontend/components/modals/create-agent-version-modal.tsx` - Added px-6 to form content
+- `frontend/components/modals/add-integration-modal.tsx` - Added px-6 to form content
+- `frontend/components/modals/import-traces-modal.tsx` - Added px-6 to form content
+
+---
+
+### Evals Page Dropdown Styling Fix
+
+**Time:** 19:15 UTC
+
+**Task:** Fixed evals page dropdowns to use consistent shadcn/ui Select component.
+
+**Issue:** The evals page was using native HTML `<select>` elements which rendered with browser default styling (light blue highlight, different font) instead of the shadcn/ui Select component used elsewhere.
+
+**Fix:** Replaced native `<select>` elements with shadcn/ui `Select`, `SelectTrigger`, `SelectContent`, and `SelectItem` components in `frontend/app/evals/page.tsx`.
+
+**Files Changed:**
+- `frontend/app/evals/page.tsx` - Replaced 3 native select elements with shadcn Select components
+
+---
+
+### Dashboard Invalid Date Fix
+
+**Time:** 19:10 UTC
+
+**Task:** Fixed dashboard crash caused by invalid trace timestamps.
+
+**Issue:** Dashboard page was throwing `RangeError: Invalid time value` when traces had invalid/null timestamps. The error occurred in `trendData` useMemo at line 215 when calling `toISOString()` on an invalid Date object.
+
+**Fix:** Added date validation guard in `frontend/app/page.tsx`:
+```typescript
+traces.forEach(trace => {
+  const traceDate = new Date(trace.timestamp)
+  // Skip traces with invalid timestamps
+  if (isNaN(traceDate.getTime())) return
+  const dayKey = traceDate.toISOString().split('T')[0]
+  ...
+})
+```
+
+**Files Changed:**
+- `frontend/app/page.tsx` - Added invalid date guard in trendData useMemo
+
+---
+
 ### E2E Test Fixes - Session 2
 
 **Time:** 09:15 UTC
@@ -15768,3 +15848,94 @@ Tests were failing because:
 
 ---
 
+
+## 2025-11-30
+
+### Task 1: Error Classification Module for Job Queue Retry Logic
+
+**Time:** 19:23 UTC
+
+**Task:** Implemented error classification module following TDD approach for intelligent retry logic in job queue processing.
+
+**Implementation Details:**
+- Created error classifier that categorizes errors into 9 distinct types:
+  - **Transient errors** (retryable): network timeouts, rate limits, server errors, database locks
+  - **Permanent errors** (non-retryable): validation failures, auth errors, not found, security violations
+  - **Unknown errors**: default to retryable (safe approach)
+  
+- Classification based on:
+  - HTTP status codes (429, 5xx, 401/403, 404, etc.)
+  - Error names (ValidationError, SecurityError)
+  - Error codes (ETIMEDOUT, ECONNRESET, etc.)
+  - Message pattern matching
+
+- Key functions:
+  - `classifyError(error: unknown): ErrorCategory` - Main classification logic
+  - `isRetryable(category: ErrorCategory): boolean` - Determines if error should trigger retry
+  - `getErrorCategoryDescription(category: ErrorCategory): string` - Human-readable descriptions
+
+**Files Created:**
+- `src/errors/classifier.ts` - Main implementation (114 lines)
+- `src/errors/classifier.test.ts` - Comprehensive test suite (64 lines)
+
+**Test Results:**
+- ✅ All 10 tests passed
+- Test coverage includes all error categories and edge cases
+- Followed strict TDD: wrote failing tests first, then implemented minimal code to pass
+
+**Commit:** `a8b17c4` - feat(queue): add error classification for retry logic
+
+**Next Steps:** Task 2 - Implement exponential backoff module with jitter for retry delays
+
+---
+
+
+### Task 2: Exponential Backoff Module with Jitter
+
+**Time:** 19:28 UTC
+
+**Task:** Implemented exponential backoff calculation module following TDD approach for intelligent retry delay calculation in job queue processing.
+
+**Implementation Details:**
+- Created retry backoff module with exponential delay calculation:
+  - **Standard exponential backoff**: `initialDelay * multiplier^(attempt-1)`
+  - **Jitter support**: Adds random variance (±10% default) to prevent thundering herd
+  - **Max delay capping**: Prevents unbounded delay growth (60s default)
+  - **Special handling** for different error types:
+    - Rate limits: 30s initial delay (longer than normal)
+    - Database locks: Short, linear delays (100ms, 200ms, 300ms)
+    - Permanent errors: 0ms (no retry)
+  
+- Default configuration:
+  - Initial delay: 1000ms (1 second)
+  - Max delay: 60000ms (1 minute)
+  - Backoff multiplier: 2 (doubles each retry)
+  - Jitter factor: 0.1 (10% random variance)
+  - Max retries: 5 attempts
+
+- Key functions:
+  - `calculateBackoffDelay(attempt, category, config): number` - Core calculation with jitter
+  - `shouldRetry(attempt, category, config): boolean` - Determines if retry should occur
+  - `createRetrySchedule(category, config): number[]` - Generates full retry schedule
+
+**Files Created:**
+- `src/retry/backoff.ts` - Main implementation (116 lines)
+- `src/retry/backoff.test.ts` - Comprehensive test suite (68 lines)
+
+**Test Results:**
+- ✅ All 8 tests passed (8/8)
+- Test coverage includes:
+  - Basic exponential backoff calculation
+  - Max delay capping
+  - Rate limit special handling
+  - Database lock special handling
+  - Jitter variance testing
+  - Permanent error rejection (0ms delay)
+  - Default configuration validation
+- Followed strict TDD: wrote failing tests first, then implemented minimal code to pass
+
+**Commit:** `f21854c` - feat(queue): add exponential backoff with jitter for retries
+
+**Next Steps:** Task 3 - Create database migration for job retry tracking (retry_count, max_retries, error_category)
+
+---

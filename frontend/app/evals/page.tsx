@@ -6,6 +6,13 @@ import Link from 'next/link'
 import { apiClient } from '@/lib/api-client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { EvaluationChart } from '@/components/charts/evaluation-chart'
 import {
   Radio,
@@ -217,48 +224,51 @@ export default function EvalsPage() {
               <label className="block text-sm font-medium text-[var(--color-foreground)] mb-2">
                 Evaluation Function
               </label>
-              <select
-                value={selectedEvalFunction}
-                onChange={(e) => setSelectedEvalFunction(e.target.value)}
-                className="w-full px-4 py-2 bg-card border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] transition-colors"
-              >
-                <option value="all">All Evaluation Functions</option>
-                <option value="response_quality">Response Quality Eval</option>
-                <option value="latency_check">Latency Check Eval</option>
-                <option value="accuracy_test">Accuracy Test Eval</option>
-              </select>
+              <Select value={selectedEvalFunction} onValueChange={setSelectedEvalFunction}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select evaluation function" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Evaluation Functions</SelectItem>
+                  <SelectItem value="response_quality">Response Quality Eval</SelectItem>
+                  <SelectItem value="latency_check">Latency Check Eval</SelectItem>
+                  <SelectItem value="accuracy_test">Accuracy Test Eval</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex-1">
               <label className="block text-sm font-medium text-[var(--color-foreground)] mb-2">
                 Environment
               </label>
-              <select
-                value={selectedEnvironment}
-                onChange={(e) => setSelectedEnvironment(e.target.value)}
-                className="w-full px-4 py-2 bg-card border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] transition-colors"
-              >
-                <option value="all">All Environments</option>
-                <option value="production">Production</option>
-                <option value="staging">Staging</option>
-                <option value="development">Development</option>
-              </select>
+              <Select value={selectedEnvironment} onValueChange={setSelectedEnvironment}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select environment" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Environments</SelectItem>
+                  <SelectItem value="production">Production</SelectItem>
+                  <SelectItem value="staging">Staging</SelectItem>
+                  <SelectItem value="development">Development</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex-1">
               <label className="block text-sm font-medium text-[var(--color-foreground)] mb-2">
                 Baseline Comparison
               </label>
-              <select
-                value={baselineComparison}
-                onChange={(e) => setBaselineComparison(e.target.value)}
-                className="w-full px-4 py-2 bg-card border border-[var(--color-border)] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] transition-colors"
-              >
-                <option value="previous">Previous Run</option>
-                <option value="last_week">Last Week</option>
-                <option value="last_month">Last Month</option>
-                <option value="baseline">Custom Baseline</option>
-              </select>
+              <Select value={baselineComparison} onValueChange={setBaselineComparison}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select baseline" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="previous">Previous Run</SelectItem>
+                  <SelectItem value="last_week">Last Week</SelectItem>
+                  <SelectItem value="last_month">Last Month</SelectItem>
+                  <SelectItem value="baseline">Custom Baseline</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>
