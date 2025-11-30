@@ -6,6 +6,51 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### Queue Type Enhancements: Retry Metadata
+
+**Time:** 21:15 UTC
+
+**Task:** Updated queue type definitions to support retry tracking and error classification (Task 4 of job queue enhancements plan).
+
+**Changes Made:**
+
+1. **Updated src/types/queue.ts:**
+   - Added `ErrorCategory` import from `../errors/classifier`
+   - Expanded `QueueMessage.type` to include additional job types: `agent_discovery`, `prompt_improvement`, `prompt_evaluation`, `template_drift`, `eval_revalidation`
+   - Added retry metadata fields to `QueueMessage`:
+     - `error_category?: ErrorCategory` - Last error category for retry decisions
+     - `last_error_at?: string` - ISO timestamp of last error
+     - `retry_history?: RetryAttempt[]` - Full retry history
+
+2. **Created RetryAttempt interface:**
+   - `attempt: number` - Attempt number
+   - `error: string` - Error message
+   - `error_category: ErrorCategory` - Classified error category
+   - `delay_ms: number` - Backoff delay in milliseconds
+   - `timestamp: string` - ISO timestamp
+
+3. **Enhanced DeadLetterMessage interface:**
+   - Added `error_category: ErrorCategory` - For error analysis
+   - Added `retry_history: RetryAttempt[]` - Full retry history (required)
+   - Added `requires_user_action: boolean` - Whether manual intervention needed
+   - Added `suggested_action?: string` - Recommended resolution action
+
+**Files Changed:**
+- `src/types/queue.ts`
+
+**Verification:**
+- TypeScript check confirms types are correctly defined
+- Expected type error in `src/queue/consumer.ts` at line 427 confirms new required fields are enforced
+- Ready for integration in subsequent tasks (consumer and job manager updates)
+
+**Commit:** bd5f821
+
+**Next Steps:**
+- Task 5: Update queue consumer with retry logic
+- Task 6: Update JobManager with retry tracking
+
+---
+
 ### Database Migration 006: Job Retry Tracking Schema
 
 **Time:** 20:30 UTC
