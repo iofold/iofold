@@ -6,6 +6,39 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ## 2025-11-30
 
+### Fixed Failing E2E Integration Tests
+
+**Time:** 17:54 UTC
+
+**Summary:** Fixed three failing E2E tests in the integrations area by updating test expectations to match actual UI implementation.
+
+**Files Changed:**
+- `/home/ygupta/workspace/iofold/tests/e2e/02-integrations/add-integration.spec.ts` - Fixed TEST-I07 and TEST-I08
+- `/home/ygupta/workspace/iofold/tests/e2e/02-integrations/integration-crud.spec.ts` - Fixed TEST-INT25
+
+**Tests Fixed:**
+1. **TEST-I07: Verify last synced timestamp displays**
+   - Changed from `locator('text=/Last synced:/')` to `getByText(/Last synced:/)`
+   - Removed specific date format regex (`\d+\/\d+\/\d+`) since `toLocaleString()` format varies by locale
+   - Now validates presence of "Last synced:" text rather than specific date format
+
+2. **TEST-I08: Verify empty integrations state**
+   - Updated regex to match complete empty state message
+   - Changed from `/Connect your observability platform/` to `/Connect your observability platform \(Langfuse, Langsmith, or OpenAI\) to import traces\./`
+
+3. **TEST-INT25: Should verify empty state UI elements**
+   - Same fix as TEST-I08 - updated empty state text matcher
+
+**Test Results:**
+- All three tests now pass successfully
+- No changes made to frontend code - only test expectations updated
+
+**Next Steps:**
+- Continue fixing remaining E2E test failures
+- Focus on badge color mismatches and other selector issues
+
+---
+
 ### Test Suite Execution Results
 
 **Time:** 17:37 UTC
