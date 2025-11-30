@@ -5,15 +5,19 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Feedback } from '@/types/api'
-import { ThumbsUp, ThumbsDown, Minus } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Minus, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { FeedbackNotesDialog } from '@/components/feedback-notes-dialog'
 
 interface FeedbackButtonsProps {
   traceId: string
   agentId?: string
   currentFeedback?: Feedback
   onFeedbackSubmit?: () => void
+  showNotesButton?: boolean
+  size?: 'sm' | 'default' | 'lg'
+  showLabels?: boolean
 }
 
 export function FeedbackButtons({
@@ -21,29 +25,37 @@ export function FeedbackButtons({
   agentId,
   currentFeedback,
   onFeedbackSubmit,
+  showNotesButton = true,
+  size = 'sm',
+  showLabels = false,
 }: FeedbackButtonsProps) {
   const [optimisticRating, setOptimisticRating] = useState<string | null>(null)
+  const [notesDialogOpen, setNotesDialogOpen] = useState(false)
+  const [pendingRating, setPendingRating] = useState<'positive' | 'negative' | 'neutral' | null>(null)
   const queryClient = useQueryClient()
 
   const submitMutation = useMutation({
-    mutationFn: (rating: 'positive' | 'negative' | 'neutral') => {
+    mutationFn: (data: { rating: 'positive' | 'negative' | 'neutral'; notes?: string }) => {
       if (!agentId) {
         throw new Error('Agent ID is required')
       }
       return apiClient.submitFeedback({
         trace_id: traceId,
         agent_id: agentId,
-        rating,
+        rating: data.rating,
+        notes: data.notes,
       })
     },
-    onMutate: async (rating) => {
-      setOptimisticRating(rating)
+    onMutate: async (data) => {
+      setOptimisticRating(data.rating)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trace', traceId] })
       queryClient.invalidateQueries({ queryKey: ['traces'] })
-      toast.success('Feedback submitted')
+      queryClient.invalidateQueries({ queryKey: ['feedback'] })
+      toast.success('Feedback submitted successfully')
       onFeedbackSubmit?.()
+      setPendingRating(null)
     },
     onError: (error) => {
       setOptimisticRating(null)
@@ -56,20 +68,25 @@ export function FeedbackButtons({
   })
 
   const updateMutation = useMutation({
-    mutationFn: (rating: 'positive' | 'negative' | 'neutral') => {
+    mutationFn: (data: { rating: 'positive' | 'negative' | 'neutral'; notes?: string }) => {
       if (!currentFeedback?.id) {
         throw new Error('Feedback ID is required')
       }
-      return apiClient.updateFeedback(currentFeedback.id, { rating })
+      return apiClient.updateFeedback(currentFeedback.id, {
+        rating: data.rating,
+        notes: data.notes,
+      })
     },
-    onMutate: async (rating) => {
-      setOptimisticRating(rating)
+    onMutate: async (data) => {
+      setOptimisticRating(data.rating)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trace', traceId] })
       queryClient.invalidateQueries({ queryKey: ['traces'] })
-      toast.success('Feedback updated')
+      queryClient.invalidateQueries({ queryKey: ['feedback'] })
+      toast.success('Feedback updated successfully')
       onFeedbackSubmit?.()
+      setPendingRating(null)
     },
     onError: (error) => {
       setOptimisticRating(null)
@@ -82,11 +99,31 @@ export function FeedbackButtons({
   })
 
   const handleRating = (rating: 'positive' | 'negative' | 'neutral') => {
-    if (currentFeedback) {
-      updateMutation.mutate(rating)
-    } else {
-      submitMutation.mutate(rating)
+    // If same rating is clicked again, open notes dialog
+    if (currentFeedback?.rating === rating) {
+      setPendingRating(rating)
+      setNotesDialogOpen(true)
+      return
     }
+
+    // Otherwise submit/update immediately
+    if (currentFeedback) {
+      updateMutation.mutate({ rating })
+    } else {
+      submitMutation.mutate({ rating })
+    }
+  }
+
+  const handleNotesSubmit = (notes: string) => {
+    const rating = pendingRating || currentFeedback?.rating || 'neutral'
+
+    if (currentFeedback) {
+      updateMutation.mutate({ rating, notes })
+    } else {
+      submitMutation.mutate({ rating, notes })
+    }
+
+    setNotesDialogOpen(false)
   }
 
   const activeRating = optimisticRating || currentFeedback?.rating
@@ -101,40 +138,81 @@ export function FeedbackButtons({
   }
 
   return (
-    <div className="flex gap-2">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => handleRating('positive')}
-        disabled={isLoading}
-        className={cn(
-          activeRating === 'positive' && 'bg-green-100 border-green-300'
+    <>
+      <div className="flex gap-2 items-center">
+        <Button
+          variant="outline"
+          size={size}
+          onClick={() => handleRating('positive')}
+          disabled={isLoading}
+          loading={isLoading && optimisticRating === 'positive'}
+          className={cn(
+            'transition-all duration-200',
+            activeRating === 'positive' && 'bg-green-50 border-green-500 text-green-700 hover:bg-green-100'
+          )}
+          data-testid="feedback-positive"
+        >
+          <ThumbsUp className={cn('w-4 h-4', activeRating === 'positive' && 'fill-current')} />
+          {showLabels && <span className="ml-2">Good</span>}
+        </Button>
+        <Button
+          variant="outline"
+          size={size}
+          onClick={() => handleRating('neutral')}
+          disabled={isLoading}
+          loading={isLoading && optimisticRating === 'neutral'}
+          className={cn(
+            'transition-all duration-200',
+            activeRating === 'neutral' && 'bg-gray-50 border-gray-500 text-gray-700 hover:bg-gray-100'
+          )}
+          data-testid="feedback-neutral"
+        >
+          <Minus className="w-4 h-4" />
+          {showLabels && <span className="ml-2">Neutral</span>}
+        </Button>
+        <Button
+          variant="outline"
+          size={size}
+          onClick={() => handleRating('negative')}
+          disabled={isLoading}
+          loading={isLoading && optimisticRating === 'negative'}
+          className={cn(
+            'transition-all duration-200',
+            activeRating === 'negative' && 'bg-red-50 border-red-500 text-red-700 hover:bg-red-100'
+          )}
+          data-testid="feedback-negative"
+        >
+          <ThumbsDown className={cn('w-4 h-4', activeRating === 'negative' && 'fill-current')} />
+          {showLabels && <span className="ml-2">Bad</span>}
+        </Button>
+
+        {showNotesButton && (
+          <Button
+            variant="ghost"
+            size={size}
+            onClick={() => {
+              setPendingRating(activeRating as any || null)
+              setNotesDialogOpen(true)
+            }}
+            disabled={isLoading}
+            className={cn(
+              'transition-all duration-200',
+              currentFeedback?.notes && 'text-blue-600'
+            )}
+            data-testid="feedback-notes"
+          >
+            <MessageSquare className={cn('w-4 h-4', currentFeedback?.notes && 'fill-current')} />
+            {showLabels && <span className="ml-2">Notes</span>}
+          </Button>
         )}
-      >
-        <ThumbsUp className="w-4 h-4" />
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => handleRating('neutral')}
-        disabled={isLoading}
-        className={cn(
-          activeRating === 'neutral' && 'bg-gray-100 border-gray-300'
-        )}
-      >
-        <Minus className="w-4 h-4" />
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => handleRating('negative')}
-        disabled={isLoading}
-        className={cn(
-          activeRating === 'negative' && 'bg-red-100 border-red-300'
-        )}
-      >
-        <ThumbsDown className="w-4 h-4" />
-      </Button>
-    </div>
+      </div>
+
+      <FeedbackNotesDialog
+        open={notesDialogOpen}
+        onOpenChange={setNotesDialogOpen}
+        currentNotes={currentFeedback?.notes || ''}
+        onSubmit={handleNotesSubmit}
+      />
+    </>
   )
 }

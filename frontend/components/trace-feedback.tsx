@@ -1,12 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
-import { ThumbsUp, ThumbsDown, Minus } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Minus, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { FeedbackButtons } from '@/components/feedback-buttons'
+import { FeedbackHistory } from '@/components/feedback-history'
+import { QuickFeedbackBar } from '@/components/quick-feedback-bar'
+import { Feedback } from '@/types/api'
 
 interface TraceFeedbackProps {
   traceId: string
@@ -14,30 +18,50 @@ interface TraceFeedbackProps {
   currentRating?: 'positive' | 'negative' | 'neutral' | null
   feedbackId?: string
   onFeedbackChange?: () => void
+  showHistory?: boolean
+  showQuickBar?: boolean
 }
 
-export function TraceFeedback({ traceId, agentId, currentRating, feedbackId, onFeedbackChange }: TraceFeedbackProps) {
+export function TraceFeedback({
+  traceId,
+  agentId,
+  currentRating,
+  feedbackId,
+  onFeedbackChange,
+  showHistory = false,
+  showQuickBar = false,
+}: TraceFeedbackProps) {
   const [rating, setRating] = useState<'positive' | 'negative' | 'neutral' | null>(currentRating || null)
   const queryClient = useQueryClient()
 
+  // Fetch current feedback for the trace
+  const { data: trace } = useQuery({
+    queryKey: ['trace', traceId],
+    queryFn: () => apiClient.getTrace(traceId),
+  })
+
+  const currentFeedback: Feedback | undefined = trace?.feedback
+
   const submitMutation = useMutation({
-    mutationFn: (rating: 'positive' | 'negative' | 'neutral') => {
+    mutationFn: (data: { rating: 'positive' | 'negative' | 'neutral'; notes?: string }) => {
       // If feedback already exists, update it; otherwise create new
       if (feedbackId) {
-        return apiClient.updateFeedback(feedbackId, { rating })
+        return apiClient.updateFeedback(feedbackId, { rating: data.rating, notes: data.notes })
       }
       return apiClient.submitFeedback({
         trace_id: traceId,
         agent_id: agentId,
-        rating,
+        rating: data.rating,
+        notes: data.notes,
       })
     },
-    onSuccess: (_, rating) => {
-      setRating(rating)
+    onSuccess: (_, data) => {
+      setRating(data.rating)
       queryClient.invalidateQueries({ queryKey: ['traces'] })
       queryClient.invalidateQueries({ queryKey: ['trace', traceId] })
       queryClient.invalidateQueries({ queryKey: ['agents', agentId] })
-      toast.success(`Marked as ${rating}`)
+      queryClient.invalidateQueries({ queryKey: ['feedback'] })
+      toast.success(`Marked as ${data.rating}`)
       onFeedbackChange?.()
     },
     onError: (error: any) => {
@@ -49,15 +73,23 @@ export function TraceFeedback({ traceId, agentId, currentRating, feedbackId, onF
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.key === '1' || e.key === 'ArrowLeft') {
+      // Don't trigger if user is typing in an input/textarea
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return
+      }
+
+      if (e.key === '1') {
         e.preventDefault()
-        submitMutation.mutate('positive')
-      } else if (e.key === '2' || e.key === 'ArrowDown') {
+        submitMutation.mutate({ rating: 'positive' })
+      } else if (e.key === '2') {
         e.preventDefault()
-        submitMutation.mutate('neutral')
-      } else if (e.key === '3' || e.key === 'ArrowRight') {
+        submitMutation.mutate({ rating: 'neutral' })
+      } else if (e.key === '3') {
         e.preventDefault()
-        submitMutation.mutate('negative')
+        submitMutation.mutate({ rating: 'negative' })
       }
     }
 
@@ -66,46 +98,43 @@ export function TraceFeedback({ traceId, agentId, currentRating, feedbackId, onF
   }, [submitMutation])
 
   return (
-    <div className="flex gap-2">
-      <Button
-        data-testid="feedback-positive"
-        size="sm"
-        variant={rating === 'positive' ? 'default' : 'outline'}
-        onClick={() => submitMutation.mutate('positive')}
-        disabled={submitMutation.isPending}
-        className={cn(
-          rating === 'positive' && 'bg-green-600 hover:bg-green-700 active selected'
-        )}
-      >
-        <ThumbsUp className="w-4 h-4 mr-1" />
-        Positive (1)
-      </Button>
-      <Button
-        data-testid="feedback-neutral"
-        size="sm"
-        variant={rating === 'neutral' ? 'default' : 'outline'}
-        onClick={() => submitMutation.mutate('neutral')}
-        disabled={submitMutation.isPending}
-        className={cn(
-          rating === 'neutral' && 'bg-gray-600 hover:bg-gray-700 active selected'
-        )}
-      >
-        <Minus className="w-4 h-4 mr-1" />
-        Neutral (2)
-      </Button>
-      <Button
-        data-testid="feedback-negative"
-        size="sm"
-        variant={rating === 'negative' ? 'default' : 'outline'}
-        onClick={() => submitMutation.mutate('negative')}
-        disabled={submitMutation.isPending}
-        className={cn(
-          rating === 'negative' && 'bg-red-600 hover:bg-red-700 active selected'
-        )}
-      >
-        <ThumbsDown className="w-4 h-4 mr-1" />
-        Negative (3)
-      </Button>
+    <div className="space-y-6">
+      {/* Main feedback buttons */}
+      <div>
+        <div className="flex items-center gap-3 mb-3">
+          <FeedbackButtons
+            traceId={traceId}
+            agentId={agentId}
+            currentFeedback={currentFeedback}
+            onFeedbackSubmit={onFeedbackChange}
+            showNotesButton={true}
+            size="default"
+            showLabels={true}
+          />
+        </div>
+
+        {/* Keyboard shortcuts hint */}
+        <div className="text-xs text-muted-foreground">
+          Keyboard shortcuts: <kbd className="px-1.5 py-0.5 bg-muted rounded">1</kbd> Good •{' '}
+          <kbd className="px-1.5 py-0.5 bg-muted rounded">2</kbd> Neutral •{' '}
+          <kbd className="px-1.5 py-0.5 bg-muted rounded">3</kbd> Bad
+        </div>
+      </div>
+
+      {/* Feedback history */}
+      {showHistory && (
+        <FeedbackHistory traceId={traceId} />
+      )}
+
+      {/* Quick feedback bar (sticky) */}
+      {showQuickBar && (
+        <QuickFeedbackBar
+          traceId={traceId}
+          currentFeedback={currentFeedback}
+          defaultAgentId={agentId}
+          onFeedbackSubmit={onFeedbackChange}
+        />
+      )}
     </div>
   )
 }
