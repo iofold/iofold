@@ -83,6 +83,7 @@ export function AddIntegrationModal({ open, onOpenChange }: AddIntegrationModalP
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My Integration"
                 required
+                autoFocus
               />
             </div>
             <div className="space-y-2">
@@ -108,10 +109,10 @@ export function AddIntegrationModal({ open, onOpenChange }: AddIntegrationModalP
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={createMutation.isPending}>
               Cancel
             </Button>
-            <Button type="submit" disabled={createMutation.isPending}>
+            <Button type="submit" disabled={createMutation.isPending} loading={createMutation.isPending}>
               {createMutation.isPending ? 'Adding...' : 'Add Integration'}
             </Button>
           </DialogFooter>

@@ -280,15 +280,8 @@ export function ExecuteEvalModal({ children, evalId, agentId }: ExecuteEvalModal
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isProcessing}>
-                {executeMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden="true" />
-                    Starting...
-                  </>
-                ) : (
-                  'Execute Eval'
-                )}
+              <Button type="submit" disabled={isProcessing} loading={executeMutation.isPending}>
+                {executeMutation.isPending ? 'Starting...' : 'Execute Eval'}
               </Button>
             </DialogFooter>
           </form>

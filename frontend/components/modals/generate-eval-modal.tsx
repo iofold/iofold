@@ -273,6 +273,7 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., check_compliance"
                 required
+                autoFocus
               />
               <p className="text-xs text-muted-foreground">
                 A descriptive name for your eval function
@@ -347,12 +348,9 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={!canSubmit}>
-                {generateMutation.isPending && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                )}
+              <Button type="submit" disabled={!canSubmit} loading={generateMutation.isPending}>
                 <Sparkles className="mr-2 h-4 w-4" aria-hidden="true" />
-                Generate Eval
+                {generateMutation.isPending ? 'Generating...' : 'Generate Eval'}
               </Button>
             </DialogFooter>
           </form>

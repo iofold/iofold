@@ -130,12 +130,13 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
             )}
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={importMutation.isPending || jobStatus === 'running'}>
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={!integrationId || importMutation.isPending || jobStatus === 'running'}
+              loading={importMutation.isPending || jobStatus === 'running'}
             >
               {importMutation.isPending || jobStatus === 'running' ? 'Importing...' : 'Import'}
             </Button>

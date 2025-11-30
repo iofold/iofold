@@ -69,6 +69,7 @@ export function CreateAgentVersionModal({ open, onOpenChange, agentId }: CreateA
                 placeholder="Enter your prompt template here..."
                 rows={10}
                 required
+                autoFocus
                 className="font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground">
@@ -90,10 +91,10 @@ export function CreateAgentVersionModal({ open, onOpenChange, agentId }: CreateA
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={createMutation.isPending}>
               Cancel
             </Button>
-            <Button type="submit" disabled={createMutation.isPending}>
+            <Button type="submit" disabled={createMutation.isPending} loading={createMutation.isPending}>
               {createMutation.isPending ? 'Creating...' : 'Create Version'}
             </Button>
           </DialogFooter>

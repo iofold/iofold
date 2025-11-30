@@ -24,7 +24,7 @@ export function Progress({ value, className = '', showLabel = false, label = 'Pr
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={`${label}: ${Math.round(clampedValue)}% complete`}
-        className="w-full h-2 bg-gray-200 rounded-full overflow-hidden"
+        className="w-full h-3 bg-gray-200 rounded-full overflow-hidden"
       >
         <div
           className="h-full bg-gradient-to-r from-green-500 to-blue-500 transition-all duration-300"

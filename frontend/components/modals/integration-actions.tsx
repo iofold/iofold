@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { Trash2, TestTube2 } from 'lucide-react'
+import { Trash2, Play } from 'lucide-react'
 
 interface IntegrationActionsProps {
   integrationId: string
@@ -45,9 +45,10 @@ export function IntegrationActions({ integrationId }: IntegrationActionsProps) {
         variant="outline"
         onClick={() => testMutation.mutate()}
         disabled={testMutation.isPending}
+        loading={testMutation.isPending}
         data-testid="test-integration-button"
       >
-        <TestTube2 className="w-4 h-4 mr-1" />
+        <Play className="w-4 h-4 mr-1" />
         {testMutation.isPending ? 'Testing...' : 'Test'}
       </Button>
       <Button
@@ -55,6 +56,7 @@ export function IntegrationActions({ integrationId }: IntegrationActionsProps) {
         variant="destructive"
         onClick={() => deleteMutation.mutate()}
         disabled={deleteMutation.isPending}
+        loading={deleteMutation.isPending}
         data-testid="delete-integration-button"
       >
         <Trash2 className="w-4 h-4 mr-1" />
