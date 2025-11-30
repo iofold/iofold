@@ -3,6 +3,7 @@
  */
 
 import type { JobType } from './api';
+import type { ErrorCategory } from '../errors/classifier';
 
 /**
  * Queue message structure for job processing
@@ -11,7 +12,7 @@ export interface QueueMessage {
   /** Unique job identifier */
   job_id: string;
   /** Job type determines which handler processes the message */
-  type: JobType | 'monitor' | 'auto_refine';
+  type: JobType | 'monitor' | 'auto_refine' | 'agent_discovery' | 'prompt_improvement' | 'prompt_evaluation' | 'template_drift' | 'eval_revalidation';
   /** Workspace this job belongs to */
   workspace_id: string;
   /** Job-specific payload data */
@@ -20,6 +21,25 @@ export interface QueueMessage {
   attempt: number;
   /** ISO timestamp when message was created */
   created_at: string;
+
+  // Retry metadata
+  /** Last error category for retry decisions */
+  error_category?: ErrorCategory;
+  /** ISO timestamp of last error */
+  last_error_at?: string;
+  /** Retry history for debugging */
+  retry_history?: RetryAttempt[];
+}
+
+/**
+ * Retry attempt record for tracking retry history
+ */
+export interface RetryAttempt {
+  attempt: number;
+  error: string;
+  error_category: ErrorCategory;
+  delay_ms: number;
+  timestamp: string;
 }
 
 /**
@@ -144,10 +164,18 @@ export interface DeadLetterMessage {
   original_message: QueueMessage;
   /** Error that caused the failure */
   error: string;
+  /** Error category for analysis */
+  error_category: ErrorCategory;
   /** Final attempt number */
   final_attempt: number;
   /** ISO timestamp when moved to DLQ */
   failed_at: string;
+  /** Full retry history */
+  retry_history: RetryAttempt[];
+  /** Whether this job requires user action */
+  requires_user_action: boolean;
+  /** Suggested action for resolution */
+  suggested_action?: string;
 }
 
 /**
