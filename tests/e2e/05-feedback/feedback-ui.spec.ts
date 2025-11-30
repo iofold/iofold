@@ -121,17 +121,26 @@ test.describe('Feedback UI Tests', () => {
     await page.goto(`/traces/${traceId}`);
     await page.waitForLoadState('networkidle');
 
-    // Click on the agent selector
-    await page.locator('button:has-text("Select an agent")').first().click();
-    await page.waitForTimeout(500);
+    // The page auto-selects the first agent, so feedback buttons should already be visible
+    // If not visible, we can select an agent from the dropdown
+    const goodButton = page.locator('button:has-text("Good")');
+    const selectButton = page.locator('button:has-text("Select an agent")');
 
-    // Select the agent from dropdown
-    await page.locator(`[role="option"]`).first().click();
-    await page.waitForTimeout(500);
+    // Check if feedback buttons are already visible (auto-selected agent)
+    const buttonsVisible = await goodButton.isVisible().catch(() => false);
+    const selectVisible = await selectButton.first().isVisible().catch(() => false);
+
+    if (selectVisible && !buttonsVisible) {
+      // Need to manually select agent
+      await selectButton.first().click();
+      await page.waitForTimeout(500);
+      await page.locator(`[role="option"]`).first().click();
+      await page.waitForTimeout(500);
+    }
 
     // Now feedback buttons should be visible
-    await expect(page.locator('button:has-text("Positive")')).toBeVisible();
-    await expect(page.locator('button:has-text("Negative")')).toBeVisible();
+    await expect(page.locator('button:has-text("Good")')).toBeVisible();
+    await expect(page.locator('button:has-text("Bad")')).toBeVisible();
     await expect(page.locator('button:has-text("Neutral")')).toBeVisible();
   });
 
@@ -148,18 +157,27 @@ test.describe('Feedback UI Tests', () => {
     await page.goto(`/traces/${traceId}`);
     await page.waitForLoadState('networkidle');
 
-    // Select agent
-    await page.locator('button:has-text("Select an agent")').first().click();
-    await page.waitForTimeout(500);
-    await page.locator(`[role="option"]`).first().click();
-    await page.waitForTimeout(500);
+    // Check if we need to select agent manually
+    const goodButton = page.getByTestId('feedback-positive');
+    const selectButton = page.locator('button:has-text("Select an agent")');
+
+    const buttonsVisible = await goodButton.isVisible().catch(() => false);
+    const selectVisible = await selectButton.first().isVisible().catch(() => false);
+
+    if (selectVisible && !buttonsVisible) {
+      // Select agent
+      await selectButton.first().click();
+      await page.waitForTimeout(500);
+      await page.locator(`[role="option"]`).first().click();
+      await page.waitForTimeout(500);
+    }
 
     // Click positive button
     await page.getByTestId('feedback-positive').click();
     await page.waitForTimeout(1000);
 
-    // Verify success toast - the toast message is "Marked as positive"
-    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /marked.*positive/i })).toBeVisible({ timeout: 5000 });
+    // Verify success toast - the toast message is "Feedback submitted successfully"
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: /feedback.*submit/i })).toBeVisible({ timeout: 5000 });
   });
 
   test('TEST-FBUI05: Should handle agent selection for feedback', async ({ page }) => {
@@ -267,12 +285,21 @@ test.describe('Feedback UI Tests', () => {
     await page.goto('/traces');
     await page.waitForLoadState('networkidle');
 
-    // Wait for trace list to load
-    await expect(page.getByTestId('trace-list')).toBeVisible({ timeout: 10000 });
+    // Wait for the page heading and table to load
+    await expect(page.getByRole('heading', { name: /traces explorer/i })).toBeVisible({ timeout: 10000 });
 
-    // Click on first trace card to go to detail
-    const firstTraceCard = page.getByTestId('trace-row').first();
-    await firstTraceCard.locator('a').first().click();
+    // Wait for table to be present
+    const table = page.locator('table');
+    await expect(table).toBeVisible({ timeout: 10000 });
+
+    // Click on first trace row - the row itself is clickable and opens the side sheet
+    // But we want to navigate to the detail page, so click the "View Full Details" link in the sheet
+    const firstRow = page.locator('tbody tr').first();
+    await firstRow.click();
+    await page.waitForTimeout(500);
+
+    // Click the "View Full Details" button in the side sheet
+    await page.getByRole('link', { name: /view full details/i }).click();
 
     // Wait for navigation to detail page
     await expect(page).toHaveURL(/\/traces\/[a-zA-Z0-9_-]+/, { timeout: 10000 });
@@ -284,20 +311,42 @@ test.describe('Feedback UI Tests', () => {
     await page.getByRole('button', { name: /back/i }).click();
 
     // Should be back on list
-    await expect(page.getByRole('heading', { name: 'Traces' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: /traces explorer/i })).toBeVisible({ timeout: 10000 });
   });
 
-  test('TEST-FBUI09: Should show agent selector on traces list page', async ({ page }) => {
+  test('TEST-FBUI09: Should show feedback status in traces list', async ({ page }) => {
+    test.skip(!traceId || !agentId, 'No test data available');
+
+    // Create feedback via API first
+    const existingTrace = await apiRequest<any>(page, `/api/traces/${traceId}`);
+    if (existingTrace.feedback?.id) {
+      await apiRequest(page, `/api/feedback/${existingTrace.feedback.id}`, { method: 'DELETE' }).catch(() => {});
+    }
+
+    const feedback = await apiRequest<any>(page, '/api/feedback', {
+      method: 'POST',
+      data: {
+        trace_id: traceId,
+        agent_id: agentId,
+        rating: 'positive',
+      },
+    });
+
     // Navigate to traces list
     await page.goto('/traces');
     await page.waitForLoadState('networkidle');
 
-    // Should see the agent selector
-    await expect(page.locator('text=Agent for Feedback')).toBeVisible();
-    await expect(page.locator('button:has-text("Select an agent")')).toBeVisible();
+    // Should see the feedback column header
+    await expect(page.locator('th:has-text("Feedback")')).toBeVisible();
+
+    // Should see feedback rating in the table
+    await expect(page.locator('td').filter({ hasText: /positive/i })).toBeVisible({ timeout: 5000 });
+
+    // Clean up
+    await apiRequest(page, `/api/feedback/${feedback.id}`, { method: 'DELETE' }).catch(() => {});
   });
 
-  test('TEST-FBUI10: Should provide feedback from traces list after selecting agent', async ({ page }) => {
+  test('TEST-FBUI10: Should provide feedback via trace detail from list', async ({ page }) => {
     test.skip(!traceId || !agentId, 'No test data available');
 
     // Clean up existing feedback
@@ -310,13 +359,20 @@ test.describe('Feedback UI Tests', () => {
     await page.goto('/traces');
     await page.waitForLoadState('networkidle');
 
-    // Select agent
-    await page.locator('button:has-text("Select an agent")').first().click();
-    await page.waitForTimeout(500);
-    await page.locator(`[role="option"]`).first().click();
+    // Click on first trace row to open side sheet
+    const firstRow = page.locator('tbody tr').first();
+    await firstRow.click();
     await page.waitForTimeout(500);
 
-    // Now feedback buttons should be visible on trace cards
-    await expect(page.locator('button:has-text("Positive")').first()).toBeVisible({ timeout: 5000 });
+    // Click "View Full Details" to go to detail page
+    await page.getByRole('link', { name: /view full details/i }).click();
+    await page.waitForTimeout(1000);
+
+    // Now on detail page, should be able to provide feedback
+    await expect(page.getByRole('heading', { name: 'Trace Details' })).toBeVisible();
+
+    // Check if feedback buttons are visible (auto-selected agent)
+    const goodButton = page.getByTestId('feedback-positive');
+    await expect(goodButton).toBeVisible({ timeout: 5000 });
   });
 });

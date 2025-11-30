@@ -30,17 +30,26 @@ export interface TestAgentVersion {
  */
 export async function createTestAgent(
   page: Page,
-  options: { name?: string; description?: string } = {}
+  options: { name?: string; description?: string | null; status?: string } = {}
 ): Promise<TestAgent> {
   const name = options.name || uniqueName('Test Agent');
-  const description = options.description || 'Test agent for automated testing';
+  // If description is explicitly null, don't send it. Otherwise use provided or default.
+  const description = options.description === null ? undefined :
+                     (options.description !== undefined ? options.description : 'Test agent for automated testing');
+
+  const data: any = {
+    name,
+    status: options.status,
+  };
+
+  // Only include description if it's not undefined
+  if (description !== undefined) {
+    data.description = description;
+  }
 
   const agent = await apiRequest<TestAgent>(page, '/api/agents', {
     method: 'POST',
-    data: {
-      name,
-      description,
-    },
+    data,
   });
 
   return agent;

@@ -27,7 +27,8 @@ test.describe('Pagination and Filtering', () => {
     integrationId = integration.id;
 
     // Create test traces directly (no Langfuse import needed)
-    for (let i = 0; i < 10; i++) {
+    // Create at least 10 traces to ensure we have enough for pagination testing
+    for (let i = 0; i < 15; i++) {
       const trace = await createTestTrace(page, integrationId, {
         input_preview: `Pagination test input ${i + 1}`,
         output_preview: `Pagination test output ${i + 1}`,
@@ -41,6 +42,9 @@ test.describe('Pagination and Filtering', () => {
         ],
       });
       createdTraceIds.push(trace.id);
+
+      // Small delay to ensure different timestamps for proper cursor pagination
+      await page.waitForTimeout(10);
     }
 
     // Create multiple agents for pagination testing
@@ -92,20 +96,70 @@ test.describe('Pagination and Filtering', () => {
   });
 
   test('TEST-PF02: Should paginate traces using cursor', async ({ page }) => {
-    // Get first page
+    // First, get ALL traces to see what we're working with
+    const allTraces = await apiRequest<any>(page, '/api/traces?limit=200');
+    console.log('ALL TRACES:', {
+      count: allTraces.traces.length,
+      total_count: allTraces.total_count,
+      traces: allTraces.traces.slice(0, 10).map((t: any) => ({
+        id: t.id,
+        imported_at: t.imported_at,
+      })),
+    });
+
+    // Get first page with a small limit to ensure pagination
     const page1 = await apiRequest<any>(page, '/api/traces?limit=3');
 
+    // Verify we got traces on the first page
+    expect(page1.traces.length).toBeGreaterThan(0);
+    expect(page1).toHaveProperty('has_more');
+    expect(page1).toHaveProperty('next_cursor');
+
+    // Debug logging
+    console.log('Page 1 response:', {
+      count: page1.traces.length,
+      total_count: page1.total_count,
+      has_more: page1.has_more,
+      next_cursor: page1.next_cursor,
+      first_trace: page1.traces[0]?.id,
+      last_trace: page1.traces[page1.traces.length - 1]?.id,
+      all_traces: page1.traces.map((t: any) => ({
+        id: t.id,
+        imported_at: t.imported_at,
+      })),
+    });
+
+    // Only test pagination if there's actually a second page
     if (page1.has_more && page1.next_cursor) {
+      // Decode cursor to see what we're filtering by
+      const cursorDecoded = Buffer.from(page1.next_cursor, 'base64').toString('utf-8');
+      console.log('Decoded cursor:', cursorDecoded);
+
       // Get second page
       const page2 = await apiRequest<any>(page, `/api/traces?limit=3&cursor=${page1.next_cursor}`);
 
+      console.log('Page 2 response:', {
+        count: page2.traces.length,
+        total_count: page2.total_count,
+        has_more: page2.has_more,
+        next_cursor: page2.next_cursor,
+        first_trace: page2.traces[0]?.id,
+        last_trace: page2.traces[page2.traces.length - 1]?.id,
+      });
+
+      // Should have traces on second page
       expect(page2.traces.length).toBeGreaterThan(0);
 
-      // Ensure no overlap
+      // Ensure no overlap between pages
       const page1Ids = page1.traces.map((t: any) => t.id);
       const page2Ids = page2.traces.map((t: any) => t.id);
       const overlap = page1Ids.filter((id: string) => page2Ids.includes(id));
       expect(overlap.length).toBe(0);
+    } else {
+      // If there's no second page, we should have all traces on the first page
+      // This is acceptable if total count is <= 3
+      console.log('No second page - total_count:', page1.total_count);
+      expect(page1.total_count).toBeLessThanOrEqual(3);
     }
   });
 

@@ -44,7 +44,8 @@ test.describe('System Health Monitoring', () => {
 
   test('TEST-SYS02: Service status cards display correctly', async ({ page }) => {
     // Verify at least 4 service cards are present (from mockServices)
-    const serviceCards = page.locator('.rounded-lg.border.border-slate-200.bg-white.p-5.shadow-sm')
+    // The actual classes include dark mode variants
+    const serviceCards = page.locator('.rounded-lg.border').filter({ has: page.locator('h3') })
     const cardCount = await serviceCards.count()
     expect(cardCount).toBeGreaterThanOrEqual(4)
 
@@ -59,7 +60,7 @@ test.describe('System Health Monitoring', () => {
     await expect(firstCard.locator('text=Observability Platform')).toBeVisible()
 
     // Verify status bar exists (colored bar at top of card)
-    const statusBar = firstCard.locator('.h-1.w-full.rounded-full')
+    const statusBar = firstCard.locator('.h-1.w-full.rounded-full').first()
     await expect(statusBar).toBeVisible()
 
     // Verify metrics are displayed
@@ -68,13 +69,13 @@ test.describe('System Health Monitoring', () => {
     await expect(firstCard.locator('text=Last Sync')).toBeVisible()
     await expect(firstCard.locator('text=Error Rate')).toBeVisible()
 
-    // Verify version badge is present
-    const versionBadge = firstCard.locator('.rounded-full.bg-slate-100')
+    // Verify version badge is present (should be a span with text content)
+    const versionBadge = firstCard.locator('span.inline-flex.items-center.rounded-full.bg-slate-100')
     await expect(versionBadge).toBeVisible()
   })
 
   test('TEST-SYS03: Health metrics show values', async ({ page }) => {
-    const serviceCards = page.locator('.rounded-lg.border.border-slate-200.bg-white.p-5.shadow-sm')
+    const serviceCards = page.locator('.rounded-lg.border').filter({ has: page.locator('h3') })
     const firstCard = serviceCards.first()
 
     // Verify health percentage is displayed
@@ -155,7 +156,7 @@ test.describe('System Health Monitoring', () => {
 
   test('TEST-SYS06: Error state when service unhealthy', async ({ page }) => {
     // Look for warning/critical status service (Evaluation Engine has warning status)
-    const serviceCards = page.locator('.rounded-lg.border.border-slate-200.bg-white.p-5.shadow-sm')
+    const serviceCards = page.locator('.rounded-lg.border').filter({ has: page.locator('h3') })
 
     // Find card with warning or critical status
     let foundWarningCard = false
@@ -260,18 +261,23 @@ test.describe('System Health Monitoring', () => {
     // Wait for page to fully load and hydrate
     await page.waitForTimeout(1500)
 
-    // Verify API Response Time chart section
-    const apiResponseChart = page.locator('h3:has-text("API Response Time")')
-    await expect(apiResponseChart).toBeVisible()
-
-    // Verify Memory Usage chart section
-    const memoryChart = page.locator('h3:has-text("Memory Usage")')
-    await expect(memoryChart).toBeVisible()
-
-    // Charts should be rendered (check for recharts SVG)
-    // After hydration, the loading placeholder should be replaced
+    // Verify Performance Metrics section exists
     const performanceSection = page.locator('section:has(h2:has-text("Performance Metrics"))')
     await expect(performanceSection).toBeVisible()
+
+    // Verify API Response Time chart section (uses h3 with text-sm class, use exact match)
+    const apiResponseChart = page.locator('h3.text-sm', { hasText: /^API Response Time$/ })
+    await expect(apiResponseChart).toBeVisible()
+
+    // Verify Memory Usage chart section (uses h3 with text-sm class, use exact match)
+    const memoryChart = page.locator('h3.text-sm', { hasText: /^Memory Usage$/ })
+    await expect(memoryChart).toBeVisible()
+
+    // Charts should be rendered (check for recharts containers)
+    // After hydration, the loading placeholder should be replaced with ResponsiveContainer
+    const chartContainers = page.locator('.recharts-responsive-container')
+    const containerCount = await chartContainers.count()
+    expect(containerCount).toBeGreaterThanOrEqual(2)
   })
 
   test('TEST-SYS11: System alerts sidebar', async ({ page }) => {
@@ -279,8 +285,8 @@ test.describe('System Health Monitoring', () => {
     const alertsSection = page.locator('h2:has-text("System Alerts")')
     await expect(alertsSection).toBeVisible()
 
-    // Verify active alerts count badge
-    const activeBadge = page.locator('.inline-flex.items-center.rounded-full.bg-rose-100', { hasText: 'Active' })
+    // Verify active alerts count badge (includes "Active" text)
+    const activeBadge = page.locator('.inline-flex.items-center.rounded-full.bg-rose-100:has-text("Active")')
     await expect(activeBadge).toBeVisible()
 
     // Verify at least one alert is displayed (3 mock alerts)
@@ -292,34 +298,38 @@ test.describe('System Health Monitoring', () => {
     const firstAlert = alertCards.first()
     await expect(firstAlert).toBeVisible()
 
-    // Verify severity badge
-    const severityBadge = firstAlert.locator('.rounded-full.px-2.py-0\\.5.text-xs.font-medium')
+    // Verify severity badge (should contain severity text like CRITICAL, WARNING, INFO)
+    // Use getByText to find the badge by its content
+    const severityBadge = firstAlert.getByText(/^(CRITICAL|WARNING|INFO)$/)
     await expect(severityBadge).toBeVisible()
     const severityText = await severityBadge.textContent()
     expect(['CRITICAL', 'WARNING', 'INFO']).toContain(severityText)
 
-    // Verify alert has title and message
-    const alertTitle = firstAlert.locator('.text-sm.font-semibold')
+    // Verify alert has title (should be an h3 element)
+    const alertTitle = firstAlert.locator('h3')
     await expect(alertTitle).toBeVisible()
 
-    const alertMessage = firstAlert.locator('.mt-1.text-sm.text-slate-600')
+    // Verify alert message (should be a p tag)
+    const alertMessage = firstAlert.locator('p').nth(0)
     await expect(alertMessage).toBeVisible()
 
-    // Verify timestamp
-    const timestamp = firstAlert.locator('.text-xs.text-slate-500')
+    // Verify timestamp (should be the last p tag with time-related text)
+    const timestamp = firstAlert.locator('p').last()
     await expect(timestamp).toBeVisible()
   })
 
   test('TEST-SYS12: Alert banner dismissal', async ({ page }) => {
-    // Verify alert banner is visible
-    const alertBanner = page.locator('.border-l-4.border-l-amber-500.bg-amber-50')
+    // Verify alert banner is visible - find it by the specific heading text to distinguish from alert cards
+    const alertBanner = page.locator('div.rounded-lg.border-l-4.border-l-amber-500', {
+      has: page.locator('h3:has-text("High Memory Usage Detected")')
+    })
     await expect(alertBanner).toBeVisible()
 
-    // Verify banner content
-    await expect(alertBanner.locator('h3:has-text("High Memory Usage Detected")')).toBeVisible()
+    // Verify banner content (h3 with font-semibold class)
+    await expect(alertBanner.locator('h3.font-semibold:has-text("High Memory Usage Detected")')).toBeVisible()
 
-    // Find and click dismiss button
-    const dismissButton = alertBanner.locator('button:has(svg)')
+    // Find and click dismiss button (the X button) - it's the last button in the banner
+    const dismissButton = alertBanner.locator('button').last()
     await expect(dismissButton).toBeVisible()
     await dismissButton.click()
 

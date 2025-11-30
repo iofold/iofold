@@ -79,7 +79,7 @@ test.describe('SSE Real-time Updates (TEST-J02)', () => {
     await page.waitForLoadState('networkidle');
 
     // Open import modal
-    const importButton = page.getByTestId('import-traces-button');
+    const importButton = page.getByRole('button', { name: /import traces/i }).first();
     await importButton.click();
 
     const dialog = page.getByRole('dialog');
@@ -123,7 +123,7 @@ test.describe('SSE Real-time Updates (TEST-J02)', () => {
     await page.waitForLoadState('networkidle');
 
     // Open import modal
-    const importButton = page.getByTestId('import-traces-button');
+    const importButton = page.getByRole('button', { name: /import traces/i }).first();
     await importButton.click();
 
     const dialog = page.getByRole('dialog');

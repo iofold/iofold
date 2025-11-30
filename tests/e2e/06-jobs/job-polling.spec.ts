@@ -41,7 +41,7 @@ test.describe('Job Status Polling (TEST-J01)', () => {
     await page.waitForLoadState('networkidle');
 
     // Open import modal
-    const importButton = page.getByTestId('import-traces-button');
+    const importButton = page.getByRole('button', { name: /import traces/i }).first();
     await expect(importButton).toBeVisible({ timeout: 10000 });
     await importButton.click();
 
@@ -83,7 +83,7 @@ test.describe('Job Status Polling (TEST-J01)', () => {
     await page.waitForLoadState('networkidle');
 
     // Open import modal
-    const importButton = page.getByTestId('import-traces-button');
+    const importButton = page.getByRole('button', { name: /import traces/i }).first();
     await importButton.click();
 
     const dialog = page.getByRole('dialog');
@@ -130,7 +130,7 @@ test.describe('Job Status Polling (TEST-J01)', () => {
     await page.waitForLoadState('networkidle');
 
     // Open import modal and start job
-    const importButton = page.getByTestId('import-traces-button');
+    const importButton = page.getByRole('button', { name: /import traces/i }).first();
     await importButton.click();
 
     const dialog = page.getByRole('dialog');

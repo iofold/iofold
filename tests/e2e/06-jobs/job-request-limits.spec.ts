@@ -57,7 +57,7 @@ test.describe('Job Request Limits (TEST-J03)', () => {
     await page.waitForLoadState('networkidle');
 
     // Open import modal
-    const importButton = page.getByTestId('import-traces-button');
+    const importButton = page.getByRole('button', { name: /import traces/i }).first();
     await expect(importButton).toBeVisible({ timeout: 10000 });
     await importButton.click();
 
@@ -138,7 +138,7 @@ test.describe('Job Request Limits (TEST-J03)', () => {
     await page.waitForLoadState('networkidle');
 
     // Open import modal and submit
-    await page.getByTestId('import-traces-button').click();
+    await page.getByRole('button', { name: /import traces/i }).first().click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 5000 });
 
@@ -204,7 +204,7 @@ test.describe('Job Request Limits (TEST-J03)', () => {
     // Navigate and open import modal
     await page.goto('/traces');
     await page.waitForLoadState('networkidle');
-    await page.getByTestId('import-traces-button').click();
+    await page.getByRole('button', { name: /import traces/i }).first().click();
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 5000 });

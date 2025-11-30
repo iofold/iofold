@@ -14,8 +14,8 @@ test.describe('Job Failure Handling (TEST-J04)', () => {
     await page.goto('/traces');
     await page.waitForLoadState('networkidle');
 
-    // Try to click Import Traces button
-    const importButton = page.getByTestId('import-traces-button');
+    // Try to click Import Traces button (by text since no testid)
+    const importButton = page.getByRole('button', { name: /import traces/i }).first();
     await expect(importButton).toBeVisible({ timeout: 10000 });
     await importButton.click();
 
@@ -61,7 +61,7 @@ test.describe('Job Failure Handling (TEST-J04)', () => {
       await page.waitForLoadState('networkidle');
 
       // Open import modal
-      const importButton = page.getByTestId('import-traces-button');
+      const importButton = page.getByRole('button', { name: /import traces/i }).first();
       await expect(importButton).toBeVisible({ timeout: 10000 });
       await importButton.click();
 
@@ -152,7 +152,7 @@ test.describe('Job Failure Handling (TEST-J04)', () => {
       await page.waitForLoadState('networkidle');
 
       // Open import modal
-      const importButton = page.getByTestId('import-traces-button');
+      const importButton = page.getByRole('button', { name: /import traces/i });
       await importButton.click();
 
       const dialog = page.getByRole('dialog');
@@ -198,7 +198,7 @@ test.describe('Job Failure Handling (TEST-J04)', () => {
       await page.waitForLoadState('networkidle');
 
       // Open import modal
-      const importButton = page.getByTestId('import-traces-button');
+      const importButton = page.getByRole('button', { name: /import traces/i }).first();
       await importButton.click();
 
       const dialog = page.getByRole('dialog');
@@ -243,7 +243,7 @@ test.describe('Job Failure Handling (TEST-J04)', () => {
       await page.waitForLoadState('networkidle');
 
       // Open import modal
-      const importButton = page.getByTestId('import-traces-button');
+      const importButton = page.getByRole('button', { name: /import traces/i }).first();
       await importButton.click();
 
       const dialog = page.getByRole('dialog');
