@@ -4,6 +4,39 @@ This file tracks all development progress made by coding agents (Claude, etc.) w
 
 ---
 
+## 2025-12-01
+
+### Job Queue Dashboard Bug Fixes
+
+**Time:** 05:26 UTC
+
+**Task:** Fixed critical bugs in Job Queue Dashboard components discovered during manual testing.
+
+**Issues Found & Fixed:**
+
+1. **API URL Configuration (job-queue-dashboard.tsx):**
+   - **Issue:** Dashboard was calling `/api/jobs?limit=20` which resolved to the Next.js frontend server (localhost:3000) instead of the backend API (localhost:8787)
+   - **Fix:** Added `API_BASE_URL` constant using `process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787'`
+   - Updated both `fetchJobs()` and `handleRetry()` to use the correct API base URL
+
+2. **TooltipProvider Missing (job-retry-badge.tsx):**
+   - **Issue:** "Tooltip must be used within TooltipProvider" error caused page crash
+   - **Fix:** Imported `TooltipProvider` from `@/components/ui/tooltip` and wrapped `Tooltip` component
+
+**Files Changed:**
+- `frontend/components/jobs/job-queue-dashboard.tsx`
+- `frontend/components/jobs/job-retry-badge.tsx`
+
+**Testing:**
+- Manual testing confirmed dashboard now fetches and displays jobs correctly
+- Stats show: 0 Queued, 0 Running, 2 Completed, 18 Failed
+- Job list displays with proper status badges, timestamps, and error messages
+- Retry buttons functional for failed jobs
+
+**Commit:** 8cbb385
+
+---
+
 ## 2025-11-30
 
 ### Frontend Job Queue Dashboard Component
