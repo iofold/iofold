@@ -8,8 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "pages:build": "npx @cloudflare/next-on-pages",
-    "pages:deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "deploy:staging": "NEXT_PUBLIC_API_URL=https://api.staging.iofold.com opennextjs-cloudflare build && opennextjs-cloudflare deploy --env staging",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:accessibility": "playwright test e2e/04-accessibility",
@@ -18,8 +19,10 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
+    "@ai-sdk/react": "^2.0.104",
     "@clerk/nextjs": "^6.35.5",
     "@monaco-editor/react": "^4.6.0",
+    "@opennextjs/cloudflare": "^1.14.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-tooltip": "^1.2.8",
@@ -27,12 +30,13 @@
     "@tanstack/react-query": "^5.59.0",
     "@types/nprogress": "^0.2.3",
     "@types/react-window": "^1.8.8",
+    "ai": "^5.0.104",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.23.24",
     "lucide-react": "^0.555.0",
-    "next": "^15.5.2",
+    "next": "^15.1.0",
     "next-themes": "^0.4.6",
     "nprogress": "^0.2.0",
     "react": "^18.3.1",
@@ -42,6 +46,11 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
     "zod": "^4.1.12"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": "^0.24.0"
+    }
   },
   "devDependencies": {
     "@cloudflare/next-on-pages": "^1.13.5",
@@ -55,6 +64,6 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.6.3",
-    "wrangler": "^3.84.1"
+    "wrangler": "^4.51.0"
   }
 }

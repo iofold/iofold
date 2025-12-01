@@ -3,40 +3,71 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter, useParams } from 'next/navigation'
+// Note: useChat will be fully integrated once the backend API is implemented
+// import { useChat } from '@ai-sdk/react'
 import { apiClient } from '@/lib/api-client'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ErrorState } from '@/components/ui/error-state'
-import { ArrowLeft, Send, RefreshCw, Copy, Check, Settings2, MessageSquare, Bot, User } from 'lucide-react'
+import { ArrowLeft, Send, RefreshCw, Copy, Check, Settings2, MessageSquare, Bot, User, Loader2, Wrench } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface Message {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
   timestamp: Date
+  toolCalls?: Array<{
+    id: string
+    name: string
+    args: Record<string, any>
+    result?: any
+    state?: 'call' | 'result'
+  }>
 }
+
+// Model configuration matching design doc
+const MODEL_OPTIONS = [
+  { provider: 'anthropic', modelId: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
+  { provider: 'openai', modelId: 'gpt-4o', label: 'GPT-4o' },
+  { provider: 'google', modelId: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+] as const
+
+type ModelProvider = 'anthropic' | 'openai' | 'google'
 
 export default function AgentPlaygroundPage() {
   const params = useParams()
   const agentId = params.id as string
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
   const [showSystemPrompt, setShowSystemPrompt] = useState(true)
   const [variableValues, setVariableValues] = useState<Record<string, string>>({})
   const [copied, setCopied] = useState(false)
+  const [sessionId, setSessionId] = useState<string | undefined>()
+  const [modelProvider, setModelProvider] = useState<ModelProvider>('anthropic')
+  const [modelId, setModelId] = useState('claude-sonnet-4-5-20250929')
+  const [messages, setMessages] = useState<Message[]>([])
+  const [input, setInput] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+
+  // Note: Once the backend API endpoint is implemented, we'll integrate useChat from @ai-sdk/react
+  // For now, we're using a basic fetch implementation with the correct API structure
 
   const { data: agent, isLoading: agentLoading, error, refetch } = useQuery({
     queryKey: ['agent', agentId],
     queryFn: () => apiClient.getAgent(agentId),
   })
 
-  // Set default version and variables when agent loads
+  // Set default version, variables, and model when agent loads
   useEffect(() => {
     if (agent && !selectedVersionId) {
       const activeVersion = agent.versions.find(v => v.id === agent.active_version_id)
@@ -51,6 +82,15 @@ export default function AgentPlaygroundPage() {
       }
     }
   }, [agent, selectedVersionId])
+
+  // Handle model selection change
+  const handleModelChange = (value: string) => {
+    const selectedModel = MODEL_OPTIONS.find(m => `${m.provider}-${m.modelId}` === value)
+    if (selectedModel) {
+      setModelProvider(selectedModel.provider)
+      setModelId(selectedModel.modelId)
+    }
+  }
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -67,45 +107,16 @@ export default function AgentPlaygroundPage() {
     )
   }
 
-  const handleSendMessage = async () => {
-    if (!input.trim() || !selectedVersion) return
-
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: input.trim(),
-      timestamp: new Date()
-    }
-
-    setMessages(prev => [...prev, userMessage])
-    setInput('')
-    setIsLoading(true)
-
-    try {
-      // Simulate AI response (in production, this would call an actual LLM)
-      // For now, we generate a mock response based on the context
-      await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000))
-
-      const systemPrompt = getFilledPrompt()
-      const mockResponse = generateMockResponse(systemPrompt, input.trim(), agent?.name || 'Agent')
-
-      const assistantMessage: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: mockResponse,
-        timestamp: new Date()
-      }
-
-      setMessages(prev => [...prev, assistantMessage])
-    } catch (error) {
-      toast.error('Failed to generate response')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   const handleClearChat = () => {
     setMessages([])
+    setSessionId(undefined)
+    toast.success('Chat cleared')
+  }
+
+  const handleNewSession = () => {
+    setMessages([])
+    setSessionId(undefined)
+    toast.success('New session started')
   }
 
   const handleCopyConversation = async () => {
@@ -116,10 +127,56 @@ export default function AgentPlaygroundPage() {
     toast.success('Conversation copied to clipboard')
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSendMessage()
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (!input.trim() || !selectedVersionId) return
+
+    // Add user message to state
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: input.trim(),
+      timestamp: new Date(),
+    }
+
+    setMessages(prev => [...prev, userMessage])
+    setInput('')
+    setIsLoading(true)
+
+    try {
+      // Call the API endpoint (will be implemented in backend)
+      const response = await fetch(`/api/agents/${agentId}/playground/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [...messages, userMessage],
+          sessionId,
+          variables: variableValues,
+          modelProvider,
+          modelId,
+          agentVersionId: selectedVersionId,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.statusText}`)
+      }
+
+      // For now, show a message that backend is not implemented
+      // When backend is ready, this will handle streaming responses
+      toast.info('Backend API endpoint not yet implemented. Message sent to mock endpoint.')
+
+      // TODO: When backend is ready, implement streaming response handling here
+      // const reader = response.body?.getReader()
+      // Handle streaming chunks and update messages
+
+    } catch (error) {
+      console.error('Failed to send message:', error)
+      toast.error('Failed to send message. The backend API endpoint is not yet implemented.')
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -169,6 +226,20 @@ export default function AgentPlaygroundPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Model selector */}
+          <Select value={`${modelProvider}-${modelId}`} onValueChange={handleModelChange}>
+            <SelectTrigger className="w-[180px] h-9">
+              <SelectValue placeholder="Select model" />
+            </SelectTrigger>
+            <SelectContent>
+              {MODEL_OPTIONS.map((option) => (
+                <SelectItem key={`${option.provider}-${option.modelId}`} value={`${option.provider}-${option.modelId}`}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           {/* Version selector */}
           <select
             value={selectedVersionId || ''}
@@ -183,7 +254,7 @@ export default function AgentPlaygroundPage() {
                 setVariableValues(defaults)
               }
             }}
-            className="border rounded px-2 py-1 text-sm"
+            className="border rounded px-2 py-1 text-sm h-9"
           >
             {agent.versions.map(v => (
               <option key={v.id} value={v.id}>
@@ -213,10 +284,22 @@ export default function AgentPlaygroundPage() {
           <Button
             variant="outline"
             size="sm"
+            onClick={handleNewSession}
+            disabled={isLoading}
+            title="New Session"
+          >
+            <RefreshCw className="w-4 h-4 mr-1" />
+            New
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleClearChat}
             disabled={messages.length === 0}
+            title="Clear Chat"
           >
-            <RefreshCw className="w-4 h-4" />
+            Clear
           </Button>
         </div>
       </div>
@@ -227,11 +310,28 @@ export default function AgentPlaygroundPage() {
           <div className="w-96 border-r overflow-y-auto bg-muted/30">
             <div className="p-4 space-y-4">
               <div>
+                <h3 className="font-medium mb-2">Model</h3>
+                <div className="bg-background border rounded p-2 text-sm">
+                  <p className="font-medium">{MODEL_OPTIONS.find(m => m.provider === modelProvider && m.modelId === modelId)?.label}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{modelProvider} / {modelId}</p>
+                </div>
+              </div>
+
+              <div>
                 <h3 className="font-medium mb-2">System Prompt</h3>
                 <div className="bg-background border rounded p-3 text-sm font-mono whitespace-pre-wrap max-h-64 overflow-y-auto">
                   {getFilledPrompt()}
                 </div>
               </div>
+
+              {sessionId && (
+                <div>
+                  <h3 className="font-medium mb-2">Session</h3>
+                  <div className="bg-background border rounded p-2 text-xs font-mono break-all">
+                    {sessionId}
+                  </div>
+                </div>
+              )}
 
               {selectedVersion && selectedVersion.variables.length > 0 && (
                 <div>
@@ -309,35 +409,68 @@ export default function AgentPlaygroundPage() {
                 </div>
               </div>
             ) : (
-              messages.map(message => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
+              messages.map((message, index) => {
+                const hasToolCalls = message.toolCalls && message.toolCalls.length > 0
+
+                return (
                   <div
-                    className={`max-w-[80%] rounded-lg p-3 ${
-                      message.role === 'user'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted'
-                    }`}
+                    key={message.id || index}
+                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className="flex items-center gap-2 mb-1">
-                      {message.role === 'user' ? (
-                        <User className="w-4 h-4" />
-                      ) : (
-                        <Bot className="w-4 h-4" />
+                    <div
+                      className={`max-w-[80%] rounded-lg p-3 ${
+                        message.role === 'user'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        {message.role === 'user' ? (
+                          <User className="w-4 h-4" />
+                        ) : (
+                          <Bot className="w-4 h-4" />
+                        )}
+                        <span className="text-xs font-medium">
+                          {message.role === 'user' ? 'You' : agent.name}
+                        </span>
+                      </div>
+
+                      {message.content && (
+                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                       )}
-                      <span className="text-xs font-medium">
-                        {message.role === 'user' ? 'You' : agent.name}
-                      </span>
+
+                      {/* Tool invocations */}
+                      {hasToolCalls && (
+                        <div className="mt-2 space-y-2">
+                          {message.toolCalls?.map((tool, toolIndex) => (
+                            <div key={tool.id || toolIndex} className="bg-background/50 border rounded p-2 text-xs">
+                              <div className="flex items-center gap-1 font-medium mb-1">
+                                <Wrench className="w-3 h-3" />
+                                <span>{tool.name}</span>
+                                {tool.state === 'call' && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+                              </div>
+                              {tool.args && (
+                                <div className="mt-1 font-mono text-muted-foreground">
+                                  Args: {JSON.stringify(tool.args)}
+                                </div>
+                              )}
+                              {tool.result && (
+                                <div className="mt-1 font-mono">
+                                  Result: {typeof tool.result === 'string' ? tool.result : JSON.stringify(tool.result)}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <p className="text-xs opacity-60 mt-1">
+                        {new Date(message.timestamp).toLocaleTimeString()}
+                      </p>
                     </div>
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    <p className="text-xs opacity-60 mt-1">
-                      {message.timestamp.toLocaleTimeString()}
-                    </p>
                   </div>
-                </div>
-              ))
+                )
+              })
             )}
 
             {isLoading && (
@@ -348,40 +481,47 @@ export default function AgentPlaygroundPage() {
                     <span className="text-xs font-medium">{agent.name}</span>
                   </div>
                   <div className="flex items-center gap-1 mt-2">
-                    <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-xs text-muted-foreground">Thinking...</span>
                   </div>
                 </div>
               </div>
             )}
+
 
             <div ref={messagesEndRef} />
           </div>
 
           {/* Input Area */}
           <div className="border-t p-4">
-            <div className="flex gap-2">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Type your message..."
-                className="flex-1 border rounded-lg px-3 py-2 resize-none"
-                rows={2}
-                disabled={isLoading}
-              />
-              <Button
-                onClick={handleSendMessage}
-                disabled={!input.trim() || isLoading}
-                className="self-end"
-              >
-                <Send className="w-4 h-4" />
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Press Enter to send, Shift+Enter for new line
-            </p>
+            <form onSubmit={handleSendMessage} className="space-y-2">
+              <div className="flex gap-2">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Type your message..."
+                  className="flex-1 border rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                  rows={2}
+                  disabled={isLoading || !selectedVersionId}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      handleSendMessage()
+                    }
+                  }}
+                />
+                <Button
+                  type="submit"
+                  disabled={!input.trim() || isLoading || !selectedVersionId}
+                  className="self-end"
+                >
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Press Enter to send, Shift+Enter for new line
+              </p>
+            </form>
           </div>
         </div>
       </div>
@@ -389,41 +529,3 @@ export default function AgentPlaygroundPage() {
   )
 }
 
-// Mock response generator for testing (in production, this would be an actual LLM call)
-function generateMockResponse(systemPrompt: string, userMessage: string, agentName: string): string {
-  const responses: Record<string, string[]> = {
-    greeting: [
-      `Hello! I'm ${agentName}, and I'm here to help you. What can I assist you with today?`,
-      `Hi there! Welcome. I'm ready to help you with any questions or tasks you have.`,
-      `Greetings! I'm your ${agentName}. How may I be of service?`
-    ],
-    capabilities: [
-      `I have several capabilities based on my training:\n\n1. I can answer questions about my domain\n2. I can help solve problems\n3. I can provide recommendations\n4. I can explain complex concepts\n\nWhat would you like to explore?`,
-      `Great question! My main capabilities include:\n- Answering domain-specific questions\n- Helping with task completion\n- Providing detailed explanations\n- Offering recommendations\n\nHow can I help you today?`
-    ],
-    complex: [
-      `Absolutely! I'd be happy to help with complex tasks. Could you provide more details about what you're trying to accomplish? The more context you give me, the better I can assist you.`,
-      `Of course! I'm designed to handle complex tasks. Please describe what you need help with, and I'll do my best to guide you through it step by step.`
-    ],
-    default: [
-      `Thank you for your message. Based on your input, I understand you're asking about "${userMessage.slice(0, 50)}..."\n\nLet me help you with that. Here's what I can tell you:\n\n1. First, consider the main aspects of your question\n2. Next, let's break it down into manageable parts\n3. Finally, I'll provide a comprehensive answer\n\nIs there anything specific you'd like me to elaborate on?`,
-      `I appreciate you reaching out! Regarding "${userMessage.slice(0, 30)}...":\n\nBased on my understanding and the context you've provided, here are my thoughts:\n\n- This appears to be a question about [topic]\n- The key considerations are [aspects]\n- My recommendation would be [suggestion]\n\nWould you like me to go into more detail about any of these points?`
-    ]
-  }
-
-  const lowerMessage = userMessage.toLowerCase()
-
-  if (lowerMessage.includes('hello') || lowerMessage.includes('hi') || lowerMessage.includes('hey')) {
-    return responses.greeting[Math.floor(Math.random() * responses.greeting.length)]
-  }
-
-  if (lowerMessage.includes('capabilities') || lowerMessage.includes('can you do') || lowerMessage.includes('what can')) {
-    return responses.capabilities[Math.floor(Math.random() * responses.capabilities.length)]
-  }
-
-  if (lowerMessage.includes('complex') || lowerMessage.includes('difficult') || lowerMessage.includes('challenging')) {
-    return responses.complex[Math.floor(Math.random() * responses.complex.length)]
-  }
-
-  return responses.default[Math.floor(Math.random() * responses.default.length)]
-}
