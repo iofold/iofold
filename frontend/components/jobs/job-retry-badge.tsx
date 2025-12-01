@@ -1,7 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertTriangle, CheckCircle, Clock, RefreshCw, XCircle } from 'lucide-react';
 
 interface JobRetryBadgeProps {
@@ -48,20 +48,22 @@ export function JobRetryBadge({ status, retryCount = 0, maxRetries = 5, errorCat
   };
 
   return (
-    <Tooltip>
-      <TooltipTrigger>
-        <Badge variant="outline" className={`${config.color} gap-1`}>
-          <Icon className="h-3 w-3" />
-          {config.label}
-        </Badge>
-      </TooltipTrigger>
-      <TooltipContent>
-        <div className="text-sm">
-          <p><strong>Status:</strong> {status}</p>
-          {retryCount > 0 && <p><strong>Retries:</strong> {retryCount}/{maxRetries}</p>}
-          {errorCategory && <p><strong>Error:</strong> {getErrorCategoryLabel(errorCategory)}</p>}
-        </div>
-      </TooltipContent>
-    </Tooltip>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger>
+          <Badge variant="outline" className={`${config.color} gap-1`}>
+            <Icon className="h-3 w-3" />
+            {config.label}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent>
+          <div className="text-sm">
+            <p><strong>Status:</strong> {status}</p>
+            {retryCount > 0 && <p><strong>Retries:</strong> {retryCount}/{maxRetries}</p>}
+            {errorCategory && <p><strong>Error:</strong> {getErrorCategoryLabel(errorCategory)}</p>}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

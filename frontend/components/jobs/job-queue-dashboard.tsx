@@ -27,6 +27,9 @@ interface JobQueueDashboardProps {
   refreshInterval?: number;
 }
 
+// API base URL from environment or default to localhost
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787';
+
 export function JobQueueDashboard({ workspaceId, refreshInterval = 5000 }: JobQueueDashboardProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,7 +42,7 @@ export function JobQueueDashboard({ workspaceId, refreshInterval = 5000 }: JobQu
 
   const fetchJobs = async () => {
     try {
-      const response = await fetch(`/api/jobs?limit=20`);
+      const response = await fetch(`${API_BASE_URL}/api/jobs?limit=20`);
       if (response.ok) {
         const data = await response.json();
         setJobs(data.jobs || []);
@@ -68,7 +71,7 @@ export function JobQueueDashboard({ workspaceId, refreshInterval = 5000 }: JobQu
 
   const handleRetry = async (jobId: string) => {
     try {
-      const response = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' });
+      const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/retry`, { method: 'POST' });
       if (response.ok) {
         fetchJobs(); // Refresh list
       }
