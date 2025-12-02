@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,7 +20,7 @@ import { RefreshCw, Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Eval } from '@/types/api'
 
-export default function EvalsPage() {
+function EvalsPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
@@ -46,6 +46,18 @@ export default function EvalsPage() {
     queryKey: ['agents'],
     queryFn: () => apiClient.listAgents(),
   })
+
+  // Handle URL param for selected eval (e.g., from redirect)
+  const selectedIdFromUrl = searchParams.get('selected')
+  useEffect(() => {
+    if (selectedIdFromUrl && data?.evals) {
+      const evalFromUrl = data.evals.find((e) => e.id === selectedIdFromUrl)
+      if (evalFromUrl && !selectedEval) {
+        setSelectedEval(evalFromUrl)
+        setSheetOpen(true)
+      }
+    }
+  }, [selectedIdFromUrl, data?.evals, selectedEval])
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -80,6 +92,7 @@ export default function EvalsPage() {
   const handleSheetClose = (open: boolean) => {
     setSheetOpen(open)
     if (!open) {
+      setSelectedEval(null)
       router.replace('/evals', { scroll: false })
     }
   }
@@ -149,5 +162,27 @@ export default function EvalsPage() {
         onDelete={(id) => deleteMutation.mutate(id)}
       />
     </div>
+  )
+}
+
+export default function EvalsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto px-4 py-8">
+          <div className="animate-pulse space-y-4">
+            <div className="h-10 bg-muted rounded w-48" />
+            <div className="h-14 bg-muted rounded" />
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="h-14 bg-muted rounded" />
+              ))}
+            </div>
+          </div>
+        </div>
+      }
+    >
+      <EvalsPageContent />
+    </Suspense>
   )
 }

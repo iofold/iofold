@@ -22,6 +22,8 @@ import {
   ChevronDown,
   ChevronUp,
   Bot,
+  Gamepad2,
+  TrendingUp,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -43,11 +45,11 @@ const navSections: NavSection[] = [
     defaultExpanded: true,
     items: [
       { href: '/', label: 'Overview', icon: LayoutDashboard },
+      { href: '/playground', label: 'Playground', icon: Gamepad2 },
       { href: '/agents', label: 'Agents', icon: Bot },
       { href: '/traces', label: 'Traces', icon: Search },
       { href: '/evals', label: 'Evals', icon: BarChart3 },
-      { href: '/system', label: 'System', icon: Activity },
-      { href: '/resources', label: 'Resources', icon: DollarSign },
+      { href: '/analytics', label: 'Analytics', icon: TrendingUp },
     ],
   },
   {
@@ -58,6 +60,14 @@ const navSections: NavSection[] = [
       { href: '/review', label: 'Quick Review', icon: Zap },
       { href: '/matrix', label: 'Matrix Analysis', icon: Grid3X3 },
       { href: '/integrations', label: 'IOFold Integration', icon: Plug },
+    ],
+  },
+  {
+    title: 'SYSTEM',
+    defaultExpanded: true,
+    items: [
+      { href: '/system', label: 'Monitoring', icon: Activity },
+      { href: '/resources', label: 'Resources', icon: DollarSign },
     ],
   },
 ]
