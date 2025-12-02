@@ -48,7 +48,7 @@ echo ""
 # Start backend
 echo -e "${GREEN}🔧 Starting backend (Wrangler) on port $BACKEND_PORT...${NC}"
 cd "$(dirname "$0")"
-npm run dev > /tmp/iofold-backend.log 2>&1 &
+pnpm run dev > /tmp/iofold-backend.log 2>&1 &
 BACKEND_PID=$!
 echo "   Backend PID: $BACKEND_PID"
 echo "   Logs: tail -f /tmp/iofold-backend.log"
@@ -60,7 +60,7 @@ sleep 3
 echo ""
 echo -e "${GREEN}🎨 Starting frontend (Next.js) on port $FRONTEND_PORT...${NC}"
 cd frontend
-npm run dev > /tmp/iofold-frontend.log 2>&1 &
+pnpm run dev > /tmp/iofold-frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo "   Frontend PID: $FRONTEND_PID"
 echo "   Logs: tail -f /tmp/iofold-frontend.log"

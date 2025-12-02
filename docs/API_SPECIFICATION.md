@@ -2,6 +2,8 @@
 
 Complete REST API documentation for the iofold automated eval generation platform.
 
+**Last Updated**: 2025-12-01
+
 ## Base Configuration
 
 **Base URL:** `http://localhost:8787/v1` (development) or your deployed Cloudflare Worker URL
@@ -15,9 +17,8 @@ X-Workspace-Id: {workspace_id}
 **Headers (Optional):**
 ```
 Authorization: Bearer {token}
+If-None-Match: {etag}  # For conditional requests (agent prompt endpoint)
 ```
-
-**Note:** For MVP, authentication is optional. Use workspace ID `test-workspace-1` for development.
 
 ---
 
@@ -30,25 +31,29 @@ All error responses follow this schema:
   "error": {
     "code": string,           // ERROR_CODE (e.g., "VALIDATION_ERROR", "NOT_FOUND")
     "message": string,        // Human-readable error message
-    "details": any,          // Optional additional error details
-    "request_id": string     // Unique request identifier for debugging
+    "details": any,           // Optional additional error details
+    "request_id": string      // Unique request identifier for debugging
   }
 }
 ```
 
-**Common HTTP Status Codes:**
-- `200 OK` - Success
-- `201 Created` - Resource created successfully
-- `204 No Content` - Success with no response body
-- `400 Bad Request` - Invalid request data
-- `404 Not Found` - Resource not found
-- `500 Internal Server Error` - Server error
+**Error Codes:**
+| Code | Status | Description |
+|------|--------|-------------|
+| `VALIDATION_ERROR` | 400 | Invalid input, JSON parse errors |
+| `MISSING_REQUIRED_FIELD` | 400 | Required field missing |
+| `NOT_FOUND` | 404 | Resource not found |
+| `ALREADY_EXISTS` | 409 | Duplicate resource (name conflict) |
+| `INSUFFICIENT_EXAMPLES` | 422 | Not enough feedback for eval generation |
+| `INTERNAL_ERROR` | 500 | Generic server error |
+| `DATABASE_ERROR` | 500 | D1 database errors |
+| `EXTERNAL_API_ERROR` | 503 | Claude API, platform API failures |
 
 ---
 
 ## 1. Integrations API
 
-Connect to external observability platforms (Langfuse, Langsmith, OpenAI).
+Connect to external observability platforms (Langfuse).
 
 ### Create Integration
 
@@ -58,9 +63,9 @@ Connect to external observability platforms (Langfuse, Langsmith, OpenAI).
 ```typescript
 {
   "platform": "langfuse" | "langsmith" | "openai",
-  "api_key": string,
-  "base_url": string,      // Optional: Custom base URL
-  "name": string           // Optional: Display name
+  "api_key": string,         // Format: "publicKey:secretKey" for Langfuse
+  "base_url": string,        // Optional: Custom base URL
+  "name": string             // Optional: Display name
 }
 ```
 
@@ -72,8 +77,8 @@ Connect to external observability platforms (Langfuse, Langsmith, OpenAI).
   "name": string,
   "status": "active" | "error",
   "error_message": string | null,
-  "last_synced_at": string | null,  // ISO 8601 timestamp
-  "created_at": string               // ISO 8601 timestamp
+  "last_synced_at": string | null,
+  "created_at": string
 }
 ```
 
@@ -84,17 +89,25 @@ Connect to external observability platforms (Langfuse, Langsmith, OpenAI).
 **Response:** `200 OK`
 ```typescript
 {
-  "integrations": [
-    {
-      "id": string,
-      "platform": "langfuse" | "langsmith" | "openai",
-      "name": string,
-      "status": "active" | "error",
-      "error_message": string | null,
-      "last_synced_at": string | null,
-      "created_at": string
-    }
-  ]
+  "integrations": Integration[]
+}
+```
+
+### Get Integration
+
+**Endpoint:** `GET /api/integrations/{id}`
+
+**Response:** `200 OK` - Single integration object
+
+### Update Integration
+
+**Endpoint:** `PATCH /api/integrations/{id}`
+
+**Request Body:**
+```typescript
+{
+  "name": string,      // Optional
+  "base_url": string   // Optional
 }
 ```
 
@@ -132,38 +145,34 @@ Manage execution traces from external platforms.
   "integration_id": string,
   "filters": {
     "date_from": string,      // Optional: ISO 8601 timestamp
-    "date_to": string,         // Optional: ISO 8601 timestamp
-    "tags": string[],          // Optional: Filter by tags
-    "user_ids": string[],      // Optional: Filter by user IDs
-    "limit": number            // Optional: Max traces to import
+    "date_to": string,        // Optional: ISO 8601 timestamp
+    "tags": string[],         // Optional: Filter by tags
+    "user_ids": string[],     // Optional: Filter by user IDs
+    "limit": number           // Optional: Max traces to import (default: 100)
   }
 }
 ```
 
-**Response:** `200 OK`
+**Response:** `202 Accepted`
 ```typescript
 {
   "job_id": string,
-  "status": "queued" | "running",
-  "estimated_count": number  // Optional: Estimated number of traces
+  "status": "queued" | "running"
 }
 ```
-
-**Note:** This is an asynchronous operation. Use the Jobs API to poll status or stream progress.
 
 ### List Traces
 
 **Endpoint:** `GET /api/traces`
 
 **Query Parameters:**
-- `eval_set_id` (string, optional) - Filter by eval set
-- `source` (string, optional) - Filter by source platform
-- `rating` (string, optional) - Filter by feedback rating (positive/negative/neutral)
-- `has_feedback` (boolean, optional) - Filter traces with/without feedback
-- `date_from` (string, optional) - ISO 8601 timestamp
-- `date_to` (string, optional) - ISO 8601 timestamp
-- `cursor` (string, optional) - Pagination cursor
-- `limit` (number, optional) - Results per page (default: 50, max: 100)
+- `source` (string) - Filter by source platform
+- `rating` (string) - Filter by feedback rating
+- `has_feedback` (boolean) - Filter traces with/without feedback
+- `agent_id` (string) - Filter by agent
+- `date_from` / `date_to` (string) - ISO 8601 timestamps
+- `cursor` (string) - Pagination cursor
+- `limit` (number) - Results per page (default: 50, max: 200)
 
 **Response:** `200 OK`
 ```typescript
@@ -173,14 +182,9 @@ Manage execution traces from external platforms.
       "id": string,
       "trace_id": string,
       "source": "langfuse" | "langsmith" | "openai",
-      "timestamp": string,  // ISO 8601
+      "timestamp": string,
       "step_count": number,
-      "feedback": {
-        "id": string,
-        "rating": "positive" | "negative" | "neutral",
-        "notes": string | null,
-        "created_at": string
-      } | null,
+      "feedback": Feedback | null,
       "summary": {
         "input_preview": string,
         "output_preview": string,
@@ -203,42 +207,19 @@ Manage execution traces from external platforms.
 {
   "id": string,
   "trace_id": string,
-  "source": "langfuse" | "langsmith" | "openai",
+  "source": string,
   "timestamp": string,
   "metadata": Record<string, any>,
-  "steps": [
-    {
-      "step_id": string,
-      "timestamp": string,
-      "messages_added": [
-        {
-          "role": "user" | "assistant" | "system",
-          "content": string,
-          "metadata": Record<string, any>
-        }
-      ],
-      "tool_calls": [
-        {
-          "tool_name": string,
-          "arguments": Record<string, any>,
-          "result": any,
-          "error": string | null
-        }
-      ],
-      "input": any,
-      "output": any,
-      "error": string | null,
-      "metadata": Record<string, any>
-    }
-  ],
-  "feedback": {
-    "id": string,
-    "rating": "positive" | "negative" | "neutral",
-    "notes": string | null,
-    "created_at": string
-  } | null
+  "steps": LangGraphExecutionStep[],
+  "feedback": Feedback | null
 }
 ```
+
+### Get Trace Executions
+
+**Endpoint:** `GET /api/traces/{id}/executions`
+
+**Response:** `200 OK` - List of eval executions for this trace
 
 ### Delete Trace
 
@@ -266,139 +247,27 @@ Manage execution traces from external platforms.
 
 ---
 
-## 3. Eval Sets API
-
-Organize feedback collections for generating evals.
-
-### Create Eval Set
-
-**Endpoint:** `POST /api/eval-sets`
-
-**Request Body:**
-```typescript
-{
-  "name": string,
-  "description": string,        // Optional
-  "minimum_examples": number    // Optional: Default 5
-}
-```
-
-**Response:** `201 Created`
-```typescript
-{
-  "id": string,
-  "name": string,
-  "description": string | null,
-  "minimum_examples": number,
-  "stats": {
-    "positive_count": number,
-    "negative_count": number,
-    "neutral_count": number,
-    "total_count": number
-  },
-  "created_at": string,
-  "updated_at": string
-}
-```
-
-### List Eval Sets
-
-**Endpoint:** `GET /api/eval-sets`
-
-**Response:** `200 OK`
-```typescript
-{
-  "eval_sets": [
-    {
-      "id": string,
-      "name": string,
-      "description": string | null,
-      "minimum_examples": number,
-      "stats": {
-        "positive_count": number,
-        "negative_count": number,
-        "neutral_count": number,
-        "total_count": number
-      },
-      "created_at": string,
-      "updated_at": string
-    }
-  ]
-}
-```
-
-### Get Eval Set
-
-**Endpoint:** `GET /api/eval-sets/{id}`
-
-**Response:** `200 OK`
-```typescript
-{
-  "id": string,
-  "name": string,
-  "description": string | null,
-  "minimum_examples": number,
-  "stats": {
-    "positive_count": number,
-    "negative_count": number,
-    "neutral_count": number,
-    "total_count": number
-  },
-  "created_at": string,
-  "updated_at": string,
-  "evals": [
-    {
-      "id": string,
-      "name": string,
-      "accuracy": number,
-      "created_at": string
-    }
-  ]
-}
-```
-
-### Update Eval Set
-
-**Endpoint:** `PATCH /api/eval-sets/{id}`
-
-**Request Body:**
-```typescript
-{
-  "name": string,              // Optional
-  "description": string,       // Optional
-  "minimum_examples": number   // Optional
-}
-```
-
-**Response:** `200 OK`
-```typescript
-{
-  "id": string,
-  "name": string,
-  "description": string | null,
-  "minimum_examples": number,
-  "stats": {
-    "positive_count": number,
-    "negative_count": number,
-    "neutral_count": number,
-    "total_count": number
-  },
-  "created_at": string,
-  "updated_at": string
-}
-```
-
-### Delete Eval Set
-
-**Endpoint:** `DELETE /api/eval-sets/{id}`
-
-**Response:** `204 No Content`
-
----
-
-## 4. Feedback API
+## 3. Feedback API
 
 Submit and manage human feedback on traces.
+
+### List Feedback
+
+**Endpoint:** `GET /api/feedback`
+
+**Query Parameters:**
+- `agent_id` (string) - Filter by agent
+- `rating` (string) - Filter by rating
+- `cursor` / `limit` - Pagination
+
+**Response:** `200 OK`
+```typescript
+{
+  "data": Feedback[],
+  "next_cursor": string | null,
+  "has_more": boolean
+}
+```
 
 ### Submit Feedback
 
@@ -408,9 +277,9 @@ Submit and manage human feedback on traces.
 ```typescript
 {
   "trace_id": string,
-  "eval_set_id": string,
+  "agent_id": string,           // Optional
   "rating": "positive" | "negative" | "neutral",
-  "notes": string  // Optional
+  "notes": string               // Optional
 }
 ```
 
@@ -419,14 +288,12 @@ Submit and manage human feedback on traces.
 {
   "id": string,
   "trace_id": string,
-  "eval_set_id": string,
   "rating": "positive" | "negative" | "neutral",
   "notes": string | null,
-  "created_at": string
+  "created_at": string,
+  "updated": boolean            // true if upserted existing feedback
 }
 ```
-
-**Note:** Submitting feedback associates the trace with the eval set.
 
 ### Update Feedback
 
@@ -440,18 +307,6 @@ Submit and manage human feedback on traces.
 }
 ```
 
-**Response:** `200 OK`
-```typescript
-{
-  "id": string,
-  "trace_id": string,
-  "eval_set_id": string,
-  "rating": "positive" | "negative" | "neutral",
-  "notes": string | null,
-  "created_at": string
-}
-```
-
 ### Delete Feedback
 
 **Endpoint:** `DELETE /api/feedback/{id}`
@@ -460,43 +315,271 @@ Submit and manage human feedback on traces.
 
 ---
 
-## 5. Evals API
+## 4. Agents API
 
-Generate and manage Python eval functions.
+Manage AI agents discovered from trace patterns.
 
-### Generate Eval
+### List Agents
 
-**Endpoint:** `POST /api/eval-sets/{eval_set_id}/generate`
+**Endpoint:** `GET /api/agents`
+
+**Response:** `200 OK`
+```typescript
+{
+  "agents": [
+    {
+      "id": string,
+      "name": string,
+      "description": string | null,
+      "status": "discovered" | "confirmed" | "archived",
+      "active_version": {
+        "id": string,
+        "version": number,
+        "accuracy": number | null,
+        "status": "active"
+      } | null,
+      "created_at": string,
+      "updated_at": string
+    }
+  ],
+  "pending_discoveries": number  // Count of unconfirmed agents
+}
+```
+
+### Create Agent
+
+**Endpoint:** `POST /api/agents`
 
 **Request Body:**
 ```typescript
 {
   "name": string,
   "description": string,           // Optional
-  "model": string,                 // Optional: LLM model (default: claude-3-5-sonnet-20241022)
-  "custom_instructions": string    // Optional: Additional instructions
+  "prompt_template": string,       // Initial prompt
+  "variables": string[]            // Template variable names
 }
 ```
+
+**Response:** `201 Created`
+
+### Get Agent
+
+**Endpoint:** `GET /api/agents/{id}`
 
 **Response:** `200 OK`
 ```typescript
 {
-  "job_id": string,
-  "status": "queued" | "running",
-  "estimated_count": number  // Optional
+  "id": string,
+  "name": string,
+  "description": string | null,
+  "status": "discovered" | "confirmed" | "archived",
+  "active_version_id": string | null,
+  "versions": AgentVersion[],
+  "functions": {
+    "extractor": Function | null,
+    "injector": Function | null
+  },
+  "metrics": {
+    "trace_count": number,
+    "feedback_count": number,
+    "eval_count": number,
+    "accuracy": number | null,
+    "contradiction_rate": number | null
+  },
+  "created_at": string,
+  "updated_at": string
 }
 ```
 
-**Note:** This is an asynchronous operation. Use the Jobs API to monitor progress.
+### Confirm Agent
+
+**Endpoint:** `POST /api/agents/{id}/confirm`
+
+Confirms a discovered agent, changing status from `discovered` to `confirmed`.
+
+**Response:** `200 OK`
+
+### Archive Agent
+
+**Endpoint:** `DELETE /api/agents/{id}`
+
+Soft-deletes agent (sets status to `archived`).
+
+**Response:** `204 No Content`
+
+### Improve Agent Prompt
+
+**Endpoint:** `POST /api/agents/{id}/improve`
+
+Triggers AI-powered prompt improvement based on contradictions.
+
+**Request Body:**
+```typescript
+{
+  "max_contradictions": number  // Optional: Max contradictions to analyze
+}
+```
+
+**Response:** `202 Accepted`
+```typescript
+{
+  "job_id": string,
+  "status": "queued"
+}
+```
+
+### Get Agent Prompt
+
+**Endpoint:** `GET /api/agents/{id}/prompt`
+
+Returns the current active prompt with ETag support for cache validation.
+
+**Headers:**
+- `If-None-Match: {etag}` - Returns 304 if unchanged
+
+**Response:** `200 OK`
+```typescript
+{
+  "prompt_template": string,
+  "variables": string[],
+  "version": number
+}
+```
+
+**Response Headers:**
+- `ETag: "{version_id}-{updated_at}"`
+
+### Get Agent Matrix
+
+**Endpoint:** `GET /api/agents/{id}/matrix`
+
+Get comparison matrix for agent versions.
+
+**Response:** `200 OK`
+```typescript
+{
+  "rows": MatrixRow[],
+  "stats": MatrixStats
+}
+```
+
+---
+
+## 5. Agent Versions API
+
+Manage immutable agent prompt versions.
+
+### List Versions
+
+**Endpoint:** `GET /api/agents/{id}/versions`
+
+**Response:** `200 OK`
+```typescript
+{
+  "versions": [
+    {
+      "id": string,
+      "version": number,
+      "prompt_template": string,
+      "variables": string[],
+      "source": "discovered" | "manual" | "ai_improved",
+      "parent_version_id": string | null,
+      "accuracy": number | null,
+      "status": "candidate" | "active" | "rejected" | "archived",
+      "created_at": string
+    }
+  ]
+}
+```
+
+### Create Version
+
+**Endpoint:** `POST /api/agents/{id}/versions`
+
+**Request Body:**
+```typescript
+{
+  "prompt_template": string,
+  "variables": string[]
+}
+```
+
+**Response:** `201 Created`
+
+### Get Version
+
+**Endpoint:** `GET /api/agents/{id}/versions/{version}`
+
+**Response:** `200 OK` - Single version object
+
+### Promote Version
+
+**Endpoint:** `POST /api/agents/{id}/versions/{version}/promote`
+
+Promotes a candidate version to active, archiving the current active version.
+
+**Response:** `200 OK`
+
+### Reject Version
+
+**Endpoint:** `POST /api/agents/{id}/versions/{version}/reject`
+
+Rejects a candidate version (cannot reject active versions).
+
+**Response:** `200 OK`
+
+---
+
+## 6. Evals API
+
+Generate and manage Python eval functions.
+
+### Create Eval
+
+**Endpoint:** `POST /api/evals`
+
+**Request Body:**
+```typescript
+{
+  "agent_id": string,
+  "name": string,
+  "description": string,     // Optional
+  "code": string,            // Python eval code
+  "model_used": string       // Optional: defaults to "manual"
+}
+```
+
+### Generate Eval
+
+**Endpoint:** `POST /api/agents/{id}/generate-eval`
+
+Generates an eval function from agent traces using Claude.
+
+**Request Body:**
+```typescript
+{
+  "name": string,
+  "description": string,           // Optional
+  "model": string,                 // Optional: LLM model
+  "custom_instructions": string    // Optional: Additional instructions
+}
+```
+
+**Response:** `202 Accepted`
+```typescript
+{
+  "job_id": string,
+  "status": "queued"
+}
+```
 
 ### List Evals
 
 **Endpoint:** `GET /api/evals`
 
 **Query Parameters:**
-- `eval_set_id` (string, optional) - Filter by eval set
-- `cursor` (string, optional) - Pagination cursor
-- `limit` (number, optional) - Results per page (default: 50)
+- `agent_id` (string) - Filter by agent
+- `cursor` / `limit` - Pagination
 
 **Response:** `200 OK`
 ```typescript
@@ -506,27 +589,11 @@ Generate and manage Python eval functions.
       "id": string,
       "name": string,
       "description": string | null,
-      "eval_set_id": string,
-      "code": string,               // Python eval function code
+      "agent_id": string,
+      "code": string,
       "model_used": string,
-      "accuracy": number,            // 0-100
-      "test_results": {
-        "correct": number,
-        "incorrect": number,
-        "errors": number,
-        "total": number,
-        "details": [
-          {
-            "trace_id": string,
-            "expected": boolean,
-            "predicted": boolean,
-            "match": boolean,
-            "reason": string,
-            "execution_time_ms": number,
-            "error": string | null
-          }
-        ]
-      },
+      "accuracy": number,
+      "test_results": TestResults,
       "execution_count": number,
       "contradiction_count": number,
       "created_at": string,
@@ -542,29 +609,7 @@ Generate and manage Python eval functions.
 
 **Endpoint:** `GET /api/evals/{id}`
 
-**Response:** `200 OK`
-```typescript
-{
-  "id": string,
-  "name": string,
-  "description": string | null,
-  "eval_set_id": string,
-  "code": string,
-  "model_used": string,
-  "accuracy": number,
-  "test_results": {
-    "correct": number,
-    "incorrect": number,
-    "errors": number,
-    "total": number,
-    "details": [...]
-  },
-  "execution_count": number,
-  "contradiction_count": number,
-  "created_at": string,
-  "updated_at": string
-}
-```
+**Response:** `200 OK` - Single eval with full details
 
 ### Update Eval
 
@@ -576,24 +621,6 @@ Generate and manage Python eval functions.
   "name": string,        // Optional
   "description": string, // Optional
   "code": string         // Optional: Updated Python code
-}
-```
-
-**Response:** `200 OK`
-```typescript
-{
-  "id": string,
-  "name": string,
-  "description": string | null,
-  "eval_set_id": string,
-  "code": string,
-  "model_used": string,
-  "accuracy": number,
-  "test_results": {...},
-  "execution_count": number,
-  "contradiction_count": number,
-  "created_at": string,
-  "updated_at": string
 }
 ```
 
@@ -610,29 +637,26 @@ Generate and manage Python eval functions.
 **Request Body:**
 ```typescript
 {
-  "trace_ids": string[],  // Optional: Specific traces to evaluate
-  "force": boolean        // Optional: Re-execute even if already executed
+  "trace_ids": string[],  // Optional: Specific traces
+  "force": boolean        // Optional: Re-execute even if already run
 }
 ```
 
-**Response:** `200 OK`
+**Response:** `202 Accepted`
 ```typescript
 {
   "job_id": string,
-  "status": "queued" | "running"
+  "status": "queued"
 }
 ```
-
-**Note:** This is an asynchronous operation. Use the Jobs API to monitor progress.
 
 ### Get Eval Executions
 
 **Endpoint:** `GET /api/evals/{id}/executions`
 
 **Query Parameters:**
-- `filter` (string, optional) - Filter: "contradictions_only", "errors_only", "all" (default: "all")
-- `cursor` (string, optional) - Pagination cursor
-- `limit` (number, optional) - Results per page (default: 50)
+- `filter` - "contradictions_only", "errors_only", "all" (default)
+- `cursor` / `limit` - Pagination
 
 **Response:** `200 OK`
 ```typescript
@@ -646,20 +670,9 @@ Generate and manage Python eval functions.
       "predicted_reason": string,
       "execution_time_ms": number,
       "error": string | null,
-      "stdout": string | null,
-      "stderr": string | null,
       "executed_at": string,
-      "human_feedback": {
-        "rating": "positive" | "negative" | "neutral",
-        "notes": string | null
-      } | null,
-      "is_contradiction": boolean,
-      "trace_summary": {
-        "trace_id": string,
-        "input_preview": string,
-        "output_preview": string,
-        "source": string
-      }
+      "human_feedback": Feedback | null,
+      "is_contradiction": boolean
     }
   ],
   "next_cursor": string | null,
@@ -667,103 +680,52 @@ Generate and manage Python eval functions.
 }
 ```
 
----
+### Get Eval Metrics
 
-## 6. Matrix API
+**Endpoint:** `GET /api/evals/{id}/metrics`
 
-Compare human feedback vs eval predictions.
+**Response:** `200 OK` - Current performance metrics
 
-### Get Matrix
+### Get Eval Performance Trend
 
-**Endpoint:** `GET /api/eval-sets/{eval_set_id}/matrix`
+**Endpoint:** `GET /api/evals/{id}/performance-trend`
 
-**Query Parameters:**
-- `eval_ids` (string, required) - Comma-separated eval IDs
-- `filter` (string, optional) - Filter: "contradictions_only", "errors_only", "all"
-- `rating` (string, optional) - Filter by rating: "positive", "negative", "neutral"
-- `date_from` (string, optional) - ISO 8601 timestamp
-- `date_to` (string, optional) - ISO 8601 timestamp
-- `cursor` (string, optional) - Pagination cursor
-- `limit` (number, optional) - Results per page (default: 50)
+**Response:** `200 OK` - Historical performance snapshots
 
-**Response:** `200 OK`
-```typescript
-{
-  "rows": [
-    {
-      "trace_id": string,
-      "trace_summary": {
-        "timestamp": string,
-        "input_preview": string,
-        "output_preview": string,
-        "source": string
-      },
-      "human_feedback": {
-        "rating": "positive" | "negative" | "neutral",
-        "notes": string | null
-      } | null,
-      "predictions": {
-        "[eval_id]": {
-          "result": boolean,
-          "reason": string,
-          "execution_time_ms": number,
-          "error": string | null,
-          "is_contradiction": boolean
-        } | null
-      }
-    }
-  ],
-  "stats": {
-    "total_traces": number,
-    "traces_with_feedback": number,
-    "per_eval": {
-      "[eval_id]": {
-        "eval_name": string,
-        "accuracy": number | null,
-        "contradiction_count": number,
-        "error_count": number,
-        "avg_execution_time_ms": number | null
-      }
-    }
-  },
-  "next_cursor": string | null,
-  "has_more": boolean
-}
-```
+### Get Eval Alerts
+
+**Endpoint:** `GET /api/evals/{id}/alerts`
+
+**Response:** `200 OK` - Performance alerts for this eval
+
+### Acknowledge Alert
+
+**Endpoint:** `POST /api/evals/{id}/alerts/{alertId}/acknowledge`
+
+### Resolve Alert
+
+**Endpoint:** `POST /api/evals/{id}/alerts/{alertId}/resolve`
+
+### Update Eval Settings
+
+**Endpoint:** `PATCH /api/evals/{id}/settings`
+
+Update monitoring thresholds and settings.
 
 ---
 
 ## 7. Jobs API
 
-Monitor asynchronous operations (import, generate, execute).
-
-### Get Job Status
-
-**Endpoint:** `GET /api/jobs/{id}`
-
-**Response:** `200 OK`
-```typescript
-{
-  "id": string,
-  "type": "import" | "generate" | "execute",
-  "status": "queued" | "running" | "completed" | "failed" | "cancelled",
-  "progress": number,        // 0-100
-  "created_at": string,
-  "started_at": string | null,
-  "completed_at": string | null,
-  "result": any,            // Job-specific result data
-  "error": string | null
-}
-```
+Monitor asynchronous background operations.
 
 ### List Jobs
 
 **Endpoint:** `GET /api/jobs`
 
 **Query Parameters:**
-- `type` (string, optional) - Filter by type: "import", "generate", "execute"
-- `status` (string, optional) - Filter by status
-- `limit` (number, optional) - Results per page (default: 50)
+- `type` - Filter by job type (see types below)
+- `status` - Filter by status
+- `limit` - Results per page (default: 20, max: 100)
 
 **Response:** `200 OK`
 ```typescript
@@ -771,9 +733,12 @@ Monitor asynchronous operations (import, generate, execute).
   "jobs": [
     {
       "id": string,
-      "type": "import" | "generate" | "execute",
+      "type": JobType,
       "status": "queued" | "running" | "completed" | "failed" | "cancelled",
       "progress": number,
+      "retry_count": number,
+      "max_retries": number,
+      "error_category": ErrorCategory | null,
       "created_at": string,
       "started_at": string | null,
       "completed_at": string | null,
@@ -784,24 +749,23 @@ Monitor asynchronous operations (import, generate, execute).
 }
 ```
 
-### Cancel Job
+**Job Types:**
+- `import` - Import traces from external platform
+- `generate` - Generate eval function with Claude
+- `execute` - Run eval on traces
+- `monitor` - Performance monitoring (cron)
+- `auto_refine` - Auto-improve evals on threshold
+- `agent_discovery` - Cluster traces to discover agents
+- `prompt_improvement` - AI-improve agent prompts
+- `prompt_evaluation` - Evaluate candidate prompts
+- `template_drift` - Detect prompt changes
+- `eval_revalidation` - Re-test evals on new traces
 
-**Endpoint:** `POST /api/jobs/{id}/cancel`
+### Get Job Status
 
-**Response:** `200 OK`
-```typescript
-{
-  "id": string,
-  "type": "import" | "generate" | "execute",
-  "status": "cancelled",
-  "progress": number,
-  "created_at": string,
-  "started_at": string | null,
-  "completed_at": string | null,
-  "result": any,
-  "error": string | null
-}
-```
+**Endpoint:** `GET /api/jobs/{id}`
+
+**Response:** `200 OK` - Single job object
 
 ### Stream Job Progress (SSE)
 
@@ -811,76 +775,82 @@ Monitor asynchronous operations (import, generate, execute).
 
 **Event Types:**
 ```typescript
-// Job progress update
-{
-  "type": "job_progress",
-  "job_id": string,
-  "status": "queued" | "running",
-  "progress": number
-}
+// Progress update
+{ "type": "progress", "data": { "status": string, "progress": number, ... } }
 
 // Job completed
-{
-  "type": "job_completed",
-  "job_id": string,
-  "result": any
-}
+{ "type": "completed", "data": { "status": "completed", "result": any } }
 
 // Job failed
+{ "type": "failed", "data": { "status": "failed", "error": string } }
+
+// Keep-alive (every 30s)
+{ "type": "heartbeat" }
+```
+
+### Cancel Job
+
+**Endpoint:** `POST /api/jobs/{id}/cancel`
+
+**Response:** `200 OK`
+
+### Get Job Retry History
+
+**Endpoint:** `GET /api/jobs/{id}/retries`
+
+**Response:** `200 OK`
+```typescript
 {
-  "type": "job_failed",
-  "job_id": string,
-  "error": string
+  "retries": [
+    {
+      "attempt": number,
+      "error": string,
+      "error_category": ErrorCategory,
+      "delay_ms": number,
+      "timestamp": string
+    }
+  ]
 }
 ```
+
+### Retry Failed Job
+
+**Endpoint:** `POST /api/jobs/{id}/retry`
+
+Manually retry a failed job.
+
+**Response:** `200 OK`
+
+### Process Jobs (Development Only)
+
+**Endpoint:** `POST /api/jobs/process`
+
+Manually trigger job processing in local development.
+
+**Response:** `200 OK`
 
 ---
 
-## 8. SSE Streaming Endpoints
+## 8. Error Categories
 
-Real-time updates for eval sets and jobs.
+Jobs classify errors into 9 categories for intelligent retry decisions:
 
-### Stream Eval Set Updates
+**Transient (Retryable):**
+| Category | Description |
+|----------|-------------|
+| `transient_network` | Timeouts, connection errors |
+| `transient_rate_limit` | 429 responses |
+| `transient_server` | 5xx errors |
+| `transient_db_lock` | D1 lock/busy errors |
 
-**Endpoint:** `GET /api/eval-sets/{id}/stream`
-
-**Response:** Server-Sent Events stream
-
-**Event Types:**
-```typescript
-// Feedback added to eval set
-{
-  "type": "feedback_added",
-  "trace_id": string,
-  "rating": "positive" | "negative" | "neutral",
-  "stats": {
-    "positive_count": number,
-    "negative_count": number,
-    "neutral_count": number,
-    "total_count": number
-  }
-}
-
-// Threshold reached (ready to generate)
-{
-  "type": "threshold_reached",
-  "ready_to_generate": boolean
-}
-
-// Eval generated for this set
-{
-  "type": "eval_generated",
-  "eval_id": string,
-  "accuracy": number
-}
-
-// Execution completed
-{
-  "type": "execution_completed",
-  "eval_id": string,
-  "trace_id": string
-}
-```
+**Permanent (Non-retryable):**
+| Category | Description |
+|----------|-------------|
+| `permanent_validation` | 400/422 validation errors |
+| `permanent_auth` | 401/403 authentication errors |
+| `permanent_not_found` | 404 not found |
+| `permanent_security` | Sandbox security violations |
+| `unknown` | Unclassified errors |
 
 ---
 
@@ -890,45 +860,33 @@ Real-time updates for eval sets and jobs.
 
 Most list endpoints support cursor-based pagination:
 
-**Request:**
 ```
 GET /api/traces?limit=50&cursor={next_cursor}
 ```
 
-**Response:**
-```typescript
-{
-  "data": [...],
-  "next_cursor": string | null,
-  "has_more": boolean
-}
-```
+Response includes:
+- `next_cursor` - Use for next page (null when no more pages)
+- `has_more` - Boolean indicating if more pages exist
+- `total_count` - Total count (on some endpoints)
 
-- Use `next_cursor` from the response to fetch the next page
-- `has_more` indicates if more pages exist
-- `next_cursor` is `null` when no more pages available
+### Async Operations
 
-### Filtering
+Import, generate, and execute operations are asynchronous:
 
-Many endpoints support filtering via query parameters. Common filters:
-
-- **Date ranges:** `date_from`, `date_to` (ISO 8601 timestamps)
-- **Ratings:** `rating` (positive/negative/neutral)
-- **Boolean flags:** `has_feedback`, `force`
-- **IDs:** `eval_set_id`, `trace_ids`, `eval_ids`
+1. POST request returns `job_id`
+2. Poll `GET /api/jobs/{id}` for status
+3. Or subscribe to `GET /api/jobs/{id}/stream` for SSE updates
 
 ### Timestamps
 
-All timestamps use ISO 8601 format:
-```
-2025-11-17T10:30:00.000Z
-```
+All timestamps use ISO 8601 format: `2025-12-01T10:30:00.000Z`
 
 ### Resource IDs
 
-All IDs use prefixed UUIDs for type safety:
+IDs use prefixed format for type safety:
 - Traces: `trace_*`
-- Eval Sets: `set_*`
+- Agents: `agent_*`
+- Versions: `agentv_*` or `ver_*`
 - Evals: `eval_*`
 - Feedback: `feedback_*`
 - Integrations: `integration_*`
@@ -938,202 +896,77 @@ All IDs use prefixed UUIDs for type safety:
 
 ## Example Workflows
 
-### Workflow 1: Import Traces and Create Eval
+### Workflow 1: Agent Discovery and Eval Generation
 
 ```typescript
-// 1. Create integration
-POST /api/integrations
-{
-  "platform": "langfuse",
-  "api_key": "sk-lf-...",
-  "name": "Production Langfuse"
-}
-// Response: { id: "integration_123" }
-
-// 2. Import traces
+// 1. Import traces
 POST /api/traces/import
-{
-  "integration_id": "integration_123",
-  "filters": { "limit": 100 }
-}
-// Response: { job_id: "job_456" }
+{ "integration_id": "integration_123", "filters": { "limit": 100 } }
+// Returns: { "job_id": "job_456" }
 
-// 3. Poll job status
-GET /api/jobs/job_456
-// Wait until status = "completed"
-
-// 4. Create eval set
-POST /api/eval-sets
-{
-  "name": "Customer Support Quality",
-  "minimum_examples": 10
-}
-// Response: { id: "set_789" }
-
-// 5. Submit feedback on traces
-POST /api/feedback
-{
-  "trace_id": "trace_abc",
-  "eval_set_id": "set_789",
-  "rating": "positive"
-}
-// Repeat for multiple traces
-
-// 6. Generate eval
-POST /api/eval-sets/set_789/generate
-{
-  "name": "Check Customer Satisfaction"
-}
-// Response: { job_id: "job_999" }
-
-// 7. Monitor generation progress
-GET /api/jobs/job_999/stream
+// 2. Wait for import to complete
+GET /api/jobs/job_456/stream
 // SSE stream with progress updates
+
+// 3. View discovered agents
+GET /api/agents
+// Shows agents with status="discovered"
+
+// 4. Confirm agent
+POST /api/agents/agent_789/confirm
+
+// 5. Generate eval from agent traces
+POST /api/agents/agent_789/generate-eval
+{ "name": "Quality Check" }
+// Returns: { "job_id": "job_999" }
+
+// 6. Execute eval on new traces
+POST /api/evals/eval_001/execute
+{ "trace_ids": ["trace_a", "trace_b"] }
 ```
 
-### Workflow 2: Review Traces Without Eval Set Filter
+### Workflow 2: Agent Version Management
 
 ```typescript
-// Fetch traces without feedback (for review interface)
-GET /api/traces?has_feedback=false&limit=50
+// 1. Check agent metrics
+GET /api/agents/agent_789
+// Shows accuracy, contradiction_rate
 
-// User provides feedback via swipe interface
-POST /api/feedback
-{
-  "trace_id": "trace_xyz",
-  "eval_set_id": "set_789",
-  "rating": "negative",
-  "notes": "Response was too slow"
-}
+// 2. Trigger AI improvement
+POST /api/agents/agent_789/improve
+// Returns job_id for prompt_improvement job
 
-// Continue until all traces reviewed
-// Check eval set stats
-GET /api/eval-sets/set_789
-// Shows updated feedback counts
-```
+// 3. Review new candidate version
+GET /api/agents/agent_789/versions
+// Shows version with status="candidate"
 
-### Workflow 3: Compare Human vs Eval
+// 4. Promote if satisfied
+POST /api/agents/agent_789/versions/2/promote
 
-```typescript
-// Get comparison matrix
-GET /api/eval-sets/set_789/matrix?eval_ids=eval_001,eval_002&filter=contradictions_only
-
-// Response shows:
-// - Human feedback vs eval predictions
-// - Contradiction flags
-// - Accuracy stats per eval
-
-// If contradictions found, refine eval:
-POST /api/eval-sets/set_789/generate
-{
-  "name": "Check Customer Satisfaction v2",
-  "custom_instructions": "Focus on response tone"
-}
+// 5. Or reject
+POST /api/agents/agent_789/versions/2/reject
 ```
 
 ---
 
 ## TypeScript Types
 
-All TypeScript type definitions are available in `/frontend/types/api.ts` for easy integration.
+All TypeScript type definitions are available in `/frontend/types/api.ts`:
 
-Import types:
 ```typescript
 import type {
+  Agent,
+  AgentVersion,
   Trace,
-  EvalSet,
-  Feedback,
   Eval,
-  CreateEvalSetRequest,
-  SubmitFeedbackRequest,
+  Feedback,
+  Job,
+  Integration,
   // ... etc
 } from '@/types/api'
 ```
 
 ---
 
-## Notes for Frontend Development
-
-1. **Workspace ID:** Use `test-workspace-1` for development. Include in `X-Workspace-Id` header.
-
-2. **Error Handling:** All errors follow the standard error response format. Parse `error.code` for specific error handling.
-
-3. **Async Operations:** Import, generate, and execute operations are asynchronous. Poll job status or use SSE streaming for real-time updates.
-
-4. **Trace Association:** Traces don't belong to an eval set until feedback is submitted. Don't filter traces by `eval_set_id` when fetching for review.
-
-5. **Pagination:** Use cursor-based pagination for large datasets. `next_cursor` is opaque - don't try to parse or manipulate it.
-
-6. **Real-time Updates:** Use SSE endpoints for live updates in dashboards. Fallback to polling if SSE not available.
-
-7. **Date Handling:** Always use ISO 8601 format for timestamps. JavaScript: `new Date().toISOString()`
-
-8. **Authentication:** Currently optional for MVP. Will be required in production.
-
----
-
-## API Client Example
-
-```typescript
-class IOFoldAPIClient {
-  private baseURL: string
-  private workspaceId: string
-
-  constructor(baseURL: string = 'http://localhost:8787/v1') {
-    this.baseURL = baseURL
-    this.workspaceId = 'test-workspace-1'
-  }
-
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    const response = await fetch(`${this.baseURL}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Workspace-Id': this.workspaceId,
-        ...options.headers,
-      },
-    })
-
-    if (!response.ok) {
-      const error = await response.json()
-      throw new APIError(error, response.status)
-    }
-
-    if (response.status === 204) {
-      return {} as T
-    }
-
-    return response.json()
-  }
-
-  // Example method
-  async listTraces(params?: {
-    has_feedback?: boolean
-    limit?: number
-  }): Promise<ListTracesResponse> {
-    const query = new URLSearchParams()
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          query.append(key, String(value))
-        }
-      })
-    }
-    return this.request(`/api/traces?${query}`)
-  }
-}
-```
-
----
-
-## Support
-
-For questions or issues with the API:
-- Check the error response `request_id` for debugging
-- Review the implementation in `/src/api/` directory
-- Consult the database schema in `/schema.sql`
-
-**API Version:** v1 (2025-11-17)
+**API Version:** v1
+**Last Updated:** 2025-12-01

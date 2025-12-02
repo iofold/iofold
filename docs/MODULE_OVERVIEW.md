@@ -2,117 +2,152 @@
 
 Complete breakdown of all modules, their responsibilities, and dependencies in the iofold codebase.
 
+**Last Updated**: 2025-12-01
+
 ## Project Structure
 
 ```
 iofold/
-├── src/               # Backend (Cloudflare Workers)
-├── frontend/          # Frontend (Next.js)
-├── docs/             # Documentation
-└── schema.sql        # Database schema
+├── src/                   # Backend (Cloudflare Workers)
+│   ├── api/              # REST API endpoints
+│   ├── adapters/         # External platform integrations
+│   ├── jobs/             # Background job system
+│   ├── eval-generator/   # LLM-powered eval generation
+│   ├── sandbox/          # Python execution environment
+│   ├── analytics/        # Cost tracking
+│   ├── errors/           # Error classification
+│   ├── types/            # TypeScript types
+│   ├── utils/            # Shared utilities
+│   ├── db/               # Database schema & migrations
+│   └── index.ts          # Worker entry point
+├── frontend/             # Frontend (Next.js)
+│   ├── app/              # Page routes
+│   ├── components/       # React components
+│   ├── lib/              # API client & utilities
+│   ├── hooks/            # Custom React hooks
+│   └── types/            # Frontend types
+├── tests/                # Backend tests
+├── docs/                 # Documentation
+└── migrations/           # Database migrations
 ```
 
 ---
 
 ## Backend Modules (`/src`)
 
-### 1. **API Layer** (`/src/api`)
+### 1. API Layer (`/src/api`)
 
-REST API endpoints and request handlers for Cloudflare Workers.
+REST API endpoints for Cloudflare Workers.
 
-#### Files:
+#### Core Files
 
-**`index.ts`** - Main API router
-- Routes all HTTP requests to appropriate handlers
-- Pattern matching for dynamic routes (`/api/traces/:id`)
-- 404 handling for unknown endpoints
+| File | Purpose |
+|------|---------|
+| `index.ts` | Main API router with pattern matching |
+| `traces.ts` | Trace import, list, get, delete endpoints |
+| `feedback.ts` | Human feedback submission and management |
+| `evals.ts` | Eval generation, execution, CRUD operations |
+| `integrations.ts` | External platform connection management |
+| `jobs.ts` | Background job monitoring and control |
+| `agents.ts` | Agent discovery, versioning, and management |
+| `utils.ts` | Shared API utilities (pagination, errors) |
 
-**`traces.ts`** - Trace management endpoints
-- `POST /api/traces/import` - Import traces from external platforms
-- `GET /api/traces` - List traces with filtering & pagination
-- `GET /api/traces/:id` - Get trace detail
-- `DELETE /api/traces/:id` - Delete single trace
-- `DELETE /api/traces` - Bulk delete traces
+#### API Routes Summary
 
-**`eval-sets.ts`** - Eval set management
-- `POST /api/eval-sets` - Create eval set
-- `GET /api/eval-sets` - List all eval sets
-- `GET /api/eval-sets/:id` - Get eval set with stats
-- `PATCH /api/eval-sets/:id` - Update eval set
-- `DELETE /api/eval-sets/:id` - Delete eval set
-
-**`feedback.ts`** - Human feedback submission
-- `POST /api/feedback` - Submit feedback on trace
-- `PATCH /api/feedback/:id` - Update feedback
-- `DELETE /api/feedback/:id` - Delete feedback
-- Associates traces with eval sets through feedback
-
-**`evals.ts`** - Eval function management
-- `POST /api/eval-sets/:id/generate` - Generate eval from eval set
-- `GET /api/evals` - List evals with filtering
-- `GET /api/evals/:id` - Get eval detail
-- `PATCH /api/evals/:id` - Update eval (name, description, code)
-- `DELETE /api/evals/:id` - Delete eval
-- `POST /api/evals/:id/execute` - Execute eval on traces
-
-**`integrations.ts`** - External platform connections
-- `POST /api/integrations` - Create integration
-- `GET /api/integrations` - List integrations
-- `POST /api/integrations/:id/test` - Test connection
-- `DELETE /api/integrations/:id` - Delete integration
-
-**`jobs.ts`** - Async job management
-- `GET /api/jobs/:id` - Get job status
-- `GET /api/jobs/:id/stream` - SSE stream for job progress
-- `POST /api/jobs/:id/cancel` - Cancel running job
-- `GET /api/jobs` - List recent jobs
-
-**`matrix.ts`** - Comparison matrix
-- `GET /api/eval-sets/:id/matrix` - Compare human vs eval predictions
-- Filters: contradictions only, errors only, date range
-- Statistics per eval: accuracy, contradictions, avg time
-
-**`utils.ts`** - Shared API utilities
-- Error response formatting
-- Request validation helpers
-- Pagination utilities
-
-**`matrix.test.ts`** - Matrix API tests
-- Test matrix generation
-- Test contradiction detection
-- Test filtering logic
-
-**Dependencies:**
-- D1 Database (Cloudflare)
-- Zod for validation
-- Job queue for async operations
+**Traces**: `POST/GET/DELETE /api/traces`, `POST /api/traces/import`
+**Feedback**: `GET/POST/PATCH/DELETE /api/feedback`
+**Evals**: Full CRUD + `POST /api/evals/:id/execute`
+**Agents**: Full CRUD + versioning + `POST /api/agents/:id/improve`
+**Jobs**: `GET /api/jobs`, `GET /api/jobs/:id/stream`, `POST /api/jobs/:id/retry`
+**Integrations**: Full CRUD + `POST /api/integrations/:id/test`
 
 ---
 
-### 2. **Adapters** (`/src/adapters`)
+### 2. Agent Management (`/src/api/agents.ts`)
 
-Platform-specific integrations to fetch traces from external observability tools.
+Agent discovery and version control system.
 
-#### Files:
+#### Capabilities
+- **Agent Discovery**: Automatic clustering of similar traces
+- **Version Management**: Immutable prompt versions with promote/reject workflow
+- **ETag Support**: Conditional requests for prompt polling
+- **Metrics Aggregation**: Accuracy, contradiction rate, trace counts
 
-**`langfuse.ts`** - Langfuse adapter
-- `LangfuseAdapter` class
-- `authenticate()` - Verify API key
-- `fetchTraces()` - Fetch traces with filters
-- `fetchTraceById()` - Get single trace
-- Normalizes Langfuse format → `LangGraphExecutionStep`
+#### Agent Lifecycle
+```
+Discovered → Confirmed → (Active Version) → (New Candidate) → Promoted/Rejected
+```
 
-**`langfuse.test.ts`** - Langfuse adapter tests
-- Mock Langfuse API responses
-- Test authentication
-- Test trace fetching
-- Test normalization
+#### Version States
+- `candidate` - Newly created, awaiting review
+- `active` - Currently deployed version
+- `rejected` - User rejected this version
+- `archived` - Previous active version after promotion
 
-**Planned (not yet implemented):**
-- `langsmith.ts` - Langsmith adapter
-- `openai.ts` - OpenAI adapter
+---
 
-**Interface:**
+### 3. Jobs System (`/src/jobs`)
+
+Background job processing with robust error handling.
+
+#### Core Files
+
+| File | Purpose |
+|------|---------|
+| `job-manager.ts` | Job lifecycle management, retry scheduling |
+| `job-worker.ts` | Job execution dispatcher |
+| `trace-import-job.ts` | Import traces from Langfuse |
+| `eval-generation-job.ts` | Generate evals with Claude |
+| `eval-execution-job.ts` | Run evals in Python sandbox |
+| `agent-discovery-job.ts` | Cluster traces to discover agents |
+| `prompt-improvement-job.ts` | AI-powered prompt refinement |
+| `prompt-evaluation-job.ts` | Evaluate candidate prompts |
+
+#### Job Types (10 Total)
+
+| Type | Handler | Description |
+|------|---------|-------------|
+| `import` | TraceImportJob | Fetch and normalize traces |
+| `generate` | EvalGenerationJob | Generate Python eval with Claude |
+| `execute` | EvalExecutionJob | Run eval in sandbox |
+| `monitor` | (Cron trigger) | Performance monitoring |
+| `auto_refine` | AutoRefineJob | Auto-improve evals |
+| `agent_discovery` | AgentDiscoveryJob | Cluster and discover agents |
+| `prompt_improvement` | PromptImprovementJob | Improve prompts based on contradictions |
+| `prompt_evaluation` | PromptEvaluationJob | Evaluate candidate versions |
+| `template_drift` | TemplateDriftJob | Detect prompt template changes |
+| `eval_revalidation` | EvalRevalidationJob | Re-test evals on new traces |
+
+#### Retry System
+
+Jobs use intelligent error classification for retry decisions:
+
+**Transient (Retryable)**:
+- `transient_network` - Timeouts, connection errors
+- `transient_rate_limit` - 429 responses
+- `transient_server` - 5xx errors
+- `transient_db_lock` - D1 lock/busy
+
+**Permanent (Non-retryable)**:
+- `permanent_validation` - 400/422 validation errors
+- `permanent_auth` - 401/403 auth failures
+- `permanent_not_found` - 404 resource not found
+- `permanent_security` - Sandbox violations
+- `unknown` - Unclassified errors
+
+---
+
+### 4. Adapters (`/src/adapters`)
+
+Platform-specific integrations to fetch traces.
+
+#### Files
+
+| File | Purpose |
+|------|---------|
+| `langfuse.ts` | Langfuse API adapter (MVP only) |
+
+#### Interface
 ```typescript
 interface TraceAdapter {
   authenticate(apiKey: string): Promise<void>
@@ -121,807 +156,397 @@ interface TraceAdapter {
 }
 ```
 
-**Dependencies:**
-- `langfuse` npm package
-- Platform-specific SDKs
+#### Trace Normalization
+All traces normalized to `LangGraphExecutionStep` schema:
+- Extract messages from various formats
+- Parse tool calls
+- Map roles: `human` → `user`, `ai` → `assistant`
 
 ---
 
-### 3. **Eval Generator** (`/src/eval-generator`)
+### 5. Eval Generator (`/src/eval-generator`)
 
-LLM-powered eval function generation using meta-prompting.
+LLM-powered eval function generation.
 
-#### Files:
+#### Files
 
-**`generator.ts`** - Core generation logic
-- `EvalGenerator` class
-- `generate(evalSetId)` - Generate Python eval from training data
-- Uses Claude/GPT-4 via Anthropic SDK
-- Includes custom instructions in prompt
-- Returns: Python code, accuracy, test results
+| File | Purpose |
+|------|---------|
+| `generator.ts` | Core generation with Claude API |
+| `tester.ts` | Test generated code on training data |
+| `prompts.ts` | Meta-prompt templates |
 
-**`generator.test.ts`** - Generator tests
-- Mock LLM responses
-- Test prompt generation
-- Test code extraction
-- Test accuracy calculation
-
-**`tester.ts`** - Eval testing & validation
-- `EvalTester` class
-- `test(code, traces)` - Run eval on training data
-- Compute accuracy (correct/incorrect/errors)
-- Identify contradictions with human feedback
-- Return detailed test results
-
-**`tester.test.ts`** - Tester tests
-- Test eval execution
-- Test accuracy calculation
-- Test error handling
-
-**`prompts.ts`** - Meta-prompt templates
-- `generateEvalPrompt()` - Main generation prompt
-- `refineEvalPrompt()` - Refinement prompt with contradictions
-- Includes training examples, custom instructions
-- Structured output format
-
-**Dependencies:**
-- `@anthropic-ai/sdk` - Claude API
-- Python sandbox for testing
+#### Generation Flow
+1. Fetch labeled traces (positive/negative examples)
+2. Build meta-prompt with examples and instructions
+3. Call Claude API (claude-3-haiku default for cost)
+4. Extract Python code from response
+5. Test on training data
+6. Calculate accuracy and store
 
 ---
 
-### 4. **Sandbox** (`/src/sandbox`)
+### 6. Sandbox (`/src/sandbox`)
 
-Secure Python execution environment for running generated eval functions.
+Secure Python execution environment.
 
-#### Files:
-
-**`python-runner.ts`** - Python sandbox
-- `PythonRunner` class
-- `execute(code, trace)` - Run Python code in sandbox
-- Security constraints:
-  - Whitelist imports: `json`, `re`, `typing`
-  - 5-second timeout
-  - 50MB memory limit
-  - No network access
-  - No file I/O
-- Uses `@cloudflare/sandbox` (Pyodide)
-
-**`python-runner.test.ts`** - Sandbox tests
-- Test allowed code
-- Test blocked imports
-- Test timeout enforcement
-- Test memory limits
-- Test error handling
-
-**Security Model:**
+#### Security Constraints
 ```typescript
 {
   allowedImports: ['json', 're', 'typing'],
-  timeout: 5000,
-  memoryLimit: 50 * 1024 * 1024,
+  timeout: 5000,        // 5 seconds
+  memoryLimit: 50 * 1024 * 1024,  // 50MB
   networkAccess: false,
   fileAccess: false
 }
 ```
 
-**Dependencies:**
-- `@cloudflare/sandbox` - Cloudflare Python runtime
+#### Files
+
+| File | Purpose |
+|------|---------|
+| `python-runner.ts` | Sandbox execution wrapper |
+
+Uses `@cloudflare/sandbox` (Pyodide-based).
 
 ---
 
-### 5. **Jobs** (`/src/jobs`)
+### 7. Error Classification (`/src/errors`)
 
-Background job system for long-running operations.
+Intelligent error categorization for retry decisions.
 
-#### Files:
+#### Files
 
-**`job-manager.ts`** - Job queue management
-- `JobManager` class
-- `createJob(type, data)` - Create new job
-- `getJob(id)` - Get job status
-- `updateProgress(id, progress)` - Update job progress
-- `completeJob(id, result)` - Mark job complete
-- `failJob(id, error)` - Mark job failed
-- Stores jobs in D1 database
+| File | Purpose |
+|------|---------|
+| `classifier.ts` | Error pattern matching |
 
-**`job-worker.ts`** - Job execution worker
-- `JobWorker` class
-- Polls job queue
-- Dispatches to appropriate handler
-- Updates progress via SSE
-- Error handling & retries
-
-**`trace-import-job.ts`** - Trace import handler
-- Fetch traces from external platform via adapter
-- Normalize to unified format
-- Store in D1 database
-- Progress: X/Y traces imported
-
-**`eval-generation-job.ts`** - Eval generation handler
-- Fetch training data (traces with feedback)
-- Call `EvalGenerator.generate()`
-- Test on training data
-- Store eval in database
-- Progress: Analyzing → Generating → Testing
-
-**`eval-execution-job.ts`** - Eval execution handler
-- Fetch traces to evaluate
-- Run eval in sandbox for each trace
-- Store execution results
-- Progress: X/Y traces evaluated
-
-**Job Types:**
+#### Functions
 ```typescript
-type JobType = 'import' | 'generate' | 'execute'
-type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+classifyError(error: Error | Response): ErrorCategory
+isRetryable(category: ErrorCategory): boolean
 ```
 
-**Dependencies:**
-- D1 for job storage
-- SSE for progress streaming
-- Adapters, generators, sandbox
+---
+
+### 8. Analytics (`/src/analytics`)
+
+Cost tracking for LLM usage.
+
+#### Files
+
+| File | Purpose |
+|------|---------|
+| `cost-tracker.ts` | Track LLM API costs |
+
+#### Pricing Tracked
+- Claude 4.5 Sonnet: $3/$15 per 1M tokens
+- Claude 4.5 Haiku: $1/$5 per 1M tokens
+- Claude 3 Haiku: $0.25/$1.25 per 1M tokens
 
 ---
 
-### 6. **Types** (`/src/types`)
+### 9. Types (`/src/types`)
 
-TypeScript type definitions for backend.
+TypeScript type definitions.
 
-#### Files:
+#### Files
 
-**`api.ts`** - API request/response types
-- All request interfaces (`CreateEvalSetRequest`, etc.)
-- All response interfaces (`ListTracesResponse`, etc.)
-- Entity types: `Trace`, `EvalSet`, `Eval`, `Feedback`, etc.
-- Job types: `Job`, `JobResponse`
-- Error types: `APIError`
-- SSE event types
-
-**`trace.ts`** - Trace data structures
-- `LangGraphExecutionStep` - Unified trace format
-- `Message` - Chat messages
-- `ToolCall` - Tool invocations
-- Adapter-specific types
-
-**Shared with Frontend:**
-`/frontend/types/api.ts` is a copy for type safety across frontend/backend.
+| File | Purpose |
+|------|---------|
+| `api.ts` | API request/response types |
+| `trace.ts` | Trace data structures |
+| `agent.ts` | Agent and version types |
+| `queue.ts` | Job queue message types |
+| `vectorize.ts` | Vector storage types |
 
 ---
 
-### 7. **Analytics** (`/src/analytics`)
-
-Cost tracking and usage analytics.
-
-#### Files:
-
-**`cost-tracker.ts`** - LLM usage tracking
-- `CostTracker` class
-- `trackGeneration()` - Log LLM call costs
-- `trackExecution()` - Log eval execution costs
-- Calculates costs based on:
-  - Model used (Claude/GPT-4)
-  - Tokens consumed
-  - Execution time
-
-**`cost-tracker.test.ts`** - Cost tracker tests
-- Test cost calculation
-- Test different models
-- Test aggregation
-
-**Dependencies:**
-- D1 for cost storage
-
----
-
-### 8. **Utils** (`/src/utils`)
+### 10. Utilities (`/src/utils`)
 
 Shared utility functions.
 
-#### Files:
-
-**`errors.ts`** - Error handling
-- `ValidationError` - Input validation errors
-- `NotFoundError` - Resource not found
-- `RateLimitError` - Rate limiting
-- Error serialization
-
-**`crypto.ts`** - Encryption utilities
-- `encrypt()` - Encrypt API keys
-- `decrypt()` - Decrypt API keys
-- Uses Cloudflare Workers crypto API
-
-**`sse.ts`** - Server-Sent Events helpers
-- `createSSEResponse()` - Create SSE response
-- `sendSSEMessage()` - Send SSE message
-- `closeSSEStream()` - Close connection
-
-**Dependencies:**
-- Cloudflare Workers Web Crypto API
+| File | Purpose |
+|------|---------|
+| `errors.ts` | Error handling utilities |
+| `crypto.ts` | API key encryption (AES-GCM) |
+| `sse.ts` | Server-Sent Events helpers |
 
 ---
 
-### 9. **Client** (`/src/client`)
-
-SDK for programmatic access to iofold (optional).
-
-#### Files:
-
-**`api-client.ts`** - Programmatic API client
-- `IOFoldClient` class
-- Methods for all API endpoints
-- Type-safe requests
-- Error handling
-
-**`examples.ts`** - Usage examples
-- Import traces
-- Create eval set
-- Submit feedback
-- Generate eval
-
-**`index.ts`** - Client exports
-- Re-export all client functionality
-
-**Use Case:** Allow users to integrate iofold into their CI/CD pipelines.
-
----
-
-### 10. **Entry Point** (`/src/index.ts`)
+### 11. Entry Point (`/src/index.ts`)
 
 Cloudflare Workers entry point.
 
 - `fetch()` handler - Route HTTP requests
-- `scheduled()` handler - Cron jobs (future)
-- Environment setup
+- `scheduled()` handler - Cron jobs
+- `queue()` handler - Job queue consumer
 - CORS handling
 - Request logging
-
-**Dependencies:**
-- All API handlers
-- Job manager
 
 ---
 
 ## Frontend Modules (`/frontend`)
 
-### 1. **Pages** (`/frontend/app`)
+### 1. Pages (`/frontend/app`)
 
-Next.js 13+ App Router pages.
+Next.js 15 App Router pages. All pages are client components using React Query.
 
-#### Files:
+#### Primary Routes
 
-**`layout.tsx`** - Root layout
-- HTML structure
-- Global providers (React Query, Toast)
-- Navigation bar
-- Font configuration
+| Route | Purpose |
+|-------|---------|
+| `/` | Dashboard with KPIs, trends, activity |
+| `/integrations` | Platform connection management |
+| `/agents` | Agent list with version info |
+| `/agents/[id]` | Agent detail with versions, functions, metrics |
+| `/traces` | Trace explorer with filters |
+| `/evals` | Evaluation results dashboard |
+| `/evals/[id]` | Eval detail with code viewer |
 
-**`page.tsx`** - Dashboard (home)
-- Eval set list
-- Quick stats
-- Recent activity
-- Empty states
+#### Workflow Routes
 
-**`error.tsx`** - Error boundary page
-- Global error handling
-- User-friendly error messages
+| Route | Purpose |
+|-------|---------|
+| `/review` | Quick feedback interface with keyboard shortcuts |
+| `/matrix` | Agent version comparison overview |
+| `/matrix/[agent_id]` | Detailed trace evaluation matrix |
+| `/setup` | First-time setup wizard (5 steps) |
 
-#### Subdirectories:
+#### Admin Routes
 
-**`/app/integrations`** - Integrations management
-- List integrations
-- Add integration modal
-- Test connections
-
-**`/app/traces`** - Trace browser
-- List traces with filters
-- Trace detail modal
-- Search & pagination
-
-**`/app/eval-sets`** - Eval set management
-- List eval sets
-- Create eval set modal
-- **`/app/eval-sets/[id]`** - Eval set detail
-  - Feedback summary
-  - Generated evals list
-  - Actions (review, generate, matrix)
-
-**`/app/review`** - Swipe interface ⭐
-- `page.tsx` - Review page with swipable cards
-- Keyboard shortcuts
-- Progress tracking
-- Completion screen
-
-**`/app/evals`** - Eval list
-- Browse all evals
-- Filter by eval set
-- Accuracy sorting
-
-**`/app/evals/[id]`** - Eval detail
-- Code viewer with syntax highlighting
-- Test results tab
-- Execution history tab
-- Actions (execute, refine, compare)
+| Route | Purpose |
+|-------|---------|
+| `/settings` | User preferences, API keys, theme |
+| `/resources` | Usage monitoring, budget tracking |
+| `/system` | System health, job queue dashboard |
 
 ---
 
-### 2. **Components** (`/frontend/components`)
+### 2. Components (`/frontend/components`)
 
-Reusable React components.
+85+ React components organized by category.
 
-#### UI Components:
+#### UI Base (`/ui`)
+- `button.tsx` - CVA variants (10 variants, 6 sizes)
+- `card.tsx` - Compound component with Header/Content/Footer
+- `input.tsx`, `textarea.tsx`, `select.tsx` - Form controls
+- `dialog.tsx`, `sheet.tsx` - Modals and side panels
+- `skeleton.tsx` - Loading placeholders
+- `kpi-card.tsx` - Key Performance Indicator cards
+- `searchable-select.tsx` - Advanced multi-select with search
 
-**`navigation.tsx`** - Top navigation bar
-- Logo
-- Links (Home, Integrations, Traces, Eval Sets, Evals)
-- Active state styling
+#### Layout (`/layout`)
+- `main-layout.tsx` - Root layout with sidebar
+- `sidebar/sidebar.tsx` - Collapsible navigation (72px/256px)
 
-**`providers.tsx`** - React context providers
-- React Query client setup
-- Toast notification provider
-- API client initialization
+#### Feature Components
+- `feedback-buttons.tsx` - Good/Neutral/Bad rating buttons
+- `trace-feedback.tsx` - Full feedback UI with history
+- `trace-card.tsx` - Trace summary card
+- `code-viewer.tsx` - Syntax-highlighted Python display
+- `trace-review/*.tsx` - Trace review components
 
-**`error-boundary.tsx`** - Error boundary component
-- Catch React errors
-- Display fallback UI
-- Error reporting
+#### Modals (`/modals`)
+- `GenerateEvalModal.tsx` - Eval generation with SSE progress
+- `AddIntegrationModal.tsx` - Integration setup
+- `create-agent-modal.tsx` - Agent creation
+- `create-agent-version-modal.tsx` - Version management
+- `import-traces-modal.tsx` - Trace import
 
-#### Feature Components:
+#### Matrix Analysis (`/matrix`)
+- `agent-version-overview.tsx` - Version performance cards
+- `comparison-panel.tsx` - Side-by-side comparison
+- `trace-evaluation-details.tsx` - Detailed eval results
 
-**`trace-card.tsx`** - Trace summary card
-- Input/output preview
-- Status indicator
-- Feedback badge
-- Click to expand
+#### Charts (`/charts`)
+- `pass-rate-trend-chart.tsx` - Composed chart with dual Y-axes
+- `evaluation-chart.tsx` - Eval results visualization
 
-**`swipable-trace-card.tsx`** ⭐ - Draggable feedback card
-- Framer Motion animations
-- Swipe right (positive), left (negative), down (neutral)
-- Visual feedback (colored glow, icons)
-- Threshold detection
+#### Jobs (`/jobs`)
+- `job-queue-dashboard.tsx` - Real-time job monitoring
+- `job-retry-badge.tsx` - Retry status indicator
 
-**`trace-detail.tsx`** - Full trace display
-- All messages (Human, Assistant, Tool)
-- Collapsible tool calls
-- JSON formatting
-- Metadata display
-
-**`trace-feedback.tsx`** - Feedback display
-- Rating emoji
-- Notes text
-- Timestamp
-- Edit button
-
-**`feedback-buttons.tsx`** - Quick feedback buttons
-- 👍 Positive
-- 👎 Negative
-- 😐 Neutral
-- Click handlers
-
-**`code-viewer.tsx`** - Syntax-highlighted code display
-- Python syntax highlighting
-- Line numbers
-- Copy button
-- Download button
-
-**`matrix-table.tsx`** - Comparison matrix
-- Table with human feedback vs eval predictions
-- Expandable rows
-- Visual indicators (✅ ❌ ⚠️)
-- Filtering controls
-
-**`import-traces-modal.tsx`** - Trace import dialog
-- Integration selection
-- Filter inputs (date, tags, limit)
-- Job progress tracking
-
-#### Component Library (`/frontend/components/ui`):
-
-Shadcn UI components (customized):
-- `button.tsx`
-- `card.tsx`
-- `dialog.tsx`
-- `input.tsx`
-- `label.tsx`
-- `progress.tsx`
-- `select.tsx`
-- `skeleton.tsx`
-- `error-state.tsx`
+#### Skeletons (`/skeletons`)
+- Loading states for dashboard, tables, traces, agents, evals
 
 ---
 
-### 3. **Library** (`/frontend/lib`)
+### 3. Library (`/frontend/lib`)
 
-Frontend utilities and clients.
+Frontend utilities and API client.
 
-#### Files:
-
-**`api-client.ts`** ⭐ - Backend API client
-- `APIClient` class
-- All endpoint methods
-- Automatic header injection
-- Error handling
-- SSE streaming helpers
-- Singleton export: `apiClient`
-
-**`sse-client.ts`** - SSE connection management
-- `SSEClient` class
-- Reconnection logic
-- Event parsing
-- Error handling
-
-**`trace-parser.ts`** - Trace data parser
-- Parse trace JSON
-- Extract messages
-- Extract tool calls
-- Format for display
-
-**`utils.ts`** - Utility functions
-- `cn()` - Tailwind class merging
-- Date formatting
-- String truncation
-- Validation helpers
+| File | Purpose |
+|------|---------|
+| `api-client.ts` | Typed API client with all endpoints |
+| `sse-client.ts` | SSE connection management |
+| `trace-parser.ts` | Parse trace JSON for display |
+| `utils.ts` | Utilities (cn, date formatting) |
 
 ---
 
-### 4. **Hooks** (`/frontend/hooks`)
+### 4. Hooks (`/frontend/hooks`)
 
 Custom React hooks.
 
-#### Files:
-
-**`use-job-monitor.ts`** - Job progress monitoring
-- Subscribe to job SSE stream
-- Return: `{ status, progress, result, error }`
-- Auto-cleanup on unmount
-- Retry logic
-
-**Commonly used patterns:**
-```typescript
-const { status, progress, result } = useJobMonitor(jobId)
-```
+| Hook | Purpose |
+|------|---------|
+| `use-job-monitor.ts` | SSE + polling for job progress |
 
 ---
 
-### 5. **Types** (`/frontend/types`)
+### 5. Types (`/frontend/types`)
 
 Frontend TypeScript types.
 
-#### Files:
-
-**`api.ts`** - API types (copied from backend)
-- All request/response types
-- Entity models
-- Error types
-
-**`trace.ts`** - Trace display types
-- Extended trace types
-- UI-specific fields
-- Display states
+| File | Purpose |
+|------|---------|
+| `api.ts` | API types (duplicated from backend) |
+| `agent.ts` | Agent-specific types |
+| `trace.ts` | UI-specific trace parsing types |
 
 ---
 
-### 6. **Scripts** (`/frontend/scripts`)
+## Database (`/src/db`)
 
-Development and testing scripts.
+### Schema (22 Tables)
 
-#### Files:
+#### Core Tables
+- `users` - User accounts
+- `workspaces` - Multi-tenancy containers
+- `workspace_members` - Membership with roles
+- `integrations` - External platform connections
+- `traces` - Normalized execution traces
 
-**`test-trace-parser.ts`** - Parser test
-- Test trace parsing logic
-- Validate output format
+#### Eval Tables
+- `eval_sets` - Feedback collections
+- `feedback` - Human annotations
+- `evals` - Generated Python functions
+- `eval_executions` - Prediction results
 
-**`verify-parser.ts`** - Parser validation
-- Integration test with real traces
+#### Agent Tables
+- `agents` - Discovered agent groupings
+- `agent_versions` - Immutable prompt versions
+- `functions` - AI-generated code (extractor, injector, eval)
+- `agent_functions` - Agent-to-function mapping
+- `prompt_best_practices` - Reference material
 
-**`test-with-api.ts`** - API integration test
-- Test full request/response cycle
-- Verify API client
+#### Job Tables
+- `jobs` - Background job tracking
+- `job_retry_history` - Retry attempt audit
 
----
+#### Monitoring Tables
+- `system_prompts` - Unique prompts with SHA-256 hash
+- `performance_snapshots` - Daily metrics aggregation
+- `performance_alerts` - Performance monitoring alerts
+- `refinement_history` - Auto-refinement audit trail
+- `auto_refine_cooldowns` - Cooldown tracking
 
-### 7. **Configuration**
+### Migrations
 
-**`tailwind.config.ts`** - Tailwind CSS config
-- Theme customization
-- Custom colors
-- Plugins
+| Migration | Description |
+|-----------|-------------|
+| `001_initial_schema.sql` | Core tables, indexes |
+| `002_add_updated_at_to_eval_sets.sql` | Add updated_at column |
+| `003_add_metadata_to_jobs.sql` | Job metadata fields |
+| `004_system_prompt_versioning.sql` | Prompt tracking |
+| `005_agent_management.sql` | Agents, versions, functions |
+| `006_job_retry_tracking.sql` | Retry infrastructure |
 
-**`next.config.js`** - Next.js config
-- Build settings
-- Environment variables
-- Redirects
-
-**`tsconfig.json`** - TypeScript config
-- Compiler options
-- Path aliases (`@/` → `./`)
-
-**`package.json`** - Dependencies
-- React 18
-- Next.js 14
-- React Query (TanStack Query)
-- Framer Motion
-- Shadcn UI
-- Tailwind CSS
-- Sonner (toast notifications)
-
----
-
-## Database Schema (`/schema.sql`)
-
-D1 SQLite tables:
-
-1. **`users`** - User accounts
-2. **`workspaces`** - Multi-tenancy
-3. **`integrations`** - Platform connections (encrypted API keys)
-4. **`traces`** - Imported traces (JSON blobs)
-5. **`eval_sets`** - Eval set metadata
-6. **`feedback`** - Human feedback on traces
-7. **`evals`** - Generated Python functions
-8. **`eval_executions`** - Eval run results
-9. **`jobs`** - Background job queue
-
-**Key Views:**
-- `eval_comparison` - Joins executions + feedback for contradiction detection
+### Views
+- `eval_comparison` - Joins executions + feedback for contradictions
+- `prompt_performance_summary` - Aggregated prompt metrics
+- `current_eval_metrics` - Current metrics with 7-day rolling stats
+- `refinement_timeline` - Auto-refinement history
 
 ---
 
-## Documentation (`/docs`)
+## Testing (`/tests`)
 
-1. **`API_SPECIFICATION.md`** - Complete REST API docs
-2. **`FRONTEND_INTEGRATION_GUIDE.md`** - Integration guide
-3. **`FRONTEND_BACKEND_SPLIT.md`** - Separation guide
-4. **`UX_UI_SPECIFICATION.md`** - Complete UX/UI design
-5. **`MODULE_OVERVIEW.md`** - This document
-6. **`success_criteria.md`** - Success criteria
-7. **Design docs** - Original architecture documents
+### Backend E2E Tests
+- **32 test files** in `/tests/e2e/`
+- Categories: smoke, integrations, traces, evals, jobs, agents, errors
 
----
+### Test Infrastructure
+- **Framework**: Playwright 1.57.0
+- **Config**: `/playwright.config.ts`
+- **Fixtures**: `/tests/fixtures/` (integrations, traces, agents, jobs)
+- **Helpers**: `/tests/helpers/` (API client, assertions, wait utilities)
 
-## Dependencies Summary
-
-### Backend (`/src`)
-
-**Runtime:**
-- `@anthropic-ai/sdk` - Claude API for eval generation
-- `@cloudflare/sandbox` - Python sandbox (Pyodide)
-- `langfuse` - Langfuse SDK
-- `zod` - Schema validation
-
-**Dev:**
-- `@cloudflare/workers-types` - TypeScript types
-- `wrangler` - Cloudflare CLI
-- `vitest` - Testing framework
-- `typescript` - TypeScript compiler
-- `tsx` - TypeScript execution
-
-### Frontend (`/frontend`)
-
-**Core:**
-- `react` 18
-- `next` 14
-- `@tanstack/react-query` - Data fetching
-- `framer-motion` - Animations
-
-**UI:**
-- `tailwindcss` - Styling
-- `@radix-ui/*` - Headless UI components
-- `lucide-react` - Icons
-- `sonner` - Toast notifications
-
-**Dev:**
-- `typescript`
-- `eslint`
-- `prettier`
+### Frontend E2E Tests
+- **4 test files** in `/frontend/e2e/`
+- Includes accessibility testing (WCAG 2.1 AA)
 
 ---
 
-## Module Interaction Diagram
+## Dependencies
 
-```
-User Request
-     │
-     ▼
-┌─────────────────┐
-│  Frontend       │
-│  (Next.js)      │
-└────────┬────────┘
-         │ HTTP/SSE
-         ▼
-┌─────────────────┐
-│  API Router     │──┐
-│  (index.ts)     │  │
-└────────┬────────┘  │
-         │           │
-    ┌────┴────┐      │
-    ▼         ▼      │
-┌───────┐ ┌──────┐  │
-│Traces │ │Evals │  │ Other endpoints
-└───┬───┘ └──┬───┘  │
-    │        │      │
-    ▼        ▼      ▼
-┌──────────────────────┐
-│   Job Manager        │
-└───────┬──────────────┘
-        │
-   ┌────┴────┐
-   ▼         ▼
-┌───────┐ ┌─────────┐
-│Import │ │Generate │
-│ Job   │ │  Job    │
-└───┬───┘ └────┬────┘
-    │          │
-    ▼          ▼
-┌─────────┐ ┌──────────┐
-│Adapters │ │Generator │
-└─────────┘ └─────┬────┘
-                  │
-                  ▼
-            ┌──────────┐
-            │ Sandbox  │
-            └──────────┘
-                  │
-                  ▼
-            ┌──────────┐
-            │    D1    │
-            │ Database │
-            └──────────┘
-```
+### Backend
+| Package | Purpose |
+|---------|---------|
+| `@anthropic-ai/sdk` | Claude API for eval generation |
+| `@cloudflare/sandbox` | Python sandbox (Pyodide) |
+| `langfuse` | Langfuse SDK |
+| `zod` | Schema validation |
+
+### Frontend
+| Package | Purpose |
+|---------|---------|
+| `next` 15 | React framework |
+| `@tanstack/react-query` | Server state management |
+| `framer-motion` | Animations |
+| `recharts` | Charts |
+| `tailwindcss` | Styling |
+| `@radix-ui/*` | Headless UI components |
+| `sonner` | Toast notifications |
+| `lucide-react` | Icons |
 
 ---
 
 ## Key Patterns
 
-### 1. **Async Operations (Jobs)**
+### 1. Async Job Pattern
 ```
-User clicks "Import" → API creates job → Returns job_id
-Frontend polls /api/jobs/:id OR subscribes to SSE
-Job worker picks up job → Runs adapter → Updates progress
-Job completes → Frontend receives result → Updates UI
-```
-
-### 2. **Eval Generation**
-```
-User clicks "Generate" → API creates generation job
-Job fetches traces with feedback from eval set
-Generator calls LLM with meta-prompt + training data
-Tester runs generated code on training data
-Job stores eval + test results → Frontend displays
+POST request → Create job → Return job_id
+Client polls /api/jobs/:id OR subscribes to SSE stream
+Job worker processes → Updates progress → Completes/fails
 ```
 
-### 3. **Trace Review (Swipe)**
+### 2. Agent Version Workflow
 ```
-Frontend fetches traces without feedback
-User swipes/presses key → POST /api/feedback
-Feedback associates trace with eval set
-Progress updates → Next trace displayed
-Completion → All traces reviewed
+Discovered Agent → Confirm → Active Version
+Create New Version → Candidate → Promote/Reject
+Promote → Old version archived, new version active
 ```
 
-### 4. **Contradiction Detection**
+### 3. Eval Generation
 ```
-Eval executes on trace → Stores result
-Matrix endpoint joins executions + feedback
-Finds where human rating ≠ eval prediction
-User views contradictions → Clicks "Refine"
-New eval generated with contradiction cases included
+Fetch labeled traces → Build meta-prompt → Call Claude
+Extract Python code → Test on training data → Store with accuracy
+```
+
+### 4. Error Classification
+```
+Error caught → classifyError() → ErrorCategory
+isRetryable(category) → true: schedule retry, false: mark failed
 ```
 
 ---
 
-## Testing Strategy
+## Security
 
 ### Backend
-- Unit tests: `*.test.ts` files
-- Test runners: Vitest
-- Coverage: Generators, adapters, sandbox
+1. **API Keys**: AES-GCM encryption at rest
+2. **Python Sandbox**: Restricted imports, timeout, memory limit
+3. **Multi-tenancy**: All queries filtered by workspace_id
+4. **Input Validation**: Zod schemas
 
 ### Frontend
-- E2E tests: Playwright (planned)
-- Component tests: Jest + React Testing Library (planned)
-- Manual testing: Current approach
+1. **XSS Prevention**: React escaping
+2. **HTTPS**: Required in production
+3. **No Secret Storage**: All secrets on backend
 
 ---
 
-## Build & Deploy
-
-### Backend
-```bash
-npm run dev     # Local development (wrangler dev)
-npm run deploy  # Deploy to Cloudflare Workers
-npm test        # Run tests
-```
-
-### Frontend
-```bash
-cd frontend
-npm run dev     # Local development (Next.js dev server)
-npm run build   # Production build
-npm run start   # Production server
-```
-
----
-
-## Security Considerations
-
-### Backend
-1. **API Keys:** Encrypted at rest in D1
-2. **Python Sandbox:** Restricted imports, timeout, memory limit
-3. **Rate Limiting:** Per-workspace limits (planned)
-4. **CORS:** Configured allowed origins
-5. **Input Validation:** Zod schemas
-
-### Frontend
-1. **XSS Prevention:** React escaping
-2. **CSRF:** Not needed (no cookies)
-3. **API Key Storage:** None (backend handles)
-4. **HTTPS:** Required in production
-
----
-
-## Performance Optimizations
-
-### Backend
-1. **D1 Indexing:** Foreign keys, unique constraints
-2. **Job Queue:** Async processing for heavy operations
-3. **Caching:** None yet (future: KV storage)
-4. **Pagination:** Cursor-based for large datasets
-
-### Frontend
-1. **Code Splitting:** Dynamic imports (Framer Motion)
-2. **React Query:** Caching, deduplication
-3. **Lazy Loading:** Trace details on demand
-4. **Debouncing:** Search inputs
-
----
-
-## Future Modules (Planned)
-
-### Backend
-1. **Multi-turn Evals** - Handle conversation traces
-2. **LLM-based Evals** - Generate LLM-as-judge evals
-3. **Auto-refinement** - Trigger on accuracy threshold
-4. **Webhooks** - Notify on eval generation
-5. **Analytics Dashboard** - Cost, usage, accuracy trends
-
-### Frontend
-1. **Eval Comparison** - Side-by-side code diffs
-2. **Version History** - View all eval versions
-3. **Bulk Operations** - Multi-select & batch actions
-4. **Export** - CSV/JSON exports for matrix
-5. **Dark Mode** - Theme switching
-
----
-
-## Module Checklist
-
-### Implemented ✅
-- [x] API endpoints (all 30+)
-- [x] Trace adapter (Langfuse)
-- [x] Eval generator
-- [x] Python sandbox
-- [x] Job queue
-- [x] Frontend pages (all)
-- [x] Swipe interface
-- [x] Code viewer
-- [x] Matrix view
-- [x] SSE streaming
-
-### In Progress 🚧
-- [ ] Langsmith adapter
-- [ ] OpenAI adapter
-- [ ] E2E tests
-- [ ] Cost analytics
-
-### Planned 📋
-- [ ] Multi-turn eval support
-- [ ] Auto-refinement
-- [ ] Webhooks
-- [ ] Advanced analytics
-- [ ] Dark mode
-
----
-
-**Last Updated:** 2025-11-17
-**Total Modules:** 50+ files across backend and frontend
-**Lines of Code:** ~15,000 (backend: ~8,000, frontend: ~7,000)
+**Last Updated**: 2025-12-01
+**Total Modules**: 100+ files across backend and frontend

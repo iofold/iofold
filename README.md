@@ -46,7 +46,7 @@ This is a prototype implementation to validate core technical assumptions before
 ### 1. Install Dependencies
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### 2. Configure Environment
@@ -93,7 +93,7 @@ npx wrangler d1 execute iofold_validation --remote --file=./schema.sql
 ### Start Development Server
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 The server will start at `http://localhost:8787`
@@ -217,7 +217,7 @@ curl -X POST http://localhost:8787/api/evals/{eval-id}/test \
 Run unit tests:
 
 ```bash
-npm test
+pnpm test
 ```
 
 Tests cover:
@@ -301,7 +301,7 @@ See `docs/next-steps.md` for detailed roadmap.
 ### Running Tests
 
 ```bash
-npm test
+pnpm test
 ```
 
 ### Type Checking
@@ -313,7 +313,7 @@ npx tsc --noEmit
 ### Deploy (for testing)
 
 ```bash
-npm run deploy
+pnpm run deploy
 ```
 
 Note: Requires environment variables to be set in Cloudflare dashboard.

@@ -1,7 +1,7 @@
 # Deployment Guide - iofold Platform
 
-**Version**: 1.0
-**Last Updated**: 2025-11-15
+**Version**: 1.1
+**Last Updated**: 2025-12-01
 **Target Platform**: Cloudflare Workers + Pages + D1
 
 ---
@@ -169,6 +169,10 @@ wrangler d1 execute iofold-local --command="SELECT name FROM sqlite_master WHERE
 **Migration Files**:
 - `migrations/001_initial_schema.sql` - Initial database schema (10 tables, 1 view, 25 indexes)
 - `migrations/002_add_updated_at_to_eval_sets.sql` - Add `updated_at` column to `eval_sets` table
+- `migrations/003_add_metadata_to_jobs.sql` - Job metadata fields
+- `migrations/004_system_prompt_versioning.sql` - System prompt tracking
+- `migrations/005_agent_management.sql` - Agents, versions, functions tables
+- `migrations/006_job_retry_tracking.sql` - Job retry infrastructure
 
 ### 2. Run Production Migrations
 
@@ -184,11 +188,13 @@ wrangler d1 execute iofold-production --json --command="SELECT * FROM evals" > b
 
 **Run Migrations**:
 ```bash
-# Run initial schema migration
+# Run all migrations in order
 wrangler d1 execute iofold-production --file=migrations/001_initial_schema.sql
-
-# Run subsequent migrations
 wrangler d1 execute iofold-production --file=migrations/002_add_updated_at_to_eval_sets.sql
+wrangler d1 execute iofold-production --file=migrations/003_add_metadata_to_jobs.sql
+wrangler d1 execute iofold-production --file=migrations/004_system_prompt_versioning.sql
+wrangler d1 execute iofold-production --file=migrations/005_agent_management.sql
+wrangler d1 execute iofold-production --file=migrations/006_job_retry_tracking.sql
 ```
 
 **Verify Migration Success**:
@@ -864,8 +870,8 @@ vars = { NEXT_PUBLIC_API_URL = "https://api.iofold.com" }
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-11-15
+**Document Version**: 1.1
+**Last Updated**: 2025-12-01
 **Maintained By**: iofold Platform Team
 
 **Need Help?** See [Troubleshooting](#troubleshooting) or contact ygupta.
