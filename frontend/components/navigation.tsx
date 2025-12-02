@@ -11,6 +11,7 @@ const navItems = [
   { href: '/agents', label: 'Agents' },
   { href: '/traces', label: 'Traces' },
   { href: '/evals', label: 'Evals' },
+  { href: '/analytics', label: 'Analytics' },
 ]
 
 export function Navigation() {
