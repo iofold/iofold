@@ -10,6 +10,10 @@ export class CostTracker {
   // Claude pricing (as of Nov 2025)
   private static CLAUDE_PRICING = {
     // Claude 4.5 series (latest)
+    'claude-sonnet-4-5-20250929': {
+      input: 3.00 / 1_000_000,
+      output: 15.00 / 1_000_000
+    },
     'claude-sonnet-4-5': {
       input: 3.00 / 1_000_000,
       output: 15.00 / 1_000_000

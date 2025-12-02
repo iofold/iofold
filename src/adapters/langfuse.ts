@@ -36,7 +36,15 @@ export class LangfuseAdapter {
         toTimestamp: filter.toTimestamp?.toISOString()
       });
 
-      return response.data.map(trace => this.normalizeTrace(trace));
+      // Fetch observations for each trace
+      const tracesWithObservations = await Promise.all(
+        response.data.map(async (trace) => {
+          const observations = await this.fetchObservations(trace.id);
+          return this.normalizeTrace(trace, observations);
+        })
+      );
+
+      return tracesWithObservations;
     } catch (error) {
       let message: string;
       if (error instanceof Error) {
@@ -57,7 +65,8 @@ export class LangfuseAdapter {
   async fetchTraceById(id: string): Promise<Trace> {
     try {
       const trace = await this.client.api.traceGet(id);
-      return this.normalizeTrace(trace);
+      const observations = await this.fetchObservations(id);
+      return this.normalizeTrace(trace, observations);
     } catch (error) {
       let message: string;
       if (error instanceof Error) {
@@ -75,7 +84,21 @@ export class LangfuseAdapter {
     }
   }
 
-  private normalizeTrace(langfuseTrace: any): Trace {
+  private async fetchObservations(traceId: string): Promise<any[]> {
+    try {
+      // Langfuse API: GET /api/public/observations?traceId=xxx
+      const response = await this.client.api.observationList({
+        traceId,
+        limit: 100 // Get all observations for this trace
+      });
+      return response.data || [];
+    } catch (error) {
+      console.warn(`Failed to fetch observations for trace ${traceId}:`, error);
+      return [];
+    }
+  }
+
+  private normalizeTrace(langfuseTrace: any, observations: any[] = []): Trace {
     // Langfuse returns messages in output.messages, not in observations
     // observations is just an array of IDs
     const messages = langfuseTrace.output?.messages || [];
@@ -149,7 +172,24 @@ export class LangfuseAdapter {
       trace_id: langfuseTrace.id,
       steps,
       source: 'langfuse',
-      raw_data: langfuseTrace
+      raw_data: {
+        ...langfuseTrace,
+        observations: observations.map(obs => ({
+          id: obs.id,
+          type: obs.type,
+          name: obs.name,
+          parentObservationId: obs.parentObservationId,
+          startTime: obs.startTime,
+          endTime: obs.endTime,
+          input: obs.input,
+          output: obs.output,
+          metadata: obs.metadata,
+          model: obs.model,
+          usage: obs.usage,
+          level: obs.level,
+          statusMessage: obs.statusMessage,
+        }))
+      }
     };
   }
 

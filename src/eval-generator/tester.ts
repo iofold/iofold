@@ -113,7 +113,7 @@ print(json.dumps(result_dict))
 
       if (!execution.success) {
         return {
-          traceId: testCase.trace.trace_id,
+          traceId: testCase.trace.id,
           expected: testCase.expectedPass,
           predicted: false,
           reason: '',
@@ -128,7 +128,7 @@ print(json.dumps(result_dict))
       const resultMatch = output.match(/\{"passed":\s*(true|false),\s*"reason":\s*"([^"]*)"\}/);
       if (!resultMatch) {
         return {
-          traceId: testCase.trace.trace_id,
+          traceId: testCase.trace.id,
           expected: testCase.expectedPass,
           predicted: false,
           reason: '',
@@ -142,7 +142,7 @@ print(json.dumps(result_dict))
       const reason = resultMatch[2];
 
       return {
-        traceId: testCase.trace.trace_id,
+        traceId: testCase.trace.id,
         expected: testCase.expectedPass,
         predicted,
         reason,
@@ -151,7 +151,7 @@ print(json.dumps(result_dict))
       };
     } catch (error: any) {
       return {
-        traceId: testCase.trace.trace_id,
+        traceId: testCase.trace.id,
         expected: testCase.expectedPass,
         predicted: false,
         reason: '',

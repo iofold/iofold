@@ -207,10 +207,11 @@ export class D1TraceCollector implements TraceCollector {
     const steps = this.convertToLangGraphSteps();
 
     // Prepare trace data
+    // Use this.traceId as the id so it matches what's stored in session messages
     const traceData = {
-      id: `trace_${crypto.randomUUID()}`,
+      id: this.traceId,
       workspaceId: this.metadata.workspaceId,
-      integrationId: 'playground', // Special integration for playground
+      integrationId: (this.metadata as any).integrationId || 'playground', // Use provided integration ID or default
       traceId: this.traceId,
       source: 'playground' as const,
       timestamp: new Date().toISOString(),
@@ -337,6 +338,7 @@ export class D1TraceCollector implements TraceCollector {
         output: span.output,
         metadata: {
           span_id: span.id,
+          parent_span_id: span.parentId,
           span_name: span.name,
           latency_ms: span.endTime
             ? new Date(span.endTime).getTime() - new Date(span.startTime).getTime()

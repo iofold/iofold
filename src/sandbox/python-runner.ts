@@ -12,6 +12,8 @@ export interface PythonRunnerConfig {
   timeout?: number; // milliseconds
   sandboxBinding?: DurableObjectNamespace<Sandbox>; // Cloudflare Sandbox binding
   sandboxId?: string; // Unique identifier for this sandbox instance
+  /** URL of dev Python executor service (default: http://localhost:9999) */
+  devExecutorUrl?: string;
 }
 
 const ALLOWED_IMPORTS = ['json', 're', 'typing'];
@@ -22,6 +24,9 @@ const BLOCKED_IMPORTS = [
   '__import__', 'eval', 'exec', 'compile'
 ];
 
+/** Default URL for the dev Python executor service */
+const DEV_EXECUTOR_URL = 'http://localhost:9999';
+
 export class PythonRunner {
   private config: PythonRunnerConfig;
   private sandbox?: Sandbox;
@@ -30,7 +35,8 @@ export class PythonRunner {
     this.config = {
       timeout: config.timeout || 5000,
       sandboxBinding: config.sandboxBinding,
-      sandboxId: config.sandboxId || `python-eval-${Date.now()}`
+      sandboxId: config.sandboxId || `python-eval-${Date.now()}`,
+      devExecutorUrl: config.devExecutorUrl || DEV_EXECUTOR_URL
     };
   }
 
@@ -49,10 +55,10 @@ export class PythonRunner {
 
     // Step 2: Execute in sandboxed environment
     try {
+      // If no sandbox binding, fall back to dev executor HTTP service
       if (!this.config.sandboxBinding) {
-        throw new Error(
-          'Sandbox binding not configured. Please provide sandboxBinding in PythonRunnerConfig.'
-        );
+        console.log('[PythonRunner] No sandbox binding - using dev executor service');
+        return this.executeViaHttpService(code, startTime);
       }
 
       // Initialize sandbox with keepAlive: false for automatic cleanup
@@ -153,5 +159,36 @@ export class PythonRunner {
     }
 
     return null;
+  }
+
+  /**
+   * Execute Python code via HTTP service (dev mode only)
+   * Calls the python-executor-service running on localhost:9999
+   */
+  private async executeViaHttpService(code: string, startTime: number): Promise<ExecutionResult> {
+    try {
+      const response = await fetch(`${this.config.devExecutorUrl}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, timeout: this.config.timeout })
+      });
+
+      const result = await response.json() as ExecutionResult;
+      return result;
+    } catch (error: any) {
+      // Connection refused = service not running
+      if (error.cause?.code === 'ECONNREFUSED' || error.message?.includes('fetch failed')) {
+        return {
+          success: false,
+          error: `Dev Python executor not running. Start it with: bun scripts/python-executor-service.ts`,
+          executionTimeMs: Date.now() - startTime
+        };
+      }
+      return {
+        success: false,
+        error: error.message || 'HTTP service error',
+        executionTimeMs: Date.now() - startTime
+      };
+    }
   }
 }

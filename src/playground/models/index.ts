@@ -18,15 +18,33 @@ export interface ModelOption {
  * These use platform-managed API keys
  */
 export const MODEL_OPTIONS: readonly ModelOption[] = [
+  // Anthropic - Latest Claude models
   {
     provider: 'anthropic',
     modelId: 'claude-sonnet-4-5-20250929',
     label: 'Claude Sonnet 4.5'
   },
   {
+    provider: 'anthropic',
+    modelId: 'claude-haiku-4-5-20250929',
+    label: 'Claude Haiku 4.5'
+  },
+  // OpenAI - GPT-5.1 series
+  {
     provider: 'openai',
-    modelId: 'gpt-4o',
-    label: 'GPT-4o'
+    modelId: 'gpt-5.1-mini',
+    label: 'GPT-5.1 Mini'
+  },
+  {
+    provider: 'openai',
+    modelId: 'gpt-5.1-nano',
+    label: 'GPT-5.1 Nano'
+  },
+  // Google - Gemini 2.5 series
+  {
+    provider: 'google',
+    modelId: 'gemini-2.5-flash',
+    label: 'Gemini 2.5 Flash'
   },
   {
     provider: 'google',
@@ -39,6 +57,7 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
   GOOGLE_API_KEY?: string;
+  GEMINI_API_KEY?: string; // Alternative name for Google API key
 }
 
 /**
@@ -79,12 +98,13 @@ export async function getModel(
     }
 
     case 'google': {
-      if (!env.GOOGLE_API_KEY) {
-        throw new Error('GOOGLE_API_KEY not configured');
+      const googleApiKey = env.GOOGLE_API_KEY || env.GEMINI_API_KEY;
+      if (!googleApiKey) {
+        throw new Error('GOOGLE_API_KEY or GEMINI_API_KEY not configured');
       }
       const { ChatGoogleGenerativeAI } = await import('@langchain/google-genai');
       return new ChatGoogleGenerativeAI({
-        apiKey: env.GOOGLE_API_KEY,
+        apiKey: googleApiKey,
         model: modelId
       });
     }

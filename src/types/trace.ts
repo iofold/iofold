@@ -26,6 +26,6 @@ export interface Trace {
   id: string;
   trace_id: string;
   steps: LangGraphExecutionStep[];
-  source: 'langfuse' | 'langsmith' | 'openai';
+  source: 'langfuse' | 'langsmith' | 'openai' | 'playground';
   raw_data: any;
 }
