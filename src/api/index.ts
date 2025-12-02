@@ -61,6 +61,7 @@ import {
   getAgentById,
   confirmAgent,
   deleteAgent,
+  updateAgent,
   getAgentPrompt,
   improveAgent,
 } from './agents';
@@ -73,8 +74,21 @@ import {
   rejectAgentVersion,
 } from './agent-versions';
 
+import {
+  playgroundChat,
+  getPlaygroundSession,
+  deletePlaygroundSession,
+  listPlaygroundSessions,
+  listAllPlaygroundSessions,
+} from './playground';
+
 export interface Env {
   DB: D1Database;
+  ANTHROPIC_API_KEY?: string;
+  OPENAI_API_KEY?: string;
+  GOOGLE_API_KEY?: string;
+  SANDBOX?: any;
+  ENCRYPTION_KEY?: string;
   /** Cloudflare Queue binding for job processing */
   JOB_QUEUE?: Queue;
 }
@@ -82,7 +96,7 @@ export interface Env {
 /**
  * Route HTTP request to appropriate handler
  */
-export async function handleApiRequest(request: Request, env: Env): Promise<Response> {
+export async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
@@ -193,7 +207,17 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   // Jobs Endpoints
   // ============================================================================
 
-  const jobsAPI = new JobsAPI(env.DB);
+  const jobsAPI = new JobsAPI({
+    db: env.DB,
+    anthropicApiKey: env.ANTHROPIC_API_KEY,
+    sandboxBinding: env.SANDBOX,
+    encryptionKey: env.ENCRYPTION_KEY || 'default-dev-key'
+  });
+
+  // POST /api/jobs/process - Process queued jobs (for local development)
+  if (path === '/api/jobs/process' && method === 'POST') {
+    return jobsAPI.processQueuedJobs();
+  }
 
   // GET /api/jobs/:id - Get job status
   const jobMatch = path.match(/^\/api\/jobs\/([^\/]+)$/);
@@ -236,7 +260,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   // Evals Endpoints
   // ============================================================================
 
-  const evalsAPI = new EvalsAPI(env.DB, null as any, null as any);
+  const evalsAPI = new EvalsAPI(env.DB, env.ANTHROPIC_API_KEY || '', env.SANDBOX, ctx);
 
   // POST /api/evals - Create eval directly
   if (path === '/api/evals' && method === 'POST') {
@@ -278,6 +302,14 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     const body = await request.json();
     const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
     return evalsAPI.executeEval(evalExecuteMatch[1], workspaceId, body);
+  }
+
+  // POST /api/evals/:id/playground - Run eval in playground
+  const evalPlaygroundMatch = path.match(/^\/api\/evals\/([^\/]+)\/playground$/);
+  if (evalPlaygroundMatch && method === 'POST') {
+    const body = await request.json();
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return evalsAPI.playgroundRun(evalPlaygroundMatch[1], workspaceId, body);
   }
 
   // POST /api/agents/:id/generate-eval - Generate eval from agent traces
@@ -423,9 +455,46 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     return getAgentById(request, env, agentMatch[1]);
   }
 
+  // PATCH /api/agents/:id
+  if (agentMatch && method === 'PATCH') {
+    return updateAgent(request, env, agentMatch[1]);
+  }
+
   // DELETE /api/agents/:id
   if (agentMatch && method === 'DELETE') {
     return deleteAgent(request, env, agentMatch[1]);
+  }
+
+  // ============================================================================
+  // Playground Endpoints
+  // ============================================================================
+
+  // POST /api/agents/:id/playground/chat - Stream chat responses
+  const playgroundChatMatch = path.match(/^\/api\/agents\/([^\/]+)\/playground\/chat$/);
+  if (playgroundChatMatch && method === 'POST') {
+    return playgroundChat(request, env, playgroundChatMatch[1]);
+  }
+
+  // GET /api/agents/:id/playground/sessions - List sessions
+  const playgroundSessionsMatch = path.match(/^\/api\/agents\/([^\/]+)\/playground\/sessions$/);
+  if (playgroundSessionsMatch && method === 'GET') {
+    return listPlaygroundSessions(request, env, playgroundSessionsMatch[1]);
+  }
+
+  // GET /api/agents/:id/playground/sessions/:sessionId - Get session
+  const playgroundSessionMatch = path.match(/^\/api\/agents\/([^\/]+)\/playground\/sessions\/([^\/]+)$/);
+  if (playgroundSessionMatch && method === 'GET') {
+    return getPlaygroundSession(request, env, playgroundSessionMatch[1], playgroundSessionMatch[2]);
+  }
+
+  // DELETE /api/agents/:id/playground/sessions/:sessionId - Delete session
+  if (playgroundSessionMatch && method === 'DELETE') {
+    return deletePlaygroundSession(request, env, playgroundSessionMatch[1], playgroundSessionMatch[2]);
+  }
+
+  // GET /api/playground/sessions - List all sessions across all agents
+  if (path === '/api/playground/sessions' && method === 'GET') {
+    return listAllPlaygroundSessions(request, env);
   }
 
   // ============================================================================

@@ -51,13 +51,19 @@ const ListEvalsSchema = z.object({
   limit: z.number().int().min(1).max(200).optional().default(50)
 });
 
+const PlaygroundRunSchema = z.object({
+  code: z.string().min(1),
+  trace_ids: z.array(z.string()).min(1).max(50)
+});
+
 export class EvalsAPI {
   private jobManager: JobManager;
 
   constructor(
     private db: D1Database,
     private anthropicApiKey: string,
-    private sandboxBinding?: DurableObjectNamespace<Sandbox>
+    private sandboxBinding?: DurableObjectNamespace<Sandbox>,
+    private ctx?: ExecutionContext
   ) {
     this.jobManager = new JobManager(db);
   }
@@ -103,9 +109,13 @@ export class EvalsAPI {
         );
       }
 
-      // Create job
+      // Create job with all required metadata for job worker
       const job = await this.jobManager.createJob('generate', workspaceId, {
-        agentId,
+        agent_id: agentId,  // snake_case for job worker compatibility
+        name: validated.name,
+        description: validated.description,
+        model: validated.model,
+        custom_instructions: validated.custom_instructions,
         workspaceId
       });
 
@@ -127,10 +137,14 @@ export class EvalsAPI {
         }
       );
 
-      // Execute in background (fire and forget)
-      generationJob.execute().catch(error => {
+      // Execute in background using ctx.waitUntil to keep worker alive
+      const jobPromise = generationJob.execute().catch(error => {
         console.error('Generation job failed:', error);
       });
+
+      if (this.ctx) {
+        this.ctx.waitUntil(jobPromise);
+      }
 
       return new Response(
         JSON.stringify({
@@ -407,10 +421,14 @@ export class EvalsAPI {
         }
       );
 
-      // Execute in background (fire and forget)
-      executionJob.execute().catch(error => {
+      // Execute in background using ctx.waitUntil to keep worker alive
+      const jobPromise = executionJob.execute().catch(error => {
         console.error('Execution job failed:', error);
       });
+
+      if (this.ctx) {
+        this.ctx.waitUntil(jobPromise);
+      }
 
       return new Response(
         JSON.stringify({
@@ -450,6 +468,123 @@ export class EvalsAPI {
       return new Response(null, { status: 204 });
     } catch (error) {
       return handleError(error);
+    }
+  }
+
+  // POST /api/evals/:id/playground - Run eval code against traces without persisting
+  async playgroundRun(
+    evalId: string,
+    workspaceId: string,
+    body: any
+  ): Promise<Response> {
+    try {
+      const validated = PlaygroundRunSchema.parse(body);
+
+      // Check if eval exists and get agent_id
+      const evalRecord = await this.db
+        .prepare('SELECT id, agent_id FROM evals WHERE id = ?')
+        .bind(evalId)
+        .first();
+
+      if (!evalRecord) {
+        return notFoundError('Eval', evalId);
+      }
+
+      // Fetch traces with their feedback
+      const placeholders = validated.trace_ids.map(() => '?').join(',');
+      const traces = await this.db
+        .prepare(
+          `SELECT t.id, t.steps, t.raw_data,
+                  f.rating as human_rating, f.rating_detail as human_notes
+           FROM traces t
+           LEFT JOIN feedback f ON t.id = f.trace_id AND f.agent_id = ?
+           WHERE t.id IN (${placeholders})`
+        )
+        .bind(evalRecord.agent_id, ...validated.trace_ids)
+        .all();
+
+      if (!traces.results || traces.results.length === 0) {
+        return validationError('trace_ids', 'No valid traces found');
+      }
+
+      // Execute eval code against each trace
+      const results: any[] = [];
+      let matches = 0;
+      let contradictions = 0;
+      let totalTime = 0;
+
+      for (const trace of traces.results) {
+        const startTime = Date.now();
+        let predicted = false;
+        let reason = '';
+        let error: string | null = null;
+
+        try {
+          // Parse trace data
+          const traceData = {
+            trace_id: trace.id,
+            steps: typeof trace.steps === 'string' ? JSON.parse(trace.steps as string) : trace.steps,
+            raw_data: typeof trace.raw_data === 'string' ? JSON.parse(trace.raw_data as string) : trace.raw_data
+          };
+
+          // For MVP, return mock results since sandbox integration is complex
+          // In production, this would call the sandbox binding
+          if (this.sandboxBinding) {
+            // TODO: Implement actual sandbox execution
+            // const sandbox = this.sandboxBinding.get(this.sandboxBinding.idFromName('playground'));
+            // const result = await sandbox.executeEval(validated.code, traceData);
+            // predicted = result.predicted;
+            // reason = result.reason;
+            error = 'Sandbox execution not yet implemented';
+          } else {
+            error = 'Sandbox not available';
+          }
+        } catch (e: any) {
+          error = e.message || 'Execution error';
+        }
+
+        const executionTime = Date.now() - startTime;
+        totalTime += executionTime;
+
+        // Determine if this is a match or contradiction
+        const humanRating = trace.human_rating as string | null;
+        let isMatch: boolean | null = null;
+        let isContradiction = false;
+
+        if (humanRating && humanRating !== 'neutral') {
+          const expectedPass = humanRating === 'positive';
+          isMatch = predicted === expectedPass;
+          isContradiction = !isMatch;
+          if (isMatch) matches++;
+          if (isContradiction) contradictions++;
+        }
+
+        results.push({
+          trace_id: trace.id,
+          human_feedback: humanRating || null,
+          predicted,
+          reason,
+          is_match: isMatch,
+          is_contradiction: isContradiction,
+          execution_time_ms: executionTime,
+          error
+        });
+      }
+
+      return new Response(JSON.stringify({
+        results,
+        summary: {
+          total: results.length,
+          matches,
+          contradictions,
+          avg_time_ms: Math.round(totalTime / results.length)
+        }
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (e) {
+      return handleError(e);
     }
   }
 }
