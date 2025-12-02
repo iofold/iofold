@@ -84,9 +84,8 @@ export async function importTraces(request: Request, env: Env): Promise<Response
       );
     }
 
-    // In development mode, always execute synchronously since queue workers don't run
-    // In production/staging with a queue, use async queue processing
-    const useQueue = env.JOB_QUEUE && env.ENVIRONMENT !== 'development';
+    // Use queue when available (works in local dev with Miniflare)
+    const useQueue = !!env.JOB_QUEUE;
 
     if (useQueue) {
       // Create job via queue producer (handles both DB insert and queue message)
@@ -237,7 +236,7 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
     const dateFrom = url.searchParams.get('date_from');
     const dateTo = url.searchParams.get('date_to');
 
-    // Build query
+    // Build query - include agent_id from agent_versions
     let query = `
       SELECT
         t.id,
@@ -249,22 +248,25 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
         t.output_preview,
         t.step_count,
         t.has_errors,
+        t.agent_version_id,
+        av.agent_id as trace_agent_id,
         f.id as feedback_id,
         f.rating,
         f.rating_detail as notes,
-        f.agent_id
+        f.agent_id as feedback_agent_id
       FROM traces t
       LEFT JOIN integrations i ON t.integration_id = i.id
+      LEFT JOIN agent_versions av ON t.agent_version_id = av.id
       LEFT JOIN feedback f ON t.id = f.trace_id
       WHERE t.workspace_id = ?
     `;
 
     const params: any[] = [workspaceId];
 
-    // Apply filters
+    // Apply filters - agent_id can match either trace's agent (via agent_version) or feedback's agent
     if (agentId) {
-      query += ' AND f.agent_id = ?';
-      params.push(agentId);
+      query += ' AND (av.agent_id = ? OR f.agent_id = ?)';
+      params.push(agentId, agentId);
     }
 
     if (source) {
@@ -321,6 +323,9 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
         timestamp: row.timestamp,
         imported_at: row.imported_at,
         step_count: row.step_count,
+        // Include agent_id from agent_version (trace's assigned agent)
+        agent_id: row.trace_agent_id || null,
+        agent_version_id: row.agent_version_id || null,
         summary: {
           input_preview: row.input_preview || 'No input',
           output_preview: row.output_preview || 'No output',
@@ -333,7 +338,7 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
         trace.feedback = {
           rating: row.rating,
           notes: row.notes,
-          agent_id: row.agent_id,
+          agent_id: row.feedback_agent_id,
         };
       }
 
@@ -346,14 +351,15 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
       SELECT COUNT(*) as count
       FROM traces t
       LEFT JOIN integrations i ON t.integration_id = i.id
+      LEFT JOIN agent_versions av ON t.agent_version_id = av.id
       LEFT JOIN feedback f ON t.id = f.trace_id
       WHERE t.workspace_id = ?
     `;
     const countParams: any[] = [workspaceId];
 
     if (agentId) {
-      countQuery += ' AND f.agent_id = ?';
-      countParams.push(agentId);
+      countQuery += ' AND (av.agent_id = ? OR f.agent_id = ?)';
+      countParams.push(agentId, agentId);
     }
     if (source) {
       countQuery += ' AND i.platform = ?';
@@ -402,6 +408,31 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
 }
 
 /**
+ * Convert steps to observations format for traces without raw_data
+ */
+function stepsToObservations(steps: any[]): any[] {
+  return steps.map((step, index) => ({
+    id: step.step_id || `obs_${index}`,
+    type: step.tool_calls?.length > 0 ? 'SPAN' : 'GENERATION',
+    name: step.tool_calls?.[0]?.tool_name || 'LLM Call',
+    parentObservationId: null, // Flat structure for now
+    startTime: step.timestamp,
+    endTime: step.timestamp, // We don't have end time
+    input: step.input,
+    output: step.output,
+    metadata: step.metadata,
+    model: step.metadata?.model,
+    usage: step.metadata?.usage ? {
+      promptTokens: step.metadata.tokens_input,
+      completionTokens: step.metadata.tokens_output,
+      totalTokens: (step.metadata.tokens_input || 0) + (step.metadata.tokens_output || 0)
+    } : undefined,
+    level: step.error ? 'ERROR' : 'DEFAULT',
+    statusMessage: step.error,
+  }));
+}
+
+/**
  * GET /api/traces/:id
  *
  * Get complete trace details with all steps, messages, and tool calls.
@@ -423,6 +454,7 @@ export async function getTraceById(request: Request, env: Env, traceId: string):
         i.platform as source,
         t.timestamp,
         t.steps,
+        t.raw_data,
         f.id as feedback_id,
         f.rating,
         f.rating_detail as notes,
@@ -443,12 +475,20 @@ export async function getTraceById(request: Request, env: Env, traceId: string):
     // Parse the steps JSON column
     const steps = result.steps ? JSON.parse(result.steps as string) : [];
 
+    // Parse raw_data if it exists
+    const rawData = result.raw_data ? JSON.parse(result.raw_data as string) : null;
+
+    // Get observations from raw_data or convert steps to observations
+    const observations = rawData?.observations || stepsToObservations(steps);
+
     const response: any = {
       id: result.id,
       trace_id: result.trace_id,
       source: result.source,
       timestamp: result.timestamp,
       steps: steps,
+      observations: observations,
+      raw_data: rawData,
     };
 
     // Add feedback if exists

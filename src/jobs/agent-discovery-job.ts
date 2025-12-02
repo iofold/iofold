@@ -76,6 +76,17 @@ export class AgentDiscoveryJob {
       await this.jobManager.updateJobStatus(this.config.jobId, 'running', 0);
       this.emitProgress('fetching_traces', 0);
 
+      console.log(JSON.stringify({
+        event: 'agent_discovery_start',
+        job_id: this.config.jobId,
+        workspace_id: this.config.workspaceId,
+        config: {
+          similarity_threshold: this.config.similarityThreshold ?? 0.85,
+          min_cluster_size: this.config.minClusterSize ?? 5,
+          max_traces: this.config.maxTracesToProcess ?? 100
+        }
+      }));
+
       // Step 1: Fetch unassigned traces from D1
       const maxTraces = this.config.maxTracesToProcess ?? 100;
       const unassignedTraces = await this.deps.db
@@ -88,12 +99,25 @@ export class AgentDiscoveryJob {
         .bind(this.config.workspaceId, maxTraces)
         .all();
 
+      console.log(JSON.stringify({
+        event: 'traces_fetched',
+        job_id: this.config.jobId,
+        count: unassignedTraces.results.length
+      }));
+
       if (unassignedTraces.results.length === 0) {
         const result: AgentDiscoveryJobResult = {
           discovered_agents: [],
           assigned_traces: 0,
           orphaned_traces: 0
         };
+
+        console.log(JSON.stringify({
+          event: 'agent_discovery_complete',
+          job_id: this.config.jobId,
+          result,
+          reason: 'no_unassigned_traces'
+        }));
 
         await this.jobManager.completeJob(this.config.jobId, result);
         this.emitProgress('completed', 100, result);
@@ -121,6 +145,14 @@ export class AgentDiscoveryJob {
         }
       }
 
+      console.log(JSON.stringify({
+        event: 'prompts_extracted',
+        job_id: this.config.jobId,
+        total_traces: unassignedTraces.results.length,
+        traces_with_prompts: tracePrompts.length,
+        traces_without_prompts: unassignedTraces.results.length - tracePrompts.length
+      }));
+
       if (tracePrompts.length === 0) {
         // No system prompts found - mark all as orphaned
         await this.markAllAsOrphaned(unassignedTraces.results.map(r => r.id as string));
@@ -130,6 +162,13 @@ export class AgentDiscoveryJob {
           assigned_traces: 0,
           orphaned_traces: unassignedTraces.results.length
         };
+
+        console.log(JSON.stringify({
+          event: 'agent_discovery_complete',
+          job_id: this.config.jobId,
+          result,
+          reason: 'no_system_prompts_found'
+        }));
 
         await this.jobManager.completeJob(this.config.jobId, result);
         this.emitProgress('completed', 100, result);
@@ -142,6 +181,18 @@ export class AgentDiscoveryJob {
 
       // Step 3: Cluster prompts by similarity
       const clusteringResult = await this.clusteringService.clusterPrompts(tracePrompts);
+
+      console.log(JSON.stringify({
+        event: 'clustering_complete',
+        job_id: this.config.jobId,
+        clusters_found: clusteringResult.clusters.length,
+        orphaned_from_clustering: clusteringResult.orphanedTraceIds.length,
+        cluster_sizes: clusteringResult.clusters.map(c => ({
+          id: c.id,
+          size: c.trace_ids.length,
+          avg_similarity: c.average_similarity.toFixed(3)
+        }))
+      }));
 
       this.emitProgress('extracting_templates', 50, {
         clusters_found: clusteringResult.clusters.length,
@@ -165,17 +216,40 @@ export class AgentDiscoveryJob {
           // Extract template using Claude
           const template = await this.extractTemplate(cluster);
 
+          console.log(JSON.stringify({
+            event: 'template_extracted',
+            job_id: this.config.jobId,
+            cluster_id: cluster.id,
+            agent_name: template.agent_name,
+            variables: template.variables,
+            template_preview: template.template.substring(0, 100) + (template.template.length > 100 ? '...' : '')
+          }));
+
           // Create agent and version
           const agentId = await this.createAgent(cluster, template);
           discoveredAgents.push(agentId);
           assignedTracesCount += cluster.trace_ids.length;
+
+          console.log(JSON.stringify({
+            event: 'agent_created',
+            job_id: this.config.jobId,
+            agent_id: agentId,
+            agent_name: template.agent_name,
+            traces_assigned: cluster.trace_ids.length
+          }));
 
           this.emitProgress('extracting_templates', 50 + ((i + 1) / clusteringResult.clusters.length) * 30, {
             agent_created: agentId,
             traces_assigned: cluster.trace_ids.length
           });
         } catch (error: any) {
-          console.error(`Failed to process cluster ${cluster.id}:`, error);
+          console.error(JSON.stringify({
+            event: 'cluster_processing_failed',
+            job_id: this.config.jobId,
+            cluster_id: cluster.id,
+            error: error.message,
+            traces_affected: cluster.trace_ids.length
+          }));
           // Mark cluster traces as orphaned
           await this.markAllAsOrphaned(cluster.trace_ids);
           failedClusterTracesCount += cluster.trace_ids.length;
@@ -194,6 +268,20 @@ export class AgentDiscoveryJob {
         assigned_traces: assignedTracesCount,
         orphaned_traces: clusteringResult.orphanedTraceIds.length + failedClusterTracesCount
       };
+
+      console.log(JSON.stringify({
+        event: 'agent_discovery_complete',
+        job_id: this.config.jobId,
+        result,
+        summary: {
+          total_traces_processed: unassignedTraces.results.length,
+          traces_with_prompts: tracePrompts.length,
+          clusters_formed: clusteringResult.clusters.length,
+          agents_created: discoveredAgents.length,
+          traces_assigned: assignedTracesCount,
+          traces_orphaned: result.orphaned_traces
+        }
+      }));
 
       // Mark job as completed
       await this.jobManager.completeJob(this.config.jobId, result);

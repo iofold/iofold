@@ -580,6 +580,104 @@ export async function getAgentPrompt(request: Request, env: Env, agentId: string
 }
 
 /**
+ * PATCH /api/agents/:id
+ *
+ * Update agent name and/or description.
+ *
+ * @param request - HTTP request with name and/or description
+ * @param env - Cloudflare environment
+ * @param agentId - Agent ID from URL
+ * @returns 200 OK with updated agent
+ */
+export async function updateAgent(request: Request, env: Env, agentId: string): Promise<Response> {
+  try {
+    const workspaceId = getWorkspaceId(request);
+    validateWorkspaceAccess(workspaceId);
+
+    const body = await parseJsonBody<{ name?: string; description?: string }>(request);
+
+    // Validate that at least one field is provided
+    if (body.name === undefined && body.description === undefined) {
+      return createErrorResponse(
+        'VALIDATION_ERROR',
+        'At least one field (name or description) must be provided',
+        400
+      );
+    }
+
+    // Handle name validation early
+    if (body.name !== undefined && body.name.trim().length === 0) {
+      return createErrorResponse(
+        'VALIDATION_ERROR',
+        'name cannot be empty',
+        400
+      );
+    }
+
+    // Verify agent exists and belongs to workspace
+    const agent = await env.DB.prepare(
+      'SELECT id, name, status FROM agents WHERE id = ? AND workspace_id = ?'
+    )
+      .bind(agentId, workspaceId)
+      .first();
+
+    if (!agent) {
+      return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
+    }
+
+    // Build dynamic UPDATE query
+    const updates: string[] = ['updated_at = ?'];
+    const params: any[] = [new Date().toISOString()];
+
+    // Handle name update
+    if (body.name !== undefined) {
+      // Check for duplicate name (excluding current agent)
+      const existing = await env.DB.prepare(
+        'SELECT id FROM agents WHERE workspace_id = ? AND name = ? AND id != ? AND status != ?'
+      )
+        .bind(workspaceId, body.name.trim(), agentId, 'archived')
+        .first();
+
+      if (existing) {
+        return createErrorResponse(
+          'ALREADY_EXISTS',
+          'Agent with same name already exists',
+          409
+        );
+      }
+
+      updates.push('name = ?');
+      params.push(body.name.trim());
+    }
+
+    // Handle description update
+    if (body.description !== undefined) {
+      updates.push('description = ?');
+      params.push(body.description || null);
+    }
+
+    // Update agent
+    params.push(agentId);
+    await env.DB.prepare(
+      `UPDATE agents SET ${updates.join(', ')} WHERE id = ?`
+    )
+      .bind(...params)
+      .run();
+
+    // Return updated agent
+    return getAgentById(request, env, agentId);
+  } catch (error: any) {
+    if (error.message === 'Missing X-Workspace-Id header') {
+      return createErrorResponse('VALIDATION_ERROR', error.message, 400);
+    }
+    if (error.message === 'Invalid JSON in request body') {
+      return createErrorResponse('VALIDATION_ERROR', error.message, 400);
+    }
+    return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
+  }
+}
+
+/**
  * POST /api/agents/:id/improve
  *
  * Trigger AI-powered prompt improvement for an agent.

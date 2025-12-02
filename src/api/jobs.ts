@@ -1,6 +1,8 @@
-import type { D1Database } from '@cloudflare/workers-types';
+import type { D1Database, DurableObjectNamespace } from '@cloudflare/workers-types';
+import type { Sandbox } from '@cloudflare/sandbox';
 import { z } from 'zod';
 import { JobManager } from '../jobs/job-manager';
+import { JobWorker } from '../jobs/job-worker';
 import { createAPIError, handleError, notFoundError } from '../utils/errors';
 import { SSEStream, createSSEResponse } from '../utils/sse';
 import type { Job } from '../types/api';
@@ -12,11 +14,32 @@ const ListJobsSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20)
 });
 
+export interface JobsAPIDeps {
+  db: D1Database;
+  anthropicApiKey?: string;
+  sandboxBinding?: DurableObjectNamespace<Sandbox>;
+  encryptionKey?: string;
+}
+
 export class JobsAPI {
   private jobManager: JobManager;
+  private db: D1Database;
+  private anthropicApiKey?: string;
+  private sandboxBinding?: DurableObjectNamespace<Sandbox>;
+  private encryptionKey: string;
 
-  constructor(private db: D1Database) {
-    this.jobManager = new JobManager(db);
+  constructor(deps: JobsAPIDeps | D1Database) {
+    // Support legacy constructor signature
+    if ('prepare' in deps) {
+      this.db = deps;
+      this.encryptionKey = 'default-dev-key';
+    } else {
+      this.db = deps.db;
+      this.anthropicApiKey = deps.anthropicApiKey;
+      this.sandboxBinding = deps.sandboxBinding;
+      this.encryptionKey = deps.encryptionKey || 'default-dev-key';
+    }
+    this.jobManager = new JobManager(this.db);
   }
 
   // GET /api/jobs/:id - Get job status
@@ -293,5 +316,58 @@ export class JobsAPI {
         clearInterval(interval);
       }
     }, pollInterval);
+  }
+
+  // POST /api/jobs/process - Process queued jobs (for local development)
+  async processQueuedJobs(): Promise<Response> {
+    try {
+      // Count queued jobs first
+      const countResult = await this.db
+        .prepare(`SELECT COUNT(*) as count FROM jobs WHERE status = 'queued'`)
+        .first<{ count: number }>();
+
+      const queuedCount = countResult?.count || 0;
+
+      if (queuedCount === 0) {
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'No queued jobs to process',
+          processed: 0
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Create job worker and process jobs
+      const worker = new JobWorker({
+        db: this.db,
+        anthropicApiKey: this.anthropicApiKey,
+        sandboxBinding: this.sandboxBinding,
+        encryptionKey: this.encryptionKey
+      });
+
+      await worker.processJobs();
+
+      // Get updated count
+      const afterResult = await this.db
+        .prepare(`SELECT COUNT(*) as count FROM jobs WHERE status = 'queued'`)
+        .first<{ count: number }>();
+
+      const processedCount = queuedCount - (afterResult?.count || 0);
+
+      return new Response(JSON.stringify({
+        success: true,
+        message: `Processed ${processedCount} job(s)`,
+        before_queued: queuedCount,
+        after_queued: afterResult?.count || 0,
+        processed: processedCount
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      return handleError(error);
+    }
   }
 }

@@ -622,5 +622,397 @@ describe('AgentDiscoveryJob', () => {
       // Verify orphaned status update
       expect(mockDb.batch).toHaveBeenCalled();
     });
+
+    it('should skip system messages with empty content', async () => {
+      const traces = [
+        {
+          id: 'trace_1',
+          workspace_id: 'ws_1',
+          steps: JSON.stringify([{
+            messages_added: [{
+              role: 'system',
+              content: ''  // Empty content should be skipped
+            }, {
+              role: 'user',
+              content: 'Hello'
+            }]
+          }])
+        }
+      ];
+
+      mockDb = {
+        prepare: vi.fn((sql: string) => {
+          const stmt = createMockPreparedStatement();
+
+          if (sql.includes('SELECT id, steps')) {
+            stmt.all.mockResolvedValue(createMockD1Result(traces));
+          }
+
+          return stmt;
+        }),
+        batch: vi.fn().mockResolvedValue([])
+      } as any;
+
+      mockAi = { run: vi.fn() } as any;
+      mockVectorize = { upsert: vi.fn(), query: vi.fn(), getByIds: vi.fn(), deleteByIds: vi.fn() } as any;
+
+      const job = new AgentDiscoveryJob(
+        {
+          jobId: 'job_8',
+          workspaceId: 'ws_1'
+        },
+        {
+          db: mockDb,
+          ai: mockAi,
+          vectorize: mockVectorize,
+          anthropicApiKey: mockAnthropicApiKey
+        }
+      );
+
+      const result = await job.execute();
+
+      expect(result.discovered_agents).toHaveLength(0);
+      expect(result.orphaned_traces).toBe(1);
+    });
+
+    it('should handle null messages_added gracefully', async () => {
+      const traces = [
+        {
+          id: 'trace_1',
+          workspace_id: 'ws_1',
+          steps: JSON.stringify([{
+            messages_added: null,  // null instead of array
+            tool_calls: []
+          }])
+        }
+      ];
+
+      mockDb = {
+        prepare: vi.fn((sql: string) => {
+          const stmt = createMockPreparedStatement();
+
+          if (sql.includes('SELECT id, steps')) {
+            stmt.all.mockResolvedValue(createMockD1Result(traces));
+          }
+
+          return stmt;
+        }),
+        batch: vi.fn().mockResolvedValue([])
+      } as any;
+
+      mockAi = { run: vi.fn() } as any;
+      mockVectorize = { upsert: vi.fn(), query: vi.fn(), getByIds: vi.fn(), deleteByIds: vi.fn() } as any;
+
+      const job = new AgentDiscoveryJob(
+        {
+          jobId: 'job_9',
+          workspaceId: 'ws_1'
+        },
+        {
+          db: mockDb,
+          ai: mockAi,
+          vectorize: mockVectorize,
+          anthropicApiKey: mockAnthropicApiKey
+        }
+      );
+
+      const result = await job.execute();
+
+      expect(result.discovered_agents).toHaveLength(0);
+      expect(result.orphaned_traces).toBe(1);
+    });
+  });
+
+  describe('System prompt extraction edge cases', () => {
+    it('should extract system prompt from first step that contains one', async () => {
+      const traces = Array(6).fill(null).map((_, i) => ({
+        id: `trace_${i}`,
+        workspace_id: 'ws_1',
+        steps: JSON.stringify([
+          {
+            messages_added: [{
+              role: 'user',
+              content: 'First user message'
+            }]
+          },
+          {
+            messages_added: [{
+              role: 'system',
+              content: 'You are a helpful assistant.'  // System prompt in second step
+            }]
+          }
+        ])
+      }));
+
+      mockDb = {
+        prepare: vi.fn((sql: string) => {
+          const stmt = createMockPreparedStatement();
+
+          if (sql.includes('SELECT id, steps')) {
+            stmt.all.mockResolvedValue(createMockD1Result(traces));
+          }
+
+          return stmt;
+        }),
+        batch: vi.fn().mockResolvedValue([])
+      } as any;
+
+      mockAi = {
+        run: vi.fn(() => Promise.resolve({
+          shape: [1, 768],
+          data: [Array(768).fill(0.5)]
+        }))
+      } as any;
+
+      mockVectorize = {
+        upsert: vi.fn(() => Promise.resolve({ count: 1 })),
+        query: vi.fn(() => Promise.resolve({
+          count: 6,
+          matches: traces.map(t => ({ id: t.id, score: 0.95, metadata: { status: 'unassigned' } }))
+        })),
+        getByIds: vi.fn(),
+        deleteByIds: vi.fn()
+      } as any;
+
+      const mockAnthropicCreate = vi.fn().mockResolvedValue({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            template: 'You are a helpful assistant.',
+            variables: [],
+            agent_name: 'General Assistant'
+          })
+        }],
+        usage: { input_tokens: 100, output_tokens: 50 }
+      });
+
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      (Anthropic as any).mockImplementation(() => ({
+        messages: {
+          create: mockAnthropicCreate
+        }
+      }));
+
+      const job = new AgentDiscoveryJob(
+        {
+          jobId: 'job_10',
+          workspaceId: 'ws_1',
+          minClusterSize: 5
+        },
+        {
+          db: mockDb,
+          ai: mockAi,
+          vectorize: mockVectorize,
+          anthropicApiKey: mockAnthropicApiKey
+        }
+      );
+
+      const result = await job.execute();
+
+      // Should find the system prompt in second step and create agent
+      expect(result.discovered_agents).toHaveLength(1);
+      expect(result.assigned_traces).toBe(6);
+    });
+
+    it('should handle mixed traces (some with prompts, some without)', async () => {
+      // NOTE: Current implementation skips traces without system prompts
+      // They are not counted as orphaned - only traces that fail clustering are orphaned
+      const traces = [
+        // 6 traces WITH system prompts (should cluster)
+        ...Array(6).fill(null).map((_, i) => ({
+          id: `trace_with_prompt_${i}`,
+          workspace_id: 'ws_1',
+          steps: JSON.stringify([{
+            messages_added: [{
+              role: 'system',
+              content: 'You are a helpful assistant.'
+            }]
+          }])
+        })),
+        // 2 traces WITHOUT system prompts (will be skipped, not orphaned)
+        {
+          id: 'trace_no_prompt_1',
+          workspace_id: 'ws_1',
+          steps: JSON.stringify([{
+            messages_added: [{
+              role: 'user',
+              content: 'Hello'
+            }]
+          }])
+        },
+        {
+          id: 'trace_no_prompt_2',
+          workspace_id: 'ws_1',
+          steps: JSON.stringify([])
+        }
+      ];
+
+      mockDb = {
+        prepare: vi.fn((sql: string) => {
+          const stmt = createMockPreparedStatement();
+
+          if (sql.includes('SELECT id, steps')) {
+            stmt.all.mockResolvedValue(createMockD1Result(traces));
+          }
+
+          return stmt;
+        }),
+        batch: vi.fn().mockResolvedValue([])
+      } as any;
+
+      mockAi = {
+        run: vi.fn(() => Promise.resolve({
+          shape: [1, 768],
+          data: [Array(768).fill(0.5)]
+        }))
+      } as any;
+
+      mockVectorize = {
+        upsert: vi.fn(() => Promise.resolve({ count: 1 })),
+        query: vi.fn(() => Promise.resolve({
+          count: 6,
+          matches: traces.filter(t => t.id.includes('with_prompt')).map(t => ({
+            id: t.id,
+            score: 0.95,
+            metadata: { status: 'unassigned' }
+          }))
+        })),
+        getByIds: vi.fn(),
+        deleteByIds: vi.fn()
+      } as any;
+
+      const mockAnthropicCreate = vi.fn().mockResolvedValue({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            template: 'You are a helpful assistant.',
+            variables: [],
+            agent_name: 'Assistant'
+          })
+        }],
+        usage: { input_tokens: 100, output_tokens: 50 }
+      });
+
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      (Anthropic as any).mockImplementation(() => ({
+        messages: {
+          create: mockAnthropicCreate
+        }
+      }));
+
+      const job = new AgentDiscoveryJob(
+        {
+          jobId: 'job_11',
+          workspaceId: 'ws_1',
+          minClusterSize: 5
+        },
+        {
+          db: mockDb,
+          ai: mockAi,
+          vectorize: mockVectorize,
+          anthropicApiKey: mockAnthropicApiKey
+        }
+      );
+
+      const result = await job.execute();
+
+      // Should create 1 agent from the 6 traces with prompts
+      // Traces without system prompts are skipped (not counted as orphaned)
+      expect(result.discovered_agents).toHaveLength(1);
+      expect(result.assigned_traces).toBe(6);
+      // Note: Traces without prompts are skipped, not orphaned in current impl
+      expect(result.orphaned_traces).toBe(0);
+    });
+
+    it('should use first system message when multiple exist in same step', async () => {
+      const traces = Array(5).fill(null).map((_, i) => ({
+        id: `trace_${i}`,
+        workspace_id: 'ws_1',
+        steps: JSON.stringify([{
+          messages_added: [
+            {
+              role: 'system',
+              content: 'First system prompt - should use this one'
+            },
+            {
+              role: 'system',
+              content: 'Second system prompt - should ignore'
+            }
+          ]
+        }])
+      }));
+
+      mockDb = {
+        prepare: vi.fn((sql: string) => {
+          const stmt = createMockPreparedStatement();
+
+          if (sql.includes('SELECT id, steps')) {
+            stmt.all.mockResolvedValue(createMockD1Result(traces));
+          }
+
+          return stmt;
+        }),
+        batch: vi.fn().mockResolvedValue([])
+      } as any;
+
+      mockAi = {
+        run: vi.fn(() => Promise.resolve({
+          shape: [1, 768],
+          data: [Array(768).fill(0.5)]
+        }))
+      } as any;
+
+      mockVectorize = {
+        upsert: vi.fn(() => Promise.resolve({ count: 1 })),
+        query: vi.fn(() => Promise.resolve({
+          count: 5,
+          matches: traces.map(t => ({ id: t.id, score: 0.95, metadata: { status: 'unassigned' } }))
+        })),
+        getByIds: vi.fn(),
+        deleteByIds: vi.fn()
+      } as any;
+
+      const mockAnthropicCreate = vi.fn().mockResolvedValue({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            template: 'First system prompt - should use this one',
+            variables: [],
+            agent_name: 'First Prompt Agent'
+          })
+        }],
+        usage: { input_tokens: 100, output_tokens: 50 }
+      });
+
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      (Anthropic as any).mockImplementation(() => ({
+        messages: {
+          create: mockAnthropicCreate
+        }
+      }));
+
+      const job = new AgentDiscoveryJob(
+        {
+          jobId: 'job_12',
+          workspaceId: 'ws_1',
+          minClusterSize: 5
+        },
+        {
+          db: mockDb,
+          ai: mockAi,
+          vectorize: mockVectorize,
+          anthropicApiKey: mockAnthropicApiKey
+        }
+      );
+
+      const result = await job.execute();
+
+      expect(result.discovered_agents).toHaveLength(1);
+      // Verify Claude was called with the first prompt
+      expect(mockAnthropicCreate).toHaveBeenCalled();
+      const claudeInput = mockAnthropicCreate.mock.calls[0][0].messages[0].content;
+      expect(claudeInput).toContain('First system prompt');
+      expect(claudeInput).not.toContain('Second system prompt');
+    });
   });
 });

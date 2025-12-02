@@ -21,6 +21,10 @@ export interface Env {
   LANGFUSE_SECRET_KEY: string;
   LANGFUSE_BASE_URL?: string;
   ANTHROPIC_API_KEY: string;
+  /** OpenAI API key for playground */
+  OPENAI_API_KEY?: string;
+  /** Google AI API key for playground */
+  GOOGLE_API_KEY?: string;
   SANDBOX?: DurableObjectNamespace<Sandbox>;
   /** Cloudflare Queue binding for job processing */
   JOB_QUEUE?: Queue;
@@ -67,7 +71,7 @@ function addCorsHeaders(response: Response): Response {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     // Handle OPTIONS requests (CORS preflight)
@@ -104,7 +108,7 @@ export default {
 
     // Try the main API router first (handles /api/integrations, /api/traces, etc.)
     if (pathname.startsWith('/api/')) {
-      const response = await handleApiRequest(modifiedRequest, env);
+      const response = await handleApiRequest(modifiedRequest, env, ctx);
       return addCorsHeaders(response);
     }
 

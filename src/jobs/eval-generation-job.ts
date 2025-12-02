@@ -40,7 +40,7 @@ export class EvalGenerationJob {
     this.jobManager = new JobManager(deps.db);
     this.generator = new EvalGenerator({
       anthropicApiKey: deps.anthropicApiKey,
-      model: config.model || 'claude-sonnet-4.5'
+      model: config.model || 'claude-sonnet-4-5-20250929'
     });
     this.tester = new EvalTester({
       sandboxBinding: deps.sandboxBinding
@@ -89,17 +89,26 @@ export class EvalGenerationJob {
 
       // Step 4: Save eval to database
       const evalId = `eval_${crypto.randomUUID()}`;
+
+      // Get next version number for this agent
+      const versionResult = await this.deps.db
+        .prepare('SELECT COALESCE(MAX(version), 0) + 1 as next_version FROM evals WHERE agent_id = ?')
+        .bind(this.config.agentId)
+        .first();
+      const version = (versionResult?.next_version as number) || 1;
+
       await this.deps.db
         .prepare(
           `INSERT INTO evals (
-            id, agent_id, name, description, code, model_used,
+            id, agent_id, version, name, description, code, model_used,
             accuracy, test_results, execution_count, contradiction_count,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           evalId,
           this.config.agentId,
+          version,
           this.config.name,
           this.config.description || null,
           generationResult.code,
@@ -161,7 +170,7 @@ export class EvalGenerationJob {
     const feedbackRecords = await this.deps.db
       .prepare(
         `SELECT f.trace_id, f.rating, t.id, t.trace_id as external_trace_id,
-                t.source, t.normalized_data, t.raw_data
+                t.source, t.steps, t.raw_data
          FROM feedback f
          JOIN traces t ON f.trace_id = t.id
          WHERE f.agent_id = ? AND f.rating IN ('positive', 'negative')`
@@ -173,12 +182,33 @@ export class EvalGenerationJob {
     const negative: Trace[] = [];
 
     for (const record of feedbackRecords.results) {
+      // Parse steps - can be stored as JSON string or as raw data
+      let steps = [];
+      try {
+        steps = typeof record.steps === 'string'
+          ? JSON.parse(record.steps)
+          : (record.steps || []);
+      } catch (e) {
+        console.warn(`Failed to parse steps for trace ${record.id}:`, e);
+        steps = [];
+      }
+
+      // Parse raw_data - can be null or JSON string
+      let rawData = null;
+      try {
+        rawData = record.raw_data
+          ? (typeof record.raw_data === 'string' ? JSON.parse(record.raw_data) : record.raw_data)
+          : null;
+      } catch (e) {
+        console.warn(`Failed to parse raw_data for trace ${record.id}:`, e);
+      }
+
       const trace: Trace = {
         id: record.id as string,
         trace_id: record.external_trace_id as string,
         source: record.source as 'langfuse' | 'langsmith' | 'openai',
-        steps: JSON.parse(record.normalized_data as string),
-        raw_data: JSON.parse(record.raw_data as string)
+        steps,
+        raw_data: rawData
       };
 
       if (record.rating === 'positive') {
@@ -205,8 +235,8 @@ export class EvalGenerationJob {
       this.deps.db
         .prepare(
           `INSERT OR REPLACE INTO eval_executions (
-            id, eval_id, trace_id, result, reason, execution_time_ms, error, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+            id, eval_id, trace_id, predicted_result, predicted_reason, execution_time_ms, executed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           crypto.randomUUID(),
@@ -215,7 +245,6 @@ export class EvalGenerationJob {
           result.predicted ? 1 : 0,
           result.reason,
           result.executionTimeMs,
-          result.error || null,
           new Date().toISOString()
         )
     );
