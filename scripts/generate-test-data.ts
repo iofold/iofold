@@ -33,7 +33,7 @@ Your role is to:
 
 Company policies:
 - Refunds within {{refund_days}} days
-- Free shipping over ${{free_shipping_threshold}}
+- Free shipping over \${{free_shipping_threshold}}
 
 Always be helpful and aim to resolve issues in one interaction.`,
     variations: [
@@ -483,7 +483,7 @@ async function generateTestData() {
     console.log('1. Run the SQL file to insert traces and feedback:');
     console.log(`   npx wrangler d1 execute iofold_validation --local --file=${sqlFile}`);
     console.log('\n2. Start the development server:');
-    console.log('   npm run dev');
+    console.log('   pnpm run dev');
     console.log('\n3. Visit http://localhost:3000 to explore the test data');
     console.log('');
 

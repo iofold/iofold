@@ -37,6 +37,7 @@ CREATE TABLE traces (
   timestamp DATETIME NOT NULL,
   metadata TEXT, -- JSON metadata
   steps TEXT NOT NULL, -- JSON: normalized execution steps
+  raw_data TEXT, -- JSON: original observation hierarchy for tree view rendering
   input_preview TEXT, -- First 200 chars of input
   output_preview TEXT, -- First 200 chars of output
   step_count INTEGER DEFAULT 0,
@@ -201,6 +202,47 @@ CREATE TABLE prompt_best_practices (
   CHECK(category IN ('structure', 'clarity', 'safety', 'reasoning', 'general'))
 );
 
+-- Playground sessions (agent state persistence)
+CREATE TABLE playground_sessions (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  agent_version_id TEXT NOT NULL,
+  messages TEXT NOT NULL DEFAULT '[]',
+  variables TEXT NOT NULL DEFAULT '{}',
+  files TEXT NOT NULL DEFAULT '{}',
+  model_provider TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_version_id) REFERENCES agent_versions(id) ON DELETE CASCADE,
+  CHECK(model_provider IN ('anthropic', 'openai', 'google'))
+);
+
+-- Playground execution steps (granular tracing)
+CREATE TABLE playground_steps (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  trace_id TEXT NOT NULL,
+  step_index INTEGER NOT NULL,
+  step_type TEXT NOT NULL,
+  input TEXT,
+  output TEXT,
+  tool_name TEXT,
+  tool_args TEXT,
+  tool_result TEXT,
+  tool_error TEXT,
+  latency_ms INTEGER,
+  tokens_input INTEGER,
+  tokens_output INTEGER,
+  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (session_id) REFERENCES playground_sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (trace_id) REFERENCES traces(id) ON DELETE CASCADE,
+  CHECK(step_type IN ('llm_call', 'tool_call', 'tool_result'))
+);
+
 -- Indexes for performance
 CREATE INDEX idx_traces_workspace_id ON traces(workspace_id);
 CREATE INDEX idx_traces_trace_id ON traces(trace_id);
@@ -238,6 +280,16 @@ CREATE INDEX idx_agent_versions_agent_id ON agent_versions(agent_id);
 CREATE INDEX idx_agent_versions_status ON agent_versions(status);
 CREATE INDEX idx_functions_workspace_id ON functions(workspace_id);
 CREATE INDEX idx_functions_type ON functions(type);
+
+-- Playground indexes
+CREATE INDEX idx_playground_sessions_workspace ON playground_sessions(workspace_id);
+CREATE INDEX idx_playground_sessions_agent ON playground_sessions(agent_id);
+CREATE INDEX idx_playground_sessions_agent_version ON playground_sessions(agent_version_id);
+CREATE INDEX idx_playground_sessions_updated ON playground_sessions(updated_at DESC);
+CREATE INDEX idx_playground_steps_session ON playground_steps(session_id);
+CREATE INDEX idx_playground_steps_trace ON playground_steps(trace_id);
+CREATE INDEX idx_playground_steps_session_index ON playground_steps(session_id, step_index);
+CREATE INDEX idx_playground_steps_timestamp ON playground_steps(timestamp DESC);
 
 -- View for eval comparison (predictions vs human feedback)
 CREATE VIEW eval_comparison AS

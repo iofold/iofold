@@ -6,6 +6,12 @@ This directory contains SQL migration scripts for the iofold database schema.
 
 - `001_initial_schema.sql` - Initial database schema (referenced from main schema.sql)
 - `002_add_updated_at_to_eval_sets.sql` - Add updated_at column to eval_sets table (2025-11-15)
+- `003_prompt_versioning.sql` - Add prompt versioning and agent management tables (2025-11-25)
+- `004_monitoring.sql` - Add monitoring and metrics tables (2025-11-25)
+- `005_agent_management.sql` - Enhance agent management with functions table (2025-11-28)
+- `006_job_retry_tracking.sql` - Add retry tracking to jobs table (2025-11-30)
+- `007_playground_tables.sql` - Add playground sessions and steps tables (2025-12-01)
+- `008_add_raw_data_column.sql` - Add raw_data column to traces table (2025-12-02)
 
 ## Running Migrations
 
@@ -87,7 +93,13 @@ Cloudflare D1 does not support automatic rollbacks. If a migration fails:
 | Migration | Date | Description | Status |
 |-----------|------|-------------|--------|
 | 001_initial_schema.sql | 2025-11-05 | Initial database schema | Applied |
-| 002_add_updated_at_to_eval_sets.sql | 2025-11-15 | Add updated_at column to eval_sets | Pending |
+| 002_add_updated_at_to_eval_sets.sql | 2025-11-15 | Add updated_at column to eval_sets | Applied |
+| 003_prompt_versioning.sql | 2025-11-25 | Add prompt versioning and agent management | Applied |
+| 004_monitoring.sql | 2025-11-25 | Add monitoring and metrics tables | Applied |
+| 005_agent_management.sql | 2025-11-28 | Enhance agent management with functions | Applied |
+| 006_job_retry_tracking.sql | 2025-11-30 | Add retry tracking to jobs table | Applied |
+| 007_playground_tables.sql | 2025-12-01 | Add playground sessions and steps | Applied |
+| 008_add_raw_data_column.sql | 2025-12-02 | Add raw_data column to traces table | Pending |
 
 ## Troubleshooting
 

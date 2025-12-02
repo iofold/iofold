@@ -662,7 +662,7 @@ async function main() {
     } catch (e: any) {
       if (e.cause?.code === 'ECONNREFUSED') {
         console.error(`❌ Cannot connect to API at ${API_URL}`);
-        console.error('   Please ensure the backend is running: npm run dev');
+        console.error('   Please ensure the backend is running: pnpm run dev');
         process.exit(1);
       }
       // API is available but might have returned an error - that's okay for the check
@@ -704,7 +704,7 @@ ${jobsSQL}
     console.log('   1. Run the SQL file to insert evals and jobs:');
     console.log(`      npx wrangler d1 execute iofold_validation --local --file=scripts/seed-data.sql`);
     console.log('\n   2. Start the frontend and explore the data:');
-    console.log('      cd frontend && npm run dev');
+    console.log('      cd frontend && pnpm run dev');
     console.log('\n   3. Visit http://localhost:3000');
 
   } catch (error: any) {
