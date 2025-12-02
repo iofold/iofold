@@ -28,10 +28,11 @@ export async function hasFocusIndicator(element: Locator): Promise<boolean> {
       parseInt(outline.outlineWidth) > 0
 
     // Check for focus ring via box-shadow
-    const hasFocusRing =
+    const hasFocusRing = Boolean(
       outline.boxShadow &&
       outline.boxShadow !== 'none' &&
       (outline.boxShadow.includes('ring') || outline.boxShadow.includes('0px 0px'))
+    )
 
     return hasOutline || hasFocusRing
   })
@@ -153,12 +154,12 @@ export async function isKeyboardAccessible(element: Locator): Promise<boolean> {
     // Has role that implies interactivity
     const role = el.getAttribute('role')
     const interactiveRoles = ['button', 'link', 'checkbox', 'radio', 'textbox', 'combobox', 'tab']
-    const hasInteractiveRole = role && interactiveRoles.includes(role)
+    const hasInteractiveRole = Boolean(role && interactiveRoles.includes(role))
 
     // Should not have negative tabindex (unless explicitly made unfocusable)
     const hasNegativeTabindex = tabindex === '-1'
 
-    return (isInteractive || hasInteractiveRole) && !hasNegativeTabindex
+    return Boolean((isInteractive || hasInteractiveRole) && !hasNegativeTabindex)
   })
 }
 
@@ -233,8 +234,8 @@ export async function testFocusTrap(page: any, modal: Locator, cycles: number = 
 
     const focused = await page.locator(':focus')
     const isInModal = await focused.evaluate(
-      (el: HTMLElement, container) => {
-        return container && container.contains(el)
+      (el: HTMLElement, container: Element | null) => {
+        return Boolean(container && container.contains(el))
       },
       modalHandle
     )

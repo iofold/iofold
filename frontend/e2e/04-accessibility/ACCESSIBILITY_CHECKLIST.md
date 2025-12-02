@@ -29,7 +29,7 @@ input:focus-visible {
 
 **Manual check:**
 ```bash
-npm run test:e2e:accessibility -- -g "focus indicators"
+pnpm run test:e2e:accessibility -- -g "focus indicators"
 ```
 
 ---
@@ -102,7 +102,7 @@ npm run test:e2e:accessibility -- -g "focus indicators"
 
 **Manual check:**
 ```bash
-npm run test:e2e:accessibility -- -g "ARIA labels"
+pnpm run test:e2e:accessibility -- -g "ARIA labels"
 ```
 
 ---
@@ -148,7 +148,7 @@ npm run test:e2e:accessibility -- -g "ARIA labels"
 
 **Manual check:**
 ```bash
-npm run test:e2e:accessibility -- -g "form inputs"
+pnpm run test:e2e:accessibility -- -g "form inputs"
 ```
 
 ---
@@ -182,7 +182,7 @@ npm run test:e2e:accessibility -- -g "form inputs"
 
 **Manual check:**
 ```bash
-npm run test:e2e:accessibility -- -g "Escape key"
+pnpm run test:e2e:accessibility -- -g "Escape key"
 ```
 
 ---
@@ -208,7 +208,7 @@ npm run test:e2e:accessibility -- -g "Escape key"
 https://webaim.org/resources/contrastchecker/
 
 # Or run automated test
-npm run test:e2e:accessibility -- -g "color contrast"
+pnpm run test:e2e:accessibility -- -g "color contrast"
 ```
 
 **Manual check:**
@@ -347,16 +347,16 @@ npm run test:e2e:accessibility -- -g "color contrast"
 ### Command Line
 ```bash
 # Run all accessibility tests
-npm run test:e2e:accessibility
+pnpm run test:e2e:accessibility
 
 # Run specific test
-npm run test:e2e:accessibility -- -g "focus indicators"
+pnpm run test:e2e:accessibility -- -g "focus indicators"
 
 # Run in UI mode (debug)
-npm run test:e2e:ui
+pnpm run test:e2e:ui
 
 # Run in headed mode (watch browser)
-npm run test:e2e:headed -- e2e/04-accessibility
+pnpm run test:e2e:headed -- e2e/04-accessibility
 ```
 
 ### Screen Readers
@@ -443,7 +443,7 @@ Document all shortcuts using `<kbd>` elements:
 ```
 
 ### Testing Workflow
-1. Run automated tests: `npm run test:e2e:accessibility`
+1. Run automated tests: `pnpm run test:e2e:accessibility`
 2. Manual keyboard navigation test
 3. Screen reader spot check (critical paths)
 4. Visual review in grayscale mode

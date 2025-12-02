@@ -3,8 +3,8 @@
 ## Prerequisites
 
 - Node.js installed
-- Frontend dependencies installed (`npm install`)
-- Development server running (`npm run dev`)
+- Frontend dependencies installed (`pnpm install`)
+- Development server running (`pnpm run dev`)
 
 ## Installation Steps
 
@@ -12,7 +12,7 @@
 
 ```bash
 cd frontend
-npm install
+pnpm install
 ```
 
 This will install `@playwright/test` as a dev dependency (already added to package.json).
@@ -20,7 +20,7 @@ This will install `@playwright/test` as a dev dependency (already added to packa
 ### 2. Install Browser Binaries
 
 ```bash
-npx playwright install
+pnpm exec playwright install
 ```
 
 This downloads Chromium, Firefox, and WebKit browsers for testing.
@@ -28,7 +28,7 @@ This downloads Chromium, Firefox, and WebKit browsers for testing.
 ### 3. Verify Installation
 
 ```bash
-npx playwright --version
+pnpm exec playwright --version
 ```
 
 Should output: `Version 1.48.2` (or similar)
@@ -39,10 +39,10 @@ Should output: `Version 1.48.2` (or similar)
 
 ```bash
 # Start dev server (in one terminal)
-npm run dev
+pnpm run dev
 
 # Run all traces tests (in another terminal)
-npx playwright test e2e/03-traces
+pnpm exec playwright test e2e/03-traces
 ```
 
 ### Recommended: UI Mode
@@ -50,7 +50,7 @@ npx playwright test e2e/03-traces
 Best for development and debugging:
 
 ```bash
-npm run test:e2e:ui
+pnpm run test:e2e:ui
 ```
 
 Then select `03-traces` folder from the UI.
@@ -60,7 +60,7 @@ Then select `03-traces` folder from the UI.
 Run tests and re-run on file changes:
 
 ```bash
-npx playwright test e2e/03-traces --watch
+pnpm exec playwright test e2e/03-traces --watch
 ```
 
 ## Test Database Setup
@@ -69,7 +69,7 @@ npx playwright test e2e/03-traces --watch
 
 ```bash
 # Clear database
-npm run db:reset
+pnpm run db:reset
 ```
 
 Then run tests to verify empty state handling.
@@ -78,7 +78,7 @@ Then run tests to verify empty state handling.
 
 ```bash
 # Seed with test data
-npm run db:seed
+pnpm run db:seed
 ```
 
 This should create:
@@ -92,7 +92,7 @@ This should create:
 ### Run Single Test to Verify
 
 ```bash
-npx playwright test -g "should display page header"
+pnpm exec playwright test -g "should display page header"
 ```
 
 Should pass quickly if setup is correct.
@@ -102,7 +102,7 @@ Should pass quickly if setup is correct.
 After running tests:
 
 ```bash
-npx playwright show-report
+pnpm exec playwright show-report
 ```
 
 Opens HTML report with detailed results.
@@ -114,7 +114,8 @@ Opens HTML report with detailed results.
 If running on different port:
 
 ```bash
-BASE_URL=http://localhost:3001 npx playwright test
+BASE_URL=http://localhost:3001 pnpm exec playwright test
+```
 ```
 
 Or update `playwright.config.ts`:
@@ -138,15 +139,15 @@ timeout: 60000, // 60 seconds per test
 ### "Cannot find module @playwright/test"
 
 ```bash
-npm install
-npx playwright install
+pnpm install
+pnpm exec playwright install
 ```
 
 ### "Target closed" or "Navigation timeout"
 
 Dev server not running:
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 ### "No tests found"
@@ -154,7 +155,7 @@ npm run dev
 Wrong directory:
 ```bash
 cd frontend
-npx playwright test e2e/03-traces
+pnpm exec playwright test e2e/03-traces
 ```
 
 ### Tests fail with "Element not found"
@@ -171,7 +172,7 @@ Should not cause test failures.
 
 ## Next Steps
 
-1. Run full test suite: `npm run test:e2e`
+1. Run full test suite: `pnpm run test:e2e`
 2. Add more test data to database
 3. Add data-testid attributes to components
 4. Write additional tests for edge cases
@@ -182,10 +183,10 @@ Tests are CI-ready. In your CI config:
 
 ```yaml
 - name: Install Playwright
-  run: npx playwright install --with-deps
+  run: pnpm exec playwright install --with-deps
 
 - name: Run E2E tests
-  run: npm run test:e2e
+  run: pnpm run test:e2e
 
 - name: Upload test results
   uses: actions/upload-artifact@v3

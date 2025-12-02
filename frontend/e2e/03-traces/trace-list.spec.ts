@@ -27,8 +27,8 @@ test.describe('Traces List Page', () => {
     // Check page title
     await expect(page.locator('h1')).toContainText('Traces Explorer')
 
-    // Check description
-    await expect(page.locator('p.text-muted-foreground').first()).toContainText(
+    // Check description - use more specific selector to get the page subtitle
+    await expect(page.locator('h1:has-text("Traces Explorer") + p')).toContainText(
       'Browse, filter, and analyze your AI agent traces'
     )
   })
@@ -104,6 +104,9 @@ test.describe('Traces List Page', () => {
   })
 
   test('should toggle filter panel with keyboard shortcut', async ({ page }) => {
+    // Ensure body has focus before pressing key
+    await page.locator('body').click()
+
     // Press 'f' key to toggle filters
     await page.keyboard.press('f')
 
@@ -121,9 +124,14 @@ test.describe('Traces List Page', () => {
     // Open filters
     await page.click('button:has-text("Filters")')
 
-    // Select status filter
+    // Select status filter - use role-based selectors for shadcn/ui Select
     await page.click('#status-filter')
-    await page.click('text=Error')
+
+    // Wait for dropdown to appear
+    await page.waitForSelector('[role="listbox"]', { state: 'visible', timeout: 5000 })
+
+    // Click the option using role selector
+    await page.getByRole('option', { name: 'Error' }).click()
 
     // Wait for filtering to apply
     await page.waitForTimeout(500)
@@ -138,9 +146,14 @@ test.describe('Traces List Page', () => {
     // Open filters
     await page.click('button:has-text("Filters")')
 
-    // Select source filter
+    // Select source filter - use role-based selectors
     await page.click('#source-filter')
-    await page.click('text=Langfuse')
+
+    // Wait for dropdown to appear
+    await page.waitForSelector('[role="listbox"]', { state: 'visible', timeout: 5000 })
+
+    // Click the option using role selector
+    await page.getByRole('option', { name: 'Langfuse' }).click()
 
     // Wait for filtering to apply
     await page.waitForTimeout(500)
@@ -153,6 +166,9 @@ test.describe('Traces List Page', () => {
   test('should search traces by input preview', async ({ page }) => {
     // Open filters
     await page.click('button:has-text("Filters")')
+
+    // Wait for filter panel animation and inputs to be visible
+    await page.waitForSelector('#search-query', { state: 'visible', timeout: 5000 })
 
     // Enter search query
     await page.fill('#search-query', 'test')
@@ -169,10 +185,18 @@ test.describe('Traces List Page', () => {
     // Open filters
     await page.click('button:has-text("Filters")')
 
+    // Wait for filter panel animation and inputs to be visible
+    await page.waitForSelector('#search-query', { state: 'visible', timeout: 5000 })
+
     // Apply multiple filters
     await page.fill('#search-query', 'test')
     await page.click('#status-filter')
-    await page.click('text=Error')
+
+    // Wait for dropdown to appear
+    await page.waitForSelector('[role="listbox"]', { state: 'visible', timeout: 5000 })
+
+    // Click the option using role selector
+    await page.getByRole('option', { name: 'Error' }).click()
 
     // Wait for filters to apply
     await page.waitForTimeout(500)
@@ -208,7 +232,8 @@ test.describe('Traces List Page', () => {
     // Wait for table to load
     await page.waitForSelector('tbody tr', { timeout: 5000 })
 
-    // Click steps header to sort
+    // Click steps header to sort - wait for it to be visible first
+    await page.waitForSelector('th:has-text("Steps")', { state: 'visible', timeout: 5000 })
     await page.click('th:has-text("Steps")')
 
     // Wait for sort to apply
@@ -221,48 +246,81 @@ test.describe('Traces List Page', () => {
   })
 
   test('should select single trace row', async ({ page }) => {
-    // Wait for table rows
+    // Wait for table rows and ensure loading is complete
     await page.waitForSelector('tbody tr', { timeout: 5000 })
 
-    // Click checkbox on first row
-    const firstCheckbox = page.locator('tbody tr').first().locator('input[type="checkbox"]')
-    await firstCheckbox.click()
+    // Wait a bit to ensure skeleton loading is complete
+    await page.waitForTimeout(500)
 
-    // Verify selection message appears
-    await expect(page.locator('text=/\\d+ row(s?) selected/')).toBeVisible()
-  })
+    // Make sure no trace detail panel is open
+    await expect(page.locator('[role="dialog"]:has-text("Trace Details")')).not.toBeVisible()
 
-  test('should select all traces', async ({ page }) => {
-    // Wait for table rows
-    await page.waitForSelector('tbody tr', { timeout: 5000 })
+    // Click checkbox on first row - use the hidden input via keyboard
+    const firstRow = page.locator('tbody tr').first()
+    const checkboxInput = firstRow.locator('input[type="checkbox"]')
 
-    // Click header checkbox to select all
-    const headerCheckbox = page.locator('thead input[type="checkbox"]')
-    await headerCheckbox.click()
+    // Focus and activate with keyboard to avoid row click
+    await checkboxInput.focus()
+    await page.keyboard.press('Space')
 
-    // Verify selection message appears
+    // Wait for state update
+    await page.waitForTimeout(300)
+
+    // Verify selection message appears - text format is "1 row selected" or "N rows selected"
     await expect(page.locator('text=/\\d+ rows? selected/')).toBeVisible()
   })
 
-  test('should open trace detail panel on row click', async ({ page }) => {
-    // Wait for table rows
+  test('should select all traces', async ({ page }) => {
+    // Wait for table rows and ensure loading is complete
     await page.waitForSelector('tbody tr', { timeout: 5000 })
 
-    // Click first row (not on checkbox)
-    const firstRow = page.locator('tbody tr').first()
-    await firstRow.locator('td').nth(2).click() // Click on a cell that's not the checkbox
+    // Wait a bit to ensure skeleton loading is complete
+    await page.waitForTimeout(500)
 
-    // Wait for side sheet to open
+    // Make sure no trace detail panel is open
+    await expect(page.locator('[role="dialog"]:has-text("Trace Details")')).not.toBeVisible()
+
+    // Click header checkbox to select all - use keyboard to avoid issues
+    const headerCheckboxInput = page.locator('thead input[type="checkbox"]')
+    await headerCheckboxInput.focus()
+    await page.keyboard.press('Space')
+
+    // Wait for state update
+    await page.waitForTimeout(300)
+
+    // Verify selection message appears - text format is "N rows selected" (plural for multiple)
+    await expect(page.locator('text=/\\d+ rows? selected/')).toBeVisible({ timeout: 3000 })
+  })
+
+  test('should open trace detail panel on row click', async ({ page }) => {
+    // Wait for table rows and ensure loading is complete
+    await page.waitForSelector('tbody tr', { timeout: 5000 })
+
+    // Wait for any loading animations to complete
+    await page.waitForTimeout(500)
+
+    // Click first row on input preview cell (4th cell, 0-indexed = 3)
+    const firstRow = page.locator('tbody tr').first()
+    await firstRow.locator('td').nth(3).click()
+
+    // Wait for side sheet to open - look for the Sheet dialog
+    await page.waitForSelector('[role="dialog"]', { state: 'visible', timeout: 5000 })
     await expect(page.locator('text=Trace Details')).toBeVisible({ timeout: 5000 })
   })
 
   test('should display trace details in side panel', async ({ page }) => {
-    // Wait for table rows
+    // Wait for table rows and ensure loading is complete
     await page.waitForSelector('tbody tr', { timeout: 5000 })
 
-    // Click view button on first row
-    const viewButton = page.locator('tbody tr').first().locator('button[title*="View"]').or(page.locator('tbody tr').first().locator('button:has(svg)').first())
-    await viewButton.click()
+    // Wait for any loading animations to complete
+    await page.waitForTimeout(500)
+
+    // Click on the input preview cell to open detail panel
+    const firstRow = page.locator('tbody tr').first()
+    await firstRow.locator('td').nth(3).click()
+
+    // Wait for side sheet dialog to open
+    await page.waitForSelector('[role="dialog"]', { state: 'visible', timeout: 5000 })
 
     // Verify detail panel sections
     await expect(page.locator('text=Trace Details')).toBeVisible({ timeout: 5000 })
@@ -273,12 +331,18 @@ test.describe('Traces List Page', () => {
   })
 
   test('should display timestamp in detail panel with suppressHydrationWarning', async ({ page }) => {
-    // Wait for table rows
+    // Wait for table rows and ensure loading is complete
     await page.waitForSelector('tbody tr', { timeout: 5000 })
 
-    // Open first trace detail
+    // Wait for any loading animations to complete
+    await page.waitForTimeout(500)
+
+    // Open first trace detail - click on input preview cell
     const firstRow = page.locator('tbody tr').first()
-    await firstRow.locator('td').nth(2).click()
+    await firstRow.locator('td').nth(3).click()
+
+    // Wait for side sheet dialog to open
+    await page.waitForSelector('[role="dialog"]', { state: 'visible', timeout: 5000 })
 
     // Wait for detail panel
     await expect(page.locator('text=Trace Details')).toBeVisible({ timeout: 5000 })
@@ -295,12 +359,18 @@ test.describe('Traces List Page', () => {
   })
 
   test('should close detail panel when clicking outside or close button', async ({ page }) => {
-    // Wait for table rows
+    // Wait for table rows and ensure loading is complete
     await page.waitForSelector('tbody tr', { timeout: 5000 })
 
-    // Open detail panel
+    // Wait for any loading animations to complete
+    await page.waitForTimeout(500)
+
+    // Open detail panel - click on input preview cell
     const firstRow = page.locator('tbody tr').first()
-    await firstRow.locator('td').nth(2).click()
+    await firstRow.locator('td').nth(3).click()
+
+    // Wait for side sheet dialog to open
+    await page.waitForSelector('[role="dialog"]', { state: 'visible', timeout: 5000 })
 
     // Wait for panel to open
     await expect(page.locator('text=Trace Details')).toBeVisible({ timeout: 5000 })
@@ -346,6 +416,10 @@ test.describe('Traces List Page', () => {
 
     // Open filters and apply a very specific search that won't match
     await page.click('button:has-text("Filters")')
+
+    // Wait for filter panel animation and inputs to be visible
+    await page.waitForSelector('#search-query', { state: 'visible', timeout: 5000 })
+
     await page.fill('#search-query', 'xyznonexistentsearch12345')
 
     // Wait for filter to apply
@@ -368,9 +442,11 @@ test.describe('Traces List Page', () => {
   })
 
   test('should display live data indicator', async ({ page }) => {
-    // Check live data indicator
+    // Check live data indicator text
     await expect(page.locator('text=Live data')).toBeVisible()
-    await expect(page.locator('.animate-pulse')).toBeVisible()
+
+    // Use more specific selector for the live indicator dot
+    await expect(page.locator('.h-2.w-2.rounded-full.bg-success.animate-pulse').first()).toBeVisible()
   })
 
   test('should render source badge correctly', async ({ page }) => {

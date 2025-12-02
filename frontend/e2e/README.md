@@ -82,8 +82,8 @@ The accessibility test suite (`04-accessibility/accessibility.spec.ts`) includes
 
 ```bash
 # Install Playwright and browsers
-npm install -D @playwright/test
-npx playwright install
+pnpm add -D @playwright/test
+pnpm exec playwright install
 ```
 
 ### Update package.json
@@ -108,60 +108,60 @@ Add these scripts to `package.json`:
 ### Run all tests
 
 ```bash
-npm run test:e2e
+pnpm run test:e2e
 ```
 
 ### Run specific test suites
 
 ```bash
 # Accessibility tests only
-npm run test:e2e:accessibility
+pnpm run test:e2e:accessibility
 
 # Traces tests only
-npx playwright test e2e/03-traces
+pnpm exec playwright test e2e/03-traces
 
 # Specific test file
-npx playwright test e2e/03-traces/trace-list.spec.ts
+pnpm exec playwright test e2e/03-traces/trace-list.spec.ts
 ```
 
 ### Run in UI mode (interactive)
 
 ```bash
-npm run test:e2e:ui
+pnpm run test:e2e:ui
 ```
 
 ### Run in headed mode (see browser)
 
 ```bash
-npm run test:e2e:headed
+pnpm run test:e2e:headed
 ```
 
 ### Debug mode
 
 ```bash
-npm run test:e2e:debug
+pnpm run test:e2e:debug
 ```
 
 ### View test report
 
 ```bash
-npm run test:e2e:report
+pnpm run test:e2e:report
 ```
 
 ## Running Specific Tests
 
 ```bash
 # Run single test file
-npx playwright test e2e/04-accessibility/accessibility.spec.ts
+pnpm exec playwright test e2e/04-accessibility/accessibility.spec.ts
 
 # Run specific test by name
-npx playwright test -g "focus indicators"
+pnpm exec playwright test -g "focus indicators"
 
 # Run on specific browser
-npx playwright test --project=chromium
+pnpm exec playwright test --project=chromium
 
 # Run on mobile viewport
-npx playwright test --project="Mobile Chrome"
+pnpm exec playwright test --project="Mobile Chrome"
 ```
 
 ## Configuration
@@ -232,13 +232,13 @@ The accessibility spec includes helper functions:
 
 ```bash
 # Open Playwright Inspector
-npx playwright test --debug
+pnpm exec playwright test --debug
 
 # Generate trace file
-npx playwright test --trace on
+pnpm exec playwright test --trace on
 
 # View trace
-npx playwright show-trace trace.zip
+pnpm exec playwright show-trace trace.zip
 ```
 
 ### Console Logs
@@ -253,7 +253,7 @@ Tests include console.log statements for debugging:
 
 ### Tests failing locally
 
-1. Ensure dev server is running: `npm run dev`
+1. Ensure dev server is running: `pnpm run dev`
 2. Clear browser cache
 3. Check base URL in config
 4. Verify element selectors are up to date
