@@ -82,7 +82,7 @@ export default function SettingsPage() {
   // Mock regenerate API key
   const regenerateApiKey = () => {
     if (confirm('Are you sure you want to regenerate your API key? Your existing key will stop working immediately.')) {
-      alert('API key regenerated! (Mock action)')
+      toast.success('API key regenerated! (Mock action)')
     }
   }
 
@@ -101,14 +101,14 @@ export default function SettingsPage() {
 
   // Mock export data
   const handleExportData = () => {
-    alert('Your data export will be sent to your email within 24 hours.')
+    toast.info('Your data export will be sent to your email within 24 hours.')
   }
 
   // Mock delete account
   const handleDeleteAccount = () => {
     if (confirm('Are you absolutely sure? This action cannot be undone. All your data will be permanently deleted.')) {
       if (confirm('This is your final warning. Type DELETE to confirm (this is a mock - no actual deletion will occur)')) {
-        alert('Account deletion initiated (Mock action)')
+        toast.success('Account deletion initiated (Mock action)')
       }
     }
   }

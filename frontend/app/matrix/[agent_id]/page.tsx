@@ -14,6 +14,7 @@ import { FilterControls } from '@/components/matrix/filter-controls'
 import { ResolutionActions } from '@/components/matrix/resolution-actions'
 import { ComparisonPanel } from '@/components/matrix/comparison-panel'
 import { ArrowLeft, Download, Zap } from 'lucide-react'
+import { toast } from 'sonner'
 
 type ViewMode = 'overview' | 'details'
 type ContradictionFilter = 'all' | 'contradictions-only' | 'agreements-only'
@@ -143,14 +144,11 @@ export default function MatrixPage() {
   }
 
   const handleRefineEval = () => {
-    // Navigate to eval generation page or open modal
-    console.log('Refining eval with selected traces:', selectedTraces)
-    // TODO: Implement eval refinement workflow
+    toast.info('Not implemented: Refine eval with selected traces')
   }
 
   const handleBulkResolve = async () => {
-    console.log('Bulk resolving contradictions for traces:', selectedTraces)
-    // TODO: Implement bulk resolution API call
+    toast.info('Not implemented: Bulk resolve contradictions')
     setSelectedTraces([])
   }
 
@@ -180,6 +178,7 @@ export default function MatrixPage() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+    toast.success('Matrix data exported successfully')
   }
 
   if (agentLoading) {

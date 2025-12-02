@@ -2,14 +2,16 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useRouter, useParams } from 'next/navigation'
-// Note: useChat will be fully integrated once the backend API is implemented
-// import { useChat } from '@ai-sdk/react'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { apiClient } from '@/lib/api-client'
+import { usePlaygroundChat, type Message, type ToolCall } from '@/hooks/use-playground-chat'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ErrorState } from '@/components/ui/error-state'
-import { ArrowLeft, Send, RefreshCw, Copy, Check, Settings2, MessageSquare, Bot, User, Loader2, Wrench } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import { ArrowLeft, Send, RefreshCw, Copy, Check, Settings2, MessageSquare, Bot, User, Loader2, AlertCircle, RotateCw, Terminal, StopCircle, Edit, Eye, Link as LinkIcon, ChevronDown, ChevronRight } from 'lucide-react'
+import { MessageFeedback } from '@/components/playground/MessageFeedback'
+import { SessionSidebar } from '@/components/playground/SessionSidebar'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
@@ -20,52 +22,70 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-interface Message {
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  timestamp: Date
-  toolCalls?: Array<{
-    id: string
-    name: string
-    args: Record<string, any>
-    result?: any
-    state?: 'call' | 'result'
-  }>
-}
-
-// Model configuration matching design doc
+// Model configuration with actual API model IDs - synced with backend models/index.ts
+// Note: Gemini 2.5 models have streaming issues with current SDK, using 1.5 for now
 const MODEL_OPTIONS = [
+  // Anthropic - Latest Claude models
   { provider: 'anthropic', modelId: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
-  { provider: 'openai', modelId: 'gpt-4o', label: 'GPT-4o' },
-  { provider: 'google', modelId: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { provider: 'anthropic', modelId: 'claude-haiku-4-5-20250929', label: 'Claude Haiku 4.5' },
+  // OpenAI - GPT-5.1 series (verified available models)
+  { provider: 'openai', modelId: 'gpt-5.1', label: 'GPT-5.1' },
+  { provider: 'openai', modelId: 'gpt-5.1-chat-latest', label: 'GPT-5.1 Chat' },
+  // Google - Gemini 1.5 series (stable with current SDK)
+  { provider: 'google', modelId: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+  { provider: 'google', modelId: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
 ] as const
 
 type ModelProvider = 'anthropic' | 'openai' | 'google'
 
 export default function AgentPlaygroundPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const agentId = params.id as string
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
   const [showSystemPrompt, setShowSystemPrompt] = useState(true)
   const [variableValues, setVariableValues] = useState<Record<string, string>>({})
   const [copied, setCopied] = useState(false)
-  const [sessionId, setSessionId] = useState<string | undefined>()
+  const [linkCopied, setLinkCopied] = useState(false)
   const [modelProvider, setModelProvider] = useState<ModelProvider>('anthropic')
   const [modelId, setModelId] = useState('claude-sonnet-4-5-20250929')
-  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
+  const [isEditingPrompt, setIsEditingPrompt] = useState(false)
+  const [editedPrompt, setEditedPrompt] = useState('')
+  const [isSavingVariant, setIsSavingVariant] = useState(false)
+  // Track which messages have their tool calls expanded (by message id)
+  // Streaming messages are always expanded, historical ones are collapsed by default
+  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<string>>(new Set())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
 
-  // Note: Once the backend API endpoint is implemented, we'll integrate useChat from @ai-sdk/react
-  // For now, we're using a basic fetch implementation with the correct API structure
+  // Get initial session from URL if present
+  const initialSessionFromUrl = searchParams.get('session')
+
+  // Use the new SSE streaming hook
+  const {
+    messages,
+    sendMessage,
+    isLoading,
+    error: chatError,
+    sessionId,
+    retry,
+    stop,
+    clearMessages,
+    submitFeedback,
+    loadSession
+  } = usePlaygroundChat(agentId, 'workspace_default', initialSessionFromUrl || undefined) // TODO: Use actual workspace from context
 
   const { data: agent, isLoading: agentLoading, error, refetch } = useQuery({
     queryKey: ['agent', agentId],
     queryFn: () => apiClient.getAgent(agentId),
   })
+
+  // Utility function to extract variables from template
+  function extractVariables(template: string): string[] {
+    const matches = template.match(/\{\{([^}]+)\}\}/g) || []
+    return [...new Set(matches.map(m => m.replace(/[{}]/g, '').trim()))]
+  }
 
   // Set default version, variables, and model when agent loads
   useEffect(() => {
@@ -75,13 +95,27 @@ export default function AgentPlaygroundPage() {
         setSelectedVersionId(activeVersion.id)
         // Initialize variable values with defaults
         const defaults: Record<string, string> = {}
-        activeVersion.variables.forEach(v => {
+        // Handle variables as either array or object
+        const vars = Array.isArray(activeVersion.variables)
+          ? activeVersion.variables
+          : (activeVersion.variables ? Object.keys(activeVersion.variables) : [])
+        vars.forEach(v => {
           defaults[v] = `[${v}]`
         })
         setVariableValues(defaults)
       }
     }
   }, [agent, selectedVersionId])
+
+  const selectedVersion = agent?.versions.find(v => v.id === selectedVersionId)
+
+  // Initialize editedPrompt when active version changes
+  useEffect(() => {
+    if (selectedVersion?.prompt_template) {
+      setEditedPrompt(selectedVersion.prompt_template)
+      setIsEditingPrompt(false)
+    }
+  }, [selectedVersion?.prompt_template])
 
   // Handle model selection change
   const handleModelChange = (value: string) => {
@@ -92,30 +126,84 @@ export default function AgentPlaygroundPage() {
     }
   }
 
+  // Update URL when session changes
+  useEffect(() => {
+    if (sessionId) {
+      const currentSession = searchParams.get('session')
+      if (currentSession !== sessionId) {
+        const newUrl = `/agents/${agentId}/playground?session=${sessionId}`
+        router.replace(newUrl, { scroll: false })
+      }
+    }
+  }, [sessionId, agentId, router, searchParams])
+
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const selectedVersion = agent?.versions.find(v => v.id === selectedVersionId)
-
   const getFilledPrompt = (): string => {
     if (!selectedVersion) return ''
-    return selectedVersion.prompt_template.replace(
+    const template = isEditingPrompt ? editedPrompt : selectedVersion.prompt_template
+    return template.replace(
       /\{\{(\w+)\}\}/g,
       (_, key) => variableValues[key] || `{{${key}}}`
     )
   }
 
+  const hasPromptChanged = editedPrompt !== selectedVersion?.prompt_template
+
+  const handleSaveVariant = async () => {
+    if (!hasPromptChanged) return
+
+    setIsSavingVariant(true)
+    try {
+      const variables = extractVariables(editedPrompt)
+      const response = await fetch(`/v1/api/agents/${agentId}/versions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Workspace-Id': 'ws_test'
+        },
+        body: JSON.stringify({
+          prompt_template: editedPrompt,
+          variables
+        })
+      })
+
+      if (response.ok) {
+        const newVersion = await response.json()
+        toast.success(`Created version ${newVersion.version} (candidate)`)
+        setIsEditingPrompt(false)
+        // Refetch agent data to show new version
+        await refetch()
+      } else {
+        toast.error('Failed to create variant')
+      }
+    } catch (err) {
+      console.error('Failed to create variant:', err)
+      toast.error('Failed to create variant')
+    } finally {
+      setIsSavingVariant(false)
+    }
+  }
+
+  const handleResetPrompt = () => {
+    if (selectedVersion?.prompt_template) {
+      setEditedPrompt(selectedVersion.prompt_template)
+      toast.success('Prompt reset to current version')
+    }
+  }
+
   const handleClearChat = () => {
-    setMessages([])
-    setSessionId(undefined)
+    clearMessages()
     toast.success('Chat cleared')
   }
 
   const handleNewSession = () => {
-    setMessages([])
-    setSessionId(undefined)
+    clearMessages()
+    // Clear the session param from URL
+    router.replace(`/agents/${agentId}/playground`, { scroll: false })
     toast.success('New session started')
   }
 
@@ -127,57 +215,42 @@ export default function AgentPlaygroundPage() {
     toast.success('Conversation copied to clipboard')
   }
 
+  const handleCopyLink = async () => {
+    if (!sessionId) {
+      toast.error('No session available to share')
+      return
+    }
+    const sessionUrl = `${window.location.origin}/agents/${agentId}/playground?session=${sessionId}`
+    await navigator.clipboard.writeText(sessionUrl)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+    toast.success('Session link copied to clipboard')
+  }
+
+  const handleSelectSession = async (selectedSessionId: string) => {
+    if (selectedSessionId === sessionId) return
+    try {
+      await loadSession(selectedSessionId)
+    } catch (err) {
+      console.error('Failed to load session:', err)
+    }
+  }
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault()
     if (!input.trim() || !selectedVersionId) return
 
-    // Add user message to state
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: input.trim(),
-      timestamp: new Date(),
-    }
-
-    setMessages(prev => [...prev, userMessage])
+    const messageContent = input.trim()
     setInput('')
-    setIsLoading(true)
 
-    try {
-      // Call the API endpoint (will be implemented in backend)
-      const response = await fetch(`/api/agents/${agentId}/playground/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: [...messages, userMessage],
-          sessionId,
-          variables: variableValues,
-          modelProvider,
-          modelId,
-          agentVersionId: selectedVersionId,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.statusText}`)
-      }
-
-      // For now, show a message that backend is not implemented
-      // When backend is ready, this will handle streaming responses
-      toast.info('Backend API endpoint not yet implemented. Message sent to mock endpoint.')
-
-      // TODO: When backend is ready, implement streaming response handling here
-      // const reader = response.body?.getReader()
-      // Handle streaming chunks and update messages
-
-    } catch (error) {
-      console.error('Failed to send message:', error)
-      toast.error('Failed to send message. The backend API endpoint is not yet implemented.')
-    } finally {
-      setIsLoading(false)
-    }
+    // Call sendMessage from the hook with options
+    await sendMessage(messageContent, {
+      systemPrompt: getFilledPrompt(),
+      modelProvider,
+      modelId,
+      agentVersionId: selectedVersionId,
+      variables: variableValues,
+    })
   }
 
   if (agentLoading) {
@@ -248,7 +321,11 @@ export default function AgentPlaygroundPage() {
               setSelectedVersionId(e.target.value)
               if (newVersion) {
                 const defaults: Record<string, string> = {}
-                newVersion.variables.forEach(v => {
+                // Handle variables as either array or object
+                const vars = Array.isArray(newVersion.variables)
+                  ? newVersion.variables
+                  : (newVersion.variables ? Object.keys(newVersion.variables) : [])
+                vars.forEach(v => {
                   defaults[v] = variableValues[v] || `[${v}]`
                 })
                 setVariableValues(defaults)
@@ -277,8 +354,19 @@ export default function AgentPlaygroundPage() {
             size="sm"
             onClick={handleCopyConversation}
             disabled={messages.length === 0}
+            title="Copy Conversation"
           >
             {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCopyLink}
+            disabled={!sessionId}
+            title="Copy Session Link"
+          >
+            {linkCopied ? <Check className="w-4 h-4" /> : <LinkIcon className="w-4 h-4" />}
           </Button>
 
           <Button
@@ -305,6 +393,14 @@ export default function AgentPlaygroundPage() {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
+        {/* Session Sidebar */}
+        <SessionSidebar
+          agentId={agentId}
+          currentSessionId={sessionId}
+          onSelectSession={handleSelectSession}
+          onNewSession={handleNewSession}
+        />
+
         {/* Configuration Panel */}
         {showSystemPrompt && (
           <div className="w-96 border-r overflow-y-auto bg-muted/30">
@@ -318,10 +414,69 @@ export default function AgentPlaygroundPage() {
               </div>
 
               <div>
-                <h3 className="font-medium mb-2">System Prompt</h3>
-                <div className="bg-background border rounded p-3 text-sm font-mono whitespace-pre-wrap max-h-64 overflow-y-auto">
-                  {getFilledPrompt()}
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-medium">System Prompt</h3>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsEditingPrompt(!isEditingPrompt)}
+                    className="h-7 px-2"
+                  >
+                    {isEditingPrompt ? (
+                      <>
+                        <Eye className="w-3 h-3 mr-1" />
+                        Preview
+                      </>
+                    ) : (
+                      <>
+                        <Edit className="w-3 h-3 mr-1" />
+                        Edit
+                      </>
+                    )}
+                  </Button>
                 </div>
+
+                {isEditingPrompt ? (
+                  <>
+                    <Textarea
+                      value={editedPrompt}
+                      onChange={(e) => setEditedPrompt(e.target.value)}
+                      className="font-mono text-sm min-h-[200px] resize-y"
+                      placeholder="Enter prompt template with {{variables}}..."
+                    />
+                    {hasPromptChanged && (
+                      <div className="flex gap-2 mt-2">
+                        <Button
+                          size="sm"
+                          onClick={handleSaveVariant}
+                          disabled={isSavingVariant}
+                          className="flex-1"
+                        >
+                          {isSavingVariant ? (
+                            <>
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            'Save as Variant'
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleResetPrompt}
+                          disabled={isSavingVariant}
+                        >
+                          Reset
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="bg-background border rounded p-3 text-sm font-mono whitespace-pre-wrap max-h-64 overflow-y-auto">
+                    {getFilledPrompt()}
+                  </div>
+                )}
               </div>
 
               {sessionId && (
@@ -411,83 +566,176 @@ export default function AgentPlaygroundPage() {
             ) : (
               messages.map((message, index) => {
                 const hasToolCalls = message.toolCalls && message.toolCalls.length > 0
+                const isUser = message.role === 'user'
 
                 return (
                   <div
                     key={message.id || index}
-                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
                       className={`max-w-[80%] rounded-lg p-3 ${
-                        message.role === 'user'
+                        isUser
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted'
                       }`}
                     >
+                      {/* Message Header */}
                       <div className="flex items-center gap-2 mb-1">
-                        {message.role === 'user' ? (
+                        {isUser ? (
                           <User className="w-4 h-4" />
                         ) : (
                           <Bot className="w-4 h-4" />
                         )}
                         <span className="text-xs font-medium">
-                          {message.role === 'user' ? 'You' : agent.name}
+                          {isUser ? 'You' : agent.name}
                         </span>
+                        {message.isStreaming && (
+                          <span className="animate-pulse text-xs">●</span>
+                        )}
                       </div>
 
+                      {/* Message Content */}
                       {message.content && (
-                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                        <p className="text-sm whitespace-pre-wrap">
+                          {message.content}
+                          {message.isStreaming && <span className="animate-pulse ml-1">▊</span>}
+                        </p>
                       )}
 
-                      {/* Tool invocations */}
-                      {hasToolCalls && (
-                        <div className="mt-2 space-y-2">
-                          {message.toolCalls?.map((tool, toolIndex) => (
-                            <div key={tool.id || toolIndex} className="bg-background/50 border rounded p-2 text-xs">
-                              <div className="flex items-center gap-1 font-medium mb-1">
-                                <Wrench className="w-3 h-3" />
-                                <span>{tool.name}</span>
-                                {tool.state === 'call' && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+                      {/* Tool Calls - Collapsible for historical, always expanded for streaming */}
+                      {hasToolCalls && (() => {
+                        const isExpanded = message.isStreaming || expandedToolCalls.has(message.id)
+                        const toolCount = message.toolCalls?.length || 0
+                        const toggleExpanded = () => {
+                          if (message.isStreaming) return // Don't allow collapsing streaming messages
+                          setExpandedToolCalls(prev => {
+                            const next = new Set(prev)
+                            if (next.has(message.id)) {
+                              next.delete(message.id)
+                            } else {
+                              next.add(message.id)
+                            }
+                            return next
+                          })
+                        }
+
+                        return (
+                          <div className="mt-2">
+                            {/* Collapsible Header */}
+                            <button
+                              onClick={toggleExpanded}
+                              className={`flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors ${message.isStreaming ? 'cursor-default' : 'cursor-pointer'}`}
+                              disabled={message.isStreaming}
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="w-3 h-3" />
+                              ) : (
+                                <ChevronRight className="w-3 h-3" />
+                              )}
+                              <Terminal className="w-3 h-3" />
+                              <span>{toolCount} tool call{toolCount !== 1 ? 's' : ''}</span>
+                            </button>
+
+                            {/* Tool Call Details */}
+                            {isExpanded && (
+                              <div className="mt-2 space-y-2">
+                                {message.toolCalls?.map((tool, toolIndex) => (
+                                  <div
+                                    key={tool.id || toolIndex}
+                                    className={`bg-background/50 border rounded p-2 text-xs ${
+                                      tool.state === 'error' ? 'border-destructive/50' : ''
+                                    }`}
+                                  >
+                                    {/* Tool Header */}
+                                    <div className="flex items-center gap-1 font-medium mb-1">
+                                      <Terminal className="w-3 h-3" />
+                                      <span>{tool.name}</span>
+                                      {tool.state === 'pending' && <span className="text-muted-foreground ml-1">(pending)</span>}
+                                      {tool.state === 'executing' && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+                                      {tool.state === 'completed' && <Check className="w-3 h-3 text-green-500 ml-1" />}
+                                      {tool.state === 'error' && <AlertCircle className="w-3 h-3 text-destructive ml-1" />}
+                                      {tool.latencyMs && (
+                                        <span className="text-muted-foreground ml-auto text-[10px]">
+                                          {tool.latencyMs}ms
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Tool Arguments */}
+                                    {tool.args && Object.keys(tool.args as object).length > 0 && (
+                                      <div className="mt-1 font-mono text-muted-foreground">
+                                        <span className="font-semibold">Args:</span>{' '}
+                                        <pre className="inline whitespace-pre-wrap">{JSON.stringify(tool.args, null, 2)}</pre>
+                                      </div>
+                                    )}
+
+                                    {/* Tool Result */}
+                                    {tool.result !== undefined && (
+                                      <div className="mt-1 font-mono">
+                                        <span className="font-semibold">Result:</span>{' '}
+                                        <pre className="inline whitespace-pre-wrap">
+                                          {typeof tool.result === 'string'
+                                            ? tool.result
+                                            : JSON.stringify(tool.result, null, 2)}
+                                        </pre>
+                                      </div>
+                                    )}
+
+                                    {/* Tool Error */}
+                                    {tool.error && (
+                                      <div className="mt-1 font-mono text-destructive">
+                                        <span className="font-semibold">Error:</span> {tool.error}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
                               </div>
-                              {tool.args && (
-                                <div className="mt-1 font-mono text-muted-foreground">
-                                  Args: {JSON.stringify(tool.args)}
-                                </div>
-                              )}
-                              {tool.result && (
-                                <div className="mt-1 font-mono">
-                                  Result: {typeof tool.result === 'string' ? tool.result : JSON.stringify(tool.result)}
-                                </div>
-                              )}
-                            </div>
-                          ))}
+                            )}
+                          </div>
+                        )
+                      })()}
+
+                      {/* Error Message */}
+                      {message.error && (
+                        <div className="mt-2 flex items-start gap-2 p-2 bg-destructive/10 border border-destructive/20 rounded">
+                          <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-destructive break-words">{message.error}</p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => retry(message.id)}
+                              className="mt-2 h-7 text-xs"
+                            >
+                              <RotateCw className="w-3 h-3 mr-1" />
+                              Retry
+                            </Button>
+                          </div>
                         </div>
                       )}
 
+                      {/* Timestamp */}
                       <p className="text-xs opacity-60 mt-1">
                         {new Date(message.timestamp).toLocaleTimeString()}
                       </p>
+
+                      {/* Feedback UI for assistant messages */}
+                      {!isUser && !message.isStreaming && message.traceId && (
+                        <div className="mt-2 pt-2 border-t border-border/50">
+                          <MessageFeedback
+                            messageId={message.id}
+                            currentRating={message.feedbackRating}
+                            disabled={isLoading}
+                            onSubmit={submitFeedback}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
               })
             )}
-
-            {isLoading && (
-              <div className="flex justify-start">
-                <div className="bg-muted rounded-lg p-3">
-                  <div className="flex items-center gap-2">
-                    <Bot className="w-4 h-4" />
-                    <span className="text-xs font-medium">{agent.name}</span>
-                  </div>
-                  <div className="flex items-center gap-1 mt-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-xs text-muted-foreground">Thinking...</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
 
             <div ref={messagesEndRef} />
           </div>
@@ -510,13 +758,25 @@ export default function AgentPlaygroundPage() {
                     }
                   }}
                 />
-                <Button
-                  type="submit"
-                  disabled={!input.trim() || isLoading || !selectedVersionId}
-                  className="self-end"
-                >
-                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                </Button>
+                {isLoading ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={stop}
+                    className="self-end"
+                    title="Stop generation"
+                  >
+                    <StopCircle className="w-4 h-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    disabled={!input.trim() || !selectedVersionId}
+                    className="self-end"
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                )}
               </div>
               <p className="text-xs text-muted-foreground">
                 Press Enter to send, Shift+Enter for new line

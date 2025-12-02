@@ -32,6 +32,7 @@ import {
   FileSearch
 } from 'lucide-react'
 import { formatRelativeTime, truncate } from '@/lib/utils'
+import { toast } from 'sonner'
 import { ImportTracesModal } from '@/components/import-traces-modal'
 import { TracesTableSkeleton } from '@/components/skeletons/traces-skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -209,10 +210,16 @@ function TracesPageContent() {
   }
 
   // Real data query using API
-  const { data, isLoading, error, refetch } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['traces', queryParams],
     queryFn: () => apiClient.listTraces(queryParams),
   })
+
+  // Handle refresh with toast
+  const handleRefresh = async () => {
+    await refetch()
+    toast.success('Traces refreshed')
+  }
 
   // Get traces from API response
   const traces: Trace[] = data?.traces || []
@@ -338,7 +345,7 @@ function TracesPageContent() {
               )}
             </Button>
             <Select defaultValue="">
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-[200px]" aria-label="Load saved view">
                 <SelectValue placeholder="Load saved view..." />
               </SelectTrigger>
               <SelectContent>
@@ -348,7 +355,7 @@ function TracesPageContent() {
                 <SelectItem value="slow">Slow Responses</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline">
+            <Button variant="outline" onClick={() => toast.info('Not implemented: Save View')}>
               <Save className="w-4 h-4 mr-2" />
               Save View
             </Button>
@@ -402,7 +409,10 @@ function TracesPageContent() {
             <span className="text-sm text-muted-foreground">
               Live data - Last updated just now
             </span>
-            <button className="text-sm text-primary hover:underline">
+            <button
+              className="text-sm text-primary hover:underline"
+              onClick={() => toast.info('Not implemented: Change range')}
+            >
               Change range
             </button>
           </div>
@@ -507,7 +517,11 @@ function TracesPageContent() {
           <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => toast.info('Not implemented: Column configuration')}
+                >
                   <Settings2 className="w-4 h-4 mr-2" />
                   Columns
                 </Button>
@@ -516,7 +530,11 @@ function TracesPageContent() {
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => toast.info('Not implemented: Export to CSV')}
+                >
                   <Download className="w-4 h-4 mr-2" />
                   Export
                 </Button>
@@ -525,8 +543,13 @@ function TracesPageContent() {
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <RefreshCw className="w-4 h-4" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={isFetching}
+                >
+                  <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Refresh data</TooltipContent>
@@ -655,11 +678,12 @@ function TracesPageContent() {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button
-                                  className="text-muted-foreground hover:text-foreground transition-colors"
+                                  className="text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded"
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     copyToClipboard(trace.id)
                                   }}
+                                  aria-label="Copy trace ID"
                                 >
                                   <Copy className="h-3 w-3" />
                                 </button>
@@ -708,6 +732,7 @@ function TracesPageContent() {
                                     e.stopPropagation()
                                     setSelectedTrace(trace)
                                   }}
+                                  aria-label="View trace details"
                                 >
                                   <Eye className="h-3 w-3" />
                                 </Button>
@@ -723,6 +748,7 @@ function TracesPageContent() {
                                     e.stopPropagation()
                                     copyToClipboard(trace.id)
                                   }}
+                                  aria-label="Copy trace ID"
                                 >
                                   <Copy className="h-3 w-3" />
                                 </Button>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 import {
   DollarSign,
   ChevronDown,
@@ -245,13 +246,13 @@ export default function ResourcesPage() {
           <div className="flex-1" />
 
           {/* Budget View Toggle */}
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" onClick={() => toast.info('Not implemented: Budget View')}>
             <BarChart3 className="w-4 h-4" />
             Budget View
           </Button>
 
           {/* Export Report */}
-          <Button className="gap-2 bg-info hover:bg-info/90 text-white">
+          <Button className="gap-2 bg-info hover:bg-info/90 text-white" onClick={() => toast.info('Not implemented: Export Report')}>
             <Download className="w-4 h-4" />
             Export Report
           </Button>
@@ -348,7 +349,7 @@ export default function ResourcesPage() {
                   <ArrowUpDown className="w-3.5 h-3.5" />
                   Sort by {sortBy === 'cost' ? 'Cost' : 'Date'}
                 </button>
-                <Button variant="outline" size="sm" className="gap-2">
+                <Button variant="outline" size="sm" className="gap-2" onClick={() => toast.info('Not implemented: Export Chart')}>
                   <Download className="w-3.5 h-3.5" />
                   Export Chart
                 </Button>
@@ -511,6 +512,7 @@ export default function ResourcesPage() {
                         size="sm"
                         variant="outline"
                         className="w-full text-xs bg-info/5 border-info/30 hover:bg-info/10"
+                        onClick={() => toast.info('Not implemented: Learn More')}
                       >
                         Learn More
                       </Button>

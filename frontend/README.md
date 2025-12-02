@@ -63,7 +63,7 @@ frontend/
 
 ### Prerequisites
 
-- Node.js 18+ and npm
+- Node.js 18+ and pnpm
 - Backend API running (see `/src` for backend setup)
 
 ### Installation
@@ -72,7 +72,7 @@ frontend/
 
 ```bash
 cd frontend
-npm install
+pnpm install
 ```
 
 2. **Configure environment variables:**
@@ -95,7 +95,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8787/v1
 3. **Run development server:**
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
@@ -107,22 +107,22 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 npm run dev
 
 # Build for production
-npm run build
+pnpm run build
 
 # Start production server
-npm start
+pnpm start
 
 # Run linter
-npm run lint
+pnpm run lint
 
 # Type check
-npm run type-check
+pnpm run type-check
 
 # Build for Cloudflare Pages
-npm run pages:build
+pnpm run pages:build
 
 # Deploy to Cloudflare Pages
-npm run pages:deploy
+pnpm run pages:deploy
 ```
 
 ## Features
@@ -282,7 +282,7 @@ The frontend is configured for **static export** to deploy on Cloudflare Pages:
 1. **Build for Cloudflare:**
 
 ```bash
-npm run pages:build
+pnpm run pages:build
 ```
 
 This creates a static export in `.vercel/output/static/` compatible with Cloudflare Pages.
@@ -290,7 +290,7 @@ This creates a static export in `.vercel/output/static/` compatible with Cloudfl
 2. **Deploy:**
 
 ```bash
-npm run pages:deploy
+pnpm run pages:deploy
 ```
 
 Or connect your GitHub repo to Cloudflare Pages dashboard for automatic deployments.
@@ -318,7 +318,7 @@ Authentication is **not yet implemented** but ready for Clerk integration:
 1. **Install Clerk:**
 
 ```bash
-npm install @clerk/nextjs
+pnpm add @clerk/nextjs
 ```
 
 2. **Wrap app in ClerkProvider** (in `app/layout.tsx`)
@@ -383,11 +383,11 @@ If you see "Failed to fetch" errors:
 rm -rf .next
 
 # Reinstall dependencies
-rm -rf node_modules package-lock.json
-npm install
+rm -rf node_modules pnpm-lock.yaml
+pnpm install
 
 # Type check
-npm run type-check
+pnpm run type-check
 ```
 
 ### Cloudflare Pages Build Fails

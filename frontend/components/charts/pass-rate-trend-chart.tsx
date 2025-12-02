@@ -15,6 +15,7 @@ import {
 } from 'recharts'
 import { Button } from '@/components/ui/button'
 import { BarChart3, TrendingUp, Activity, Download, Info } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface TrendDataPoint {
   time: string
@@ -155,7 +156,7 @@ export function PassRateTrendChart({
             ))}
           </div>
 
-          <Button variant="ghost" size="sm">
+          <Button variant="ghost" size="sm" onClick={() => toast.info('Not implemented: Download chart')}>
             <Download size={16} />
           </Button>
         </div>

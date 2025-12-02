@@ -35,6 +35,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { cn, formatRelativeTime } from '@/lib/utils'
+import { toast } from 'sonner'
 import type { Job, TraceSummary, Eval } from '@/types/api'
 import type { Agent } from '@/types/agent'
 
@@ -439,7 +440,7 @@ export default function DashboardPage() {
                   <Circle className="w-3 h-3 fill-success text-success" />
                   <span className="text-sm font-medium text-foreground">Connected</span>
                 </div>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" onClick={() => toast.info('Not implemented: Export dashboard data')}>
                   <Download className="w-4 h-4 mr-2" />
                   Export
                 </Button>
@@ -536,7 +537,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Export Button */}
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={() => toast.info('Not implemented: Export dashboard data')}>
                 <Download className="w-4 h-4 mr-2" />
                 Export
               </Button>
@@ -645,7 +646,7 @@ export default function DashboardPage() {
                   <h3 className="text-lg font-semibold text-foreground">Recent Activity</h3>
                   <p className="text-sm text-muted-foreground">Real-time event feed</p>
                 </div>
-                <Button variant="ghost" size="sm" aria-label="Filter activity">
+                <Button variant="ghost" size="sm" aria-label="Filter activity" onClick={() => toast.info('Not implemented: Filter activity')}>
                   <Filter className="w-4 h-4" />
                 </Button>
               </div>
@@ -733,7 +734,7 @@ export default function DashboardPage() {
 
               {/* View All Link */}
               <div className="mt-4 pt-4 border-t border-border">
-                <Button variant="ghost" className="w-full justify-center text-sm">
+                <Button variant="ghost" className="w-full justify-center text-sm" onClick={() => toast.info('Not implemented: View all activity')}>
                   View all activity
                   <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>

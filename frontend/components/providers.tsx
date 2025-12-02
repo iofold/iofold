@@ -34,9 +34,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         {children}
         <Toaster
-          position="top-right"
+          position="bottom-right"
           theme="system"
           richColors
+          closeButton
           toastOptions={{
             classNames: {
               toast: 'bg-card border-border text-foreground',
@@ -46,6 +47,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
               error: 'bg-destructive/10 border-destructive text-destructive',
               warning: 'bg-warning/10 border-warning text-warning-foreground',
               info: 'bg-info/10 border-info text-info',
+              closeButton: 'bg-card border-border hover:bg-muted',
             }
           }}
         />

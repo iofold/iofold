@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient, APIError } from '@/lib/api-client'
 import { useJobMonitor } from '@/hooks/use-job-monitor'
@@ -26,6 +27,7 @@ interface GenerateEvalModalProps {
 }
 
 export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const [formData, setFormData] = useState<GenerateEvalRequest>({
@@ -310,7 +312,10 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
                         )}
                       </ul>
                       <Button
-                        onClick={() => window.location.href = `/evals/${jobStatus.result.eval_id}`}
+                        onClick={() => {
+                          handleClose()
+                          router.push(`/evals/${jobStatus.result.eval_id}`)
+                        }}
                         className="w-full mt-4"
                       >
                         View Eval Details

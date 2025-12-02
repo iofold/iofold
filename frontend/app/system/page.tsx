@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { AlertCircle, X, RefreshCw, ChevronDown, CheckCircle, Clock } from 'lucide-react'
 import { JobQueueDashboard } from '@/components/jobs'
+import { toast } from 'sonner'
 
 // Mock data for performance charts
 const generateResponseTimeData = () => {
@@ -254,7 +255,7 @@ export default function SystemMonitoringPage() {
               <p className="mt-1 text-sm text-warning">
                 Memory usage has exceeded 85% threshold. Consider scaling resources or investigating memory leaks.
               </p>
-              <button className="mt-2 text-sm font-medium text-warning underline hover:text-warning/80">
+              <button className="mt-2 text-sm font-medium text-warning underline hover:text-warning/80" onClick={() => toast.info('Not implemented: View Details')}>
                 View Details
               </button>
             </div>
@@ -504,7 +505,7 @@ export default function SystemMonitoringPage() {
               </div>
 
               {/* View All Link */}
-              <button className="mt-4 w-full rounded-lg border border-border bg-muted py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/80">
+              <button className="mt-4 w-full rounded-lg border border-border bg-muted py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/80" onClick={() => toast.info('Not implemented: View All Alerts')}>
                 View All Alerts
               </button>
             </section>

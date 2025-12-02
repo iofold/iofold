@@ -10,6 +10,7 @@ import {
   ThumbsDown,
   ThumbsUp
 } from 'lucide-react'
+import { toast } from 'sonner'
 
 // Mock data for agent versions
 const mockVersions = [
@@ -279,7 +280,7 @@ export default function MatrixPage() {
           <p className="text-muted-foreground mb-4">
             There are no evaluation versions available to display.
           </p>
-          <button className="py-2 px-4 border border-border rounded-lg text-foreground hover:bg-primary hover:text-white hover:border-primary transition-colors">
+          <button className="py-2 px-4 border border-border rounded-lg text-foreground hover:bg-primary hover:text-white hover:border-primary transition-colors" onClick={() => toast.info('Not implemented: Create New Version')}>
             Create New Version
           </button>
         </div>

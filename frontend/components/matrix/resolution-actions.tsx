@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -65,7 +66,7 @@ export function ResolutionActions({
       title: 'Add to Training',
       description: 'Include cases in next training cycle',
       icon: BookOpen,
-      action: onAddToTraining || (() => console.log('Add to training')),
+      action: onAddToTraining || (() => toast.info('Not implemented: Add to training')),
       variant: 'outline' as const
     },
     {
@@ -73,7 +74,7 @@ export function ResolutionActions({
       title: 'Flag for Review',
       description: 'Mark for manual expert review',
       icon: Flag,
-      action: onFlagReview || (() => console.log('Flag for review')),
+      action: onFlagReview || (() => toast.info('Not implemented: Flag for review')),
       variant: 'outline' as const
     }
   ]

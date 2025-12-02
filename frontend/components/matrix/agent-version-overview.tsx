@@ -1,5 +1,6 @@
 'use client'
 
+import { toast } from 'sonner'
 import { AgentVersion } from '@/types/agent'
 import { MatrixRow } from '@/types/api'
 import { Button } from '@/components/ui/button'
@@ -223,6 +224,10 @@ export function AgentVersionOverview({
                 <Button
                   variant="outline"
                   className="w-full group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onVersionClick(version)
+                  }}
                 >
                   <span>View Trace Details</span>
                   <ArrowRight size={16} className="ml-2" />
@@ -242,7 +247,10 @@ export function AgentVersionOverview({
             <p className="text-muted-foreground mb-4">
               There are no evaluation versions available to display.
             </p>
-            <Button variant="outline">
+            <Button
+              variant="outline"
+              onClick={() => toast.info('Not implemented: Create New Version')}
+            >
               <Plus size={16} className="mr-2" />
               Create New Version
             </Button>

@@ -22,6 +22,7 @@ import {
   TrendingUp,
   Zap
 } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface ComparisonPanelProps {
   selectedContradiction: MatrixRow | null
@@ -231,7 +232,7 @@ export function ComparisonPanel({
                       <Zap size={14} />
                       <span className="ml-2">Refine Eval</span>
                     </Button>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" onClick={() => toast.info('Not implemented: Add Note')}>
                       <MessageCircle size={14} />
                       <span className="ml-2">Add Note</span>
                     </Button>

@@ -21,6 +21,7 @@ import {
   ThumbsDown,
   ThumbsUp
 } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface TraceEvaluationDetailsProps {
   data: MatrixRow[]
@@ -324,6 +325,7 @@ export function TraceEvaluationDetails({
                         variant="outline"
                         size="sm"
                         className="text-destructive border-destructive hover:bg-destructive/5"
+                        onClick={() => toast.info('Not implemented: Resolve Contradiction')}
                       >
                         <AlertCircle size={16} className="mr-2" />
                         Resolve Contradiction

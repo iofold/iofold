@@ -9,6 +9,7 @@
 import { useState } from 'react'
 import { TraceCard } from './TraceCard'
 import { ParsedTrace } from '@/types/trace'
+import { toast } from 'sonner'
 
 // Sample parsed trace data
 const sampleTrace: ParsedTrace = {
@@ -162,13 +163,13 @@ export function TraceCardExample() {
     setFeedbackLog((prev) => [...prev, message])
 
     // Show toast notification
-    alert(`Feedback recorded: ${rating}`)
+    toast.success(`Feedback recorded: ${rating}`)
 
     // Move to next trace
     if (currentIndex < samples.length - 1) {
       setCurrentIndex(currentIndex + 1)
     } else {
-      alert('All traces reviewed!')
+      toast.success('All traces reviewed!')
     }
   }
 

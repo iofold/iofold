@@ -118,7 +118,8 @@ function ReviewPageContent() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
 
-  const agentId = searchParams.get('agent_id') || 'agent-demo'
+  // Only use agent_id from URL params - don't default to demo value
+  const agentId = searchParams.get('agent_id') || null
 
   // Core state
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -129,7 +130,7 @@ function ReviewPageContent() {
   })
   const [notes, setNotes] = useState('')
   const [isAutoMode, setIsAutoMode] = useState(false)
-  const [useMockData, setUseMockData] = useState(true)
+  const [useMockData, setUseMockData] = useState(false)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [displayedTrace, setDisplayedTrace] = useState<TraceData | null>(null)
 
@@ -163,15 +164,16 @@ function ReviewPageContent() {
   // Use mock data or real data - map TraceSummary to TraceData format
   const traces: TraceData[] = useMockData
     ? MOCK_TRACES
-    : (tracesData?.traces || []).map((trace) => ({
+    : (tracesData?.traces || []).map((trace: any) => ({
         id: trace.id,
-        agent_id: trace.source || 'unknown',
+        // Use trace's agent_id (from agent_version), or fallback to feedback's agent_id
+        agent_id: trace.agent_id || trace.feedback?.agent_id || null,
         input: trace.summary?.input_preview || '',
         output: trace.summary?.output_preview || '',
         score: trace.feedback?.rating === 'positive' ? 1 : trace.feedback?.rating === 'negative' ? -1 : 0,
         timestamp: trace.timestamp,
         duration_ms: 0,
-        metadata: { step_count: trace.step_count, has_errors: trace.summary?.has_errors }
+        metadata: { step_count: trace.step_count, has_errors: trace.summary?.has_errors, source: trace.source }
       }))
 
   const currentTrace = traces[currentIndex]
@@ -227,15 +229,20 @@ function ReviewPageContent() {
       [rating]: prev[rating] + 1,
     }))
 
-    // Submit to API if using real data
-    if (!useMockData && agentId) {
+    // Submit to API if using real data and trace has an agent_id
+    // Use trace's agent_id (from agent_version), fallback to URL param
+    const effectiveAgentId = currentTrace.agent_id || agentId
+    if (!useMockData && effectiveAgentId) {
       const apiRating = rating === 'good' ? 'positive' : rating === 'bad' ? 'negative' : 'neutral'
       submitFeedbackMutation.mutate({
         trace_id: currentTrace.id,
         rating: apiRating,
-        agent_id: agentId,
+        agent_id: effectiveAgentId,
         notes: notes.trim() || undefined,
       })
+    } else if (!useMockData) {
+      // No agent_id available - show warning
+      toast.warning('Trace not assigned to an agent', { duration: 2000 })
     } else {
       // Mock feedback toast
       const emoji = rating === 'good' ? '✅' : rating === 'bad' ? '❌' : '➖'
