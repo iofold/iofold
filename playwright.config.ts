@@ -35,14 +35,14 @@ export default defineConfig({
 
   webServer: [
     {
-      command: 'npm run dev',
+      command: 'pnpm run dev',
       url: 'http://localhost:8787/health',
       timeout: 120000,
       reuseExistingServer: true,
       ignoreHTTPSErrors: true,
     },
     {
-      command: 'cd frontend && npm run dev',
+      command: 'cd frontend && pnpm run dev',
       url: 'http://localhost:3000',
       timeout: 120000,
       reuseExistingServer: true,

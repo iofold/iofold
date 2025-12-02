@@ -1,11 +1,33 @@
 name = "iofold-frontend"
+main = ".open-next/worker.js"
 compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
 
-# Configuration for Cloudflare Pages
-pages_build_output_dir = ".vercel/output/static"
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
 
+# ============================================================================
+# Staging Environment
+# ============================================================================
+[env.staging]
+name = "iofold-frontend-staging"
+workers_dev = true
+routes = [
+  { pattern = "platform.staging.iofold.com", custom_domain = true }
+]
+
+[env.staging.vars]
+NEXT_PUBLIC_API_URL = "https://api.staging.iofold.com"
+
+# ============================================================================
+# Production Environment
+# ============================================================================
 [env.production]
 name = "iofold-frontend-production"
+routes = [
+  { pattern = "platform.iofold.com", custom_domain = true }
+]
 
-[env.preview]
-name = "iofold-frontend-preview"
+[env.production.vars]
+NEXT_PUBLIC_API_URL = "https://api.iofold.com"

@@ -3,34 +3,73 @@ main = "src/index.ts"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 
-# NOTE: Run `npx wrangler d1 create iofold_validation` to create the database
-# Then replace the database_id below with the actual ID from the output
+# Workers Observability - enables console.log capture in dashboard
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+# ============================================================================
+# Staging Environment
+# ============================================================================
+[env.staging]
+name = "iofold-staging"
+routes = [
+  { pattern = "api.staging.iofold.com", custom_domain = true }
+]
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+LANGFUSE_BASE_URL = "https://cloud.langfuse.com"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "iofold-staging-db"
+database_id = "9eaff631-3152-432f-9d07-20de2ed8857f"
+
+[[env.staging.queues.producers]]
+binding = "JOB_QUEUE"
+queue = "iofold-jobs"
+
+[[env.staging.queues.consumers]]
+queue = "iofold-jobs"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "iofold-jobs-dlq"
+
+[[env.staging.queues.producers]]
+binding = "DEAD_LETTER_QUEUE"
+queue = "iofold-jobs-dlq"
+
+[[env.staging.vectorize]]
+binding = "VECTORIZE"
+index_name = "system-prompts"
+
+[env.staging.ai]
+binding = "AI"
+
+[env.staging.triggers]
+crons = ["0 */6 * * *"]
+
+# ============================================================================
+# Local Development (default)
+# ============================================================================
+[vars]
+ENVIRONMENT = "development"
+LANGFUSE_BASE_URL = "https://cloud.langfuse.com"
+
 [[d1_databases]]
 binding = "DB"
-database_name = "iofold_validation"
-database_id = "REPLACE_WITH_ACTUAL_DATABASE_ID"
+database_name = "iofold-staging-db"
+database_id = "9eaff631-3152-432f-9d07-20de2ed8857f"
 
-# Cloudflare Sandbox for Python code execution
-[[env.production.services]]
-binding = "Sandbox"
-service = "cloudflare/sandbox"
-
-# For local development, you'll need to configure a local sandbox
-# or mock the sandbox binding in tests
-[[env.development.services]]
-binding = "Sandbox"
-service = "cloudflare/sandbox"
-
-# ============================================================================
-# Cloudflare Queues for Background Job Processing
-# ============================================================================
-
-# Main job queue - producer binding
 [[queues.producers]]
 binding = "JOB_QUEUE"
 queue = "iofold-jobs"
 
-# Main job queue - consumer configuration
 [[queues.consumers]]
 queue = "iofold-jobs"
 max_batch_size = 10
@@ -38,35 +77,16 @@ max_batch_timeout = 30
 max_retries = 3
 dead_letter_queue = "iofold-jobs-dlq"
 
-# Dead letter queue - for failed jobs after max retries
 [[queues.producers]]
 binding = "DEAD_LETTER_QUEUE"
 queue = "iofold-jobs-dlq"
 
-# ============================================================================
-# Scheduled Tasks (Cron Triggers)
-# ============================================================================
-
-# Monitoring job runs every 6 hours to check eval performance
-[triggers]
-crons = ["0 */6 * * *"]
-
-# ============================================================================
-# Cloudflare Vectorize for Agent Discovery
-# ============================================================================
-
-# NOTE: Run `npx wrangler vectorize create system-prompts --dimensions 768 --metric cosine`
-# to create the vector index
 [[vectorize]]
 binding = "VECTORIZE"
 index_name = "system-prompts"
 
-# ============================================================================
-# Cloudflare Workers AI for Embeddings
-# ============================================================================
-
 [ai]
 binding = "AI"
 
-[vars]
-ENVIRONMENT = "development"
+[triggers]
+crons = ["0 */6 * * *"]
