@@ -8,6 +8,7 @@
 
 # Next.js
 /.next/
+/.open-next/
 /out/
 .vercel
 
