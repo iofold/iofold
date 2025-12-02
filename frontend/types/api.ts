@@ -338,3 +338,33 @@ export interface JobResponse {
 export interface ListEvalExecutionsResponse extends PaginatedResponse<EvalExecutionWithContext> {
   executions: EvalExecutionWithContext[];
 }
+
+// ============================================================================
+// Playground
+// ============================================================================
+
+export interface PlaygroundRunRequest {
+  code: string;
+  trace_ids: string[];
+}
+
+export interface PlaygroundResult {
+  trace_id: string;
+  human_feedback: 'positive' | 'negative' | 'neutral' | null;
+  predicted: boolean;
+  reason: string;
+  is_match: boolean | null;
+  is_contradiction: boolean;
+  execution_time_ms: number;
+  error: string | null;
+}
+
+export interface PlaygroundRunResponse {
+  results: PlaygroundResult[];
+  summary: {
+    total: number;
+    matches: number;
+    contradictions: number;
+    avg_time_ms: number;
+  };
+}

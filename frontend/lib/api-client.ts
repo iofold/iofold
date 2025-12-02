@@ -12,6 +12,8 @@ import type {
   ListIntegrationsResponse,
   ListTracesResponse,
   MatrixResponse,
+  PlaygroundRunRequest,
+  PlaygroundRunResponse,
   SubmitFeedbackRequest,
   Trace,
   UpdateEvalRequest,
@@ -272,6 +274,16 @@ class APIClient {
     return this.request(`/api/evals/${evalId}/executions?${query.toString()}`)
   }
 
+  async playgroundRun(
+    evalId: string,
+    data: PlaygroundRunRequest
+  ): Promise<PlaygroundRunResponse> {
+    return this.request(`/api/evals/${evalId}/playground`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
   // ============================================================================
   // Jobs
   // ============================================================================
@@ -398,6 +410,67 @@ class APIClient {
       })
     }
     return this.request(`/api/agents/${agentId}/matrix?${query.toString()}`)
+  }
+
+  // ============================================================================
+  // Playground Sessions
+  // ============================================================================
+
+  async listPlaygroundSessions(agentId: string): Promise<{
+    sessions: Array<{
+      id: string
+      agentVersionId: string
+      modelProvider: string
+      modelId: string
+      createdAt: string
+      updatedAt: string
+    }>
+  }> {
+    return this.request(`/api/agents/${agentId}/playground/sessions`)
+  }
+
+  async getPlaygroundSession(agentId: string, sessionId: string): Promise<{
+    id: string
+    workspaceId: string
+    agentId: string
+    agentVersionId: string
+    messages: Array<{ role: string; content: string }>
+    variables: Record<string, string>
+    files: Record<string, string>
+    modelProvider: string
+    modelId: string
+    createdAt: string
+    updatedAt: string
+  }> {
+    return this.request(`/api/agents/${agentId}/playground/sessions/${sessionId}`)
+  }
+
+  async deletePlaygroundSession(agentId: string, sessionId: string): Promise<void> {
+    return this.request(`/api/agents/${agentId}/playground/sessions/${sessionId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async listAllPlaygroundSessions(): Promise<{
+    sessions: Array<{
+      id: string
+      agentId: string
+      agentName: string
+      agentVersionId: string
+      modelProvider: string
+      modelId: string
+      messageCount: number
+      createdAt: string
+      updatedAt: string
+    }>
+    pagination: {
+      total: number
+      limit: number
+      offset: number
+      hasMore: boolean
+    }
+  }> {
+    return this.request('/api/playground/sessions')
   }
 }
 
