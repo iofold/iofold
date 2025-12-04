@@ -153,10 +153,10 @@ test.describe('Evals List Page', () => {
     // Wait for side sheet
     await page.waitForSelector('[role="dialog"]', { state: 'visible', timeout: 5000 })
 
-    // Check metrics are displayed
-    await expect(page.locator('[role="dialog"] text=Accuracy')).toBeVisible()
-    await expect(page.locator('[role="dialog"] text=Executions')).toBeVisible()
-    await expect(page.locator('[role="dialog"] text=Contradictions')).toBeVisible()
+    // Check metrics are displayed - use locator for metric labels (div with text-xs class)
+    await expect(page.locator('[role="dialog"]').getByText('Accuracy')).toBeVisible()
+    await expect(page.locator('[role="dialog"] div.text-xs').getByText('Executions')).toBeVisible()
+    await expect(page.locator('[role="dialog"]').getByText('Contradictions')).toBeVisible()
   })
 
   test('should display eval code in side sheet', async ({ page }) => {
@@ -170,7 +170,7 @@ test.describe('Evals List Page', () => {
     await page.waitForSelector('[role="dialog"]', { state: 'visible', timeout: 5000 })
 
     // Check code section is displayed
-    await expect(page.locator('[role="dialog"] text=Eval Code')).toBeVisible()
+    await expect(page.locator('[role="dialog"]').getByText('Eval Code')).toBeVisible()
   })
 
   test('should switch to Executions tab', async ({ page }) => {
@@ -204,11 +204,11 @@ test.describe('Evals List Page', () => {
     // Wait for side sheet
     await page.waitForSelector('[role="dialog"]', { state: 'visible', timeout: 5000 })
 
-    // Check action buttons are displayed
-    await expect(page.locator('[role="dialog"] button:has-text("Playground"), [role="dialog"] a:has-text("Playground")')).toBeVisible()
-    await expect(page.locator('[role="dialog"] button:has-text("Matrix"), [role="dialog"] a:has-text("Matrix")')).toBeVisible()
-    await expect(page.locator('[role="dialog"] button:has-text("Execute")')).toBeVisible()
-    await expect(page.locator('[role="dialog"] button:has-text("Delete")')).toBeVisible()
+    // Check action buttons are displayed - use first() since there may be both link and button
+    await expect(page.locator('[role="dialog"]').getByRole('link', { name: 'Playground' }).or(page.locator('[role="dialog"]').getByRole('button', { name: 'Playground' })).first()).toBeVisible()
+    await expect(page.locator('[role="dialog"]').getByRole('link', { name: 'Matrix' }).or(page.locator('[role="dialog"]').getByRole('button', { name: 'Matrix' })).first()).toBeVisible()
+    await expect(page.locator('[role="dialog"]').getByRole('button', { name: 'Execute' })).toBeVisible()
+    await expect(page.locator('[role="dialog"]').getByRole('button', { name: 'Delete' })).toBeVisible()
   })
 
   test('should update URL when selecting an eval', async ({ page }) => {

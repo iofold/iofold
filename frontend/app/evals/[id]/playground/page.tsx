@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
@@ -54,11 +54,11 @@ export default function EvalPlaygroundPage() {
   })
 
   // Set code when eval data loads
-  useState(() => {
+  useEffect(() => {
     if (evalData && !code) {
       setCode(evalData.code)
     }
-  })
+  }, [evalData, code])
 
   // Fetch traces for the eval's agent
   const { data: tracesData, isLoading: loadingTraces } = useQuery({
