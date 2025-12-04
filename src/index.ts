@@ -12,8 +12,14 @@ import { handleApiRequest } from './api';
 import { QueueConsumer, type MessageBatch } from './queue/consumer';
 import { QueueProducer, type Queue } from './queue/producer';
 import type { QueueMessage } from './types/queue';
-import type { Sandbox } from '@cloudflare/sandbox';
 import type { DurableObjectNamespace } from '@cloudflare/workers-types';
+
+// Re-export Sandbox Durable Object class for wrangler
+// This is required for the SANDBOX binding to work
+// Export as PythonSandbox (new SQLite-backed DO for Containers)
+import type { Sandbox as SandboxType } from '@cloudflare/sandbox';
+export { Sandbox } from '@cloudflare/sandbox';
+export { Sandbox as PythonSandbox } from '@cloudflare/sandbox';
 
 export interface Env {
   DB: D1Database;
@@ -25,7 +31,7 @@ export interface Env {
   OPENAI_API_KEY?: string;
   /** Google AI API key for playground */
   GOOGLE_API_KEY?: string;
-  SANDBOX?: DurableObjectNamespace<Sandbox>;
+  SANDBOX?: DurableObjectNamespace<SandboxType>;
   /** Cloudflare Queue binding for job processing */
   JOB_QUEUE?: Queue;
   /** Dead letter queue for failed jobs */

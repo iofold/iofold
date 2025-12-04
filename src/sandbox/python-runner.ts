@@ -8,6 +8,20 @@ export interface ExecutionResult {
   executionTimeMs: number;
 }
 
+export interface BatchTraceResult {
+  trace_id: string;
+  success: boolean;
+  passed?: boolean;
+  reason?: string;
+  error?: string;
+  execution_time_ms: number;
+}
+
+export interface BatchExecutionResult {
+  results: BatchTraceResult[];
+  total_time_ms: number;
+}
+
 export interface PythonRunnerConfig {
   timeout?: number; // milliseconds
   sandboxBinding?: DurableObjectNamespace<Sandbox>; // Cloudflare Sandbox binding
@@ -61,6 +75,8 @@ export class PythonRunner {
         return this.executeViaHttpService(code, startTime);
       }
 
+      console.log('[PythonRunner] Initializing sandbox:', this.config.sandboxId);
+
       // Initialize sandbox with keepAlive: false for automatic cleanup
       this.sandbox = getSandbox(this.config.sandboxBinding, this.config.sandboxId, {
         keepAlive: false
@@ -68,12 +84,16 @@ export class PythonRunner {
 
       // Write Python code to a temporary file
       const scriptPath = '/tmp/eval_script.py';
+      console.log('[PythonRunner] Writing script to:', scriptPath);
       await this.sandbox.writeFile(scriptPath, code);
+      console.log('[PythonRunner] Script written successfully');
 
       // Execute the Python script with timeout
+      console.log('[PythonRunner] Executing python3 with timeout:', this.config.timeout);
       const result = await this.sandbox.exec(`python3 ${scriptPath}`, {
         timeout: this.config.timeout
       });
+      console.log('[PythonRunner] Execution complete, exitCode:', result.exitCode);
 
       const executionTimeMs = Date.now() - startTime;
 
@@ -92,6 +112,7 @@ export class PythonRunner {
         };
       }
     } catch (error: any) {
+      console.error('[PythonRunner] Execution error:', error.message, error.stack);
       const executionTimeMs = Date.now() - startTime;
 
       // Handle timeout errors
@@ -134,8 +155,9 @@ export class PythonRunner {
       }
     }
 
-    // Check for eval/exec
-    if (/\beval\s*\(|\bexec\s*\(|\bcompile\s*\(/.test(code)) {
+    // Check for eval/exec/compile (but allow re.compile)
+    // Use negative lookbehind to not match method calls like re.compile()
+    if (/(?<!\.)(\beval\s*\(|\bexec\s*\(|\bcompile\s*\()/.test(code)) {
       return 'Blocked: eval/exec/compile not allowed';
     }
 

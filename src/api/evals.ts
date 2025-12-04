@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { JobManager } from '../jobs/job-manager';
 import { EvalGenerationJob } from '../jobs/eval-generation-job';
 import { EvalExecutionJob } from '../jobs/eval-execution-job';
+import { PythonRunner } from '../sandbox/python-runner';
 import {
   handleError,
   notFoundError,
@@ -527,17 +528,52 @@ export class EvalsAPI {
             raw_data: typeof trace.raw_data === 'string' ? JSON.parse(trace.raw_data as string) : trace.raw_data
           };
 
-          // For MVP, return mock results since sandbox integration is complex
-          // In production, this would call the sandbox binding
-          if (this.sandboxBinding) {
-            // TODO: Implement actual sandbox execution
-            // const sandbox = this.sandboxBinding.get(this.sandboxBinding.idFromName('playground'));
-            // const result = await sandbox.executeEval(validated.code, traceData);
-            // predicted = result.predicted;
-            // reason = result.reason;
-            error = 'Sandbox execution not yet implemented';
+          // Execute eval code using PythonRunner
+          const runner = new PythonRunner({
+            sandboxBinding: this.sandboxBinding,
+            timeout: 5000,
+            sandboxId: `playground-${evalId}-${trace.id}`
+          });
+
+          // Validate code first
+          const validationError = runner.validateCode(validated.code);
+          if (validationError) {
+            error = validationError;
           } else {
-            error = 'Sandbox not available';
+            // Extract function name from code
+            const functionNameMatch = validated.code.match(/def\s+(\w+)\s*\(/);
+            const functionName = functionNameMatch ? functionNameMatch[1] : 'eval_function';
+
+            // Build execution code (wraps eval code with trace data)
+            const traceJson = JSON.stringify(traceData).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            const executionCode = `
+import json
+
+${validated.code}
+
+trace_data = json.loads("${traceJson}")
+result = ${functionName}(trace_data)
+result_dict = {"passed": result[0], "reason": result[1]}
+print(json.dumps(result_dict))
+`;
+
+            // Execute in sandbox
+            const execution = await runner.execute(executionCode);
+
+            if (!execution.success) {
+              error = execution.error || 'Execution failed';
+            } else {
+              // Parse result from stdout
+              const output = execution.output || '';
+              const resultMatch = output.match(/\{"passed":\s*(true|false),\s*"reason":\s*"([^"]*)"\}/);
+
+              if (resultMatch) {
+                predicted = resultMatch[1] === 'true';
+                reason = resultMatch[2];
+              } else {
+                error = `Could not parse eval result. Output: ${output}`;
+              }
+            }
           }
         } catch (e: any) {
           error = e.message || 'Execution error';

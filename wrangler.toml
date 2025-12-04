@@ -54,6 +54,17 @@ binding = "AI"
 [env.staging.triggers]
 crons = ["0 */6 * * *"]
 
+# Sandbox Container for Python eval execution
+[[env.staging.containers]]
+class_name = "PythonSandbox"
+image = "./Dockerfile"
+instance_type = "lite"
+max_instances = 5
+
+[[env.staging.durable_objects.bindings]]
+name = "SANDBOX"
+class_name = "PythonSandbox"
+
 # ============================================================================
 # Local Development (default)
 # ============================================================================
@@ -90,3 +101,24 @@ binding = "AI"
 
 [triggers]
 crons = ["0 */6 * * *"]
+
+# Sandbox Container for Python eval execution (local dev)
+[[containers]]
+class_name = "PythonSandbox"
+image = "./Dockerfile"
+instance_type = "lite"
+max_instances = 2
+
+[[durable_objects.bindings]]
+name = "SANDBOX"
+class_name = "PythonSandbox"
+
+# Durable Object migrations
+[[migrations]]
+tag = "v1"
+new_classes = ["Sandbox"]
+
+# Add new SQLite-backed PythonSandbox for Containers
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PythonSandbox"]
