@@ -1,0 +1,73 @@
+name: Security Scanning
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  security-scan:
+    name: Security Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Faster for PR diffs
+
+      # 1. SECRET SCANNING (~25s)
+      - name: Gitleaks - Secret Scanning
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. TYPESCRIPT/NODE.JS SECURITY
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm audit - Dependency Vulnerabilities
+        run: pnpm audit --audit-level=high
+        continue-on-error: true  # Warn but don't block
+
+      - name: njsscan - TypeScript SAST
+        uses: ajinabraham/njsscan-action@master
+        with:
+          args: "frontend/ --sarif --output njsscan-results.sarif || true"
+        continue-on-error: true
+
+      # 3. PYTHON SECURITY
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Bandit - Python SAST
+        run: |
+          pip install bandit
+          bandit -r backend/ -ll -f json -o bandit-results.json || true
+        continue-on-error: true
+
+      # 4. UPLOAD SARIF RESULTS (for GitHub Security tab)
+      - name: Upload njsscan SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: njsscan-results.sarif
+        continue-on-error: true

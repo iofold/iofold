@@ -1,0 +1,33 @@
+# lefthook.yml - Git hooks configuration
+# Docs: https://github.com/evilmartians/lefthook
+
+pre-commit:
+  parallel: true
+  commands:
+    # Secret scanning - blocks commit if secrets detected
+    gitleaks:
+      run: |
+        if command -v gitleaks &> /dev/null; then
+          gitleaks protect --staged --verbose --redact
+        elif [ -f ~/.local/bin/gitleaks ]; then
+          ~/.local/bin/gitleaks protect --staged --verbose --redact
+        else
+          echo "Warning: gitleaks not found, skipping secret scan"
+          echo "Install: brew install gitleaks (macOS) or download from https://github.com/gitleaks/gitleaks/releases"
+        fi
+      fail_text: "Secrets detected! Remove them or add to .gitleaksignore if false positive"
+
+pre-push:
+  parallel: true
+  commands:
+    # Double-check secrets before push
+    gitleaks:
+      run: |
+        if command -v gitleaks &> /dev/null; then
+          gitleaks protect --verbose --redact
+        elif [ -f ~/.local/bin/gitleaks ]; then
+          ~/.local/bin/gitleaks protect --verbose --redact
+        else
+          echo "Warning: gitleaks not found, skipping secret scan"
+        fi
+      fail_text: "Secrets detected! Remove them before pushing"

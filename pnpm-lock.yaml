@@ -51,6 +51,9 @@ importers:
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3
+      lefthook:
+        specifier: ^2.0.7
+        version: 2.0.7
       tsx:
         specifier: ^4.20.6
         version: 4.21.0
@@ -1184,6 +1187,60 @@ packages:
         optional: true
       openai:
         optional: true
+
+  lefthook-darwin-arm64@2.0.7:
+    resolution: {integrity: sha512-C+LPGsbTobWElRlJy8IXS0bvjNuTAVGwtRD/Yx0Mki6+Qtn7cVWjzKemDzjK7/U1QTSF55YkWvY7JCsHvgtGww==}
+    cpu: [arm64]
+    os: [darwin]
+
+  lefthook-darwin-x64@2.0.7:
+    resolution: {integrity: sha512-20Pi/FBft99rhQ6NjsrBeeqLDLAl5jit1HgxIE+G4IhOjFVKyfcNd9vyxLFTNTnm9OBI2ibkb8Ze7RbpjrJn+Q==}
+    cpu: [x64]
+    os: [darwin]
+
+  lefthook-freebsd-arm64@2.0.7:
+    resolution: {integrity: sha512-EFYlh4T/ljpa03L0BkIyZJl3VTDTOi7rmJN3V5liaMhhmnJdLWqqnjNp1+nREFkH3O2STAZ4vUqQTFchEe6UOg==}
+    cpu: [arm64]
+    os: [freebsd]
+
+  lefthook-freebsd-x64@2.0.7:
+    resolution: {integrity: sha512-vB5+s5Hmd8kJX8BYhhw1T17l3+lFTfL8HDmDBSxMK6oU+Q6I4nLDYfVAhlhpEA2C6XV73mEx9M+WamhYS3tOOA==}
+    cpu: [x64]
+    os: [freebsd]
+
+  lefthook-linux-arm64@2.0.7:
+    resolution: {integrity: sha512-y+n6wyrSIBdc9itApW79AlcsqffNphP4YCvG+0KaTdArLZGPb3Qu5I+5EnrZHf5lOSF6hSdjgG8XXI5NlFETMg==}
+    cpu: [arm64]
+    os: [linux]
+
+  lefthook-linux-x64@2.0.7:
+    resolution: {integrity: sha512-KohT2UdBHa55NvQ2z6siodcrUOslxkShF+Xlan+wsfJHy3t4KZF7LZcm5u7WOBX0C7+qAXRcx864ul5JaX8biQ==}
+    cpu: [x64]
+    os: [linux]
+
+  lefthook-openbsd-arm64@2.0.7:
+    resolution: {integrity: sha512-1GzXb8/zlYa7cTLvKTJE60+4IbPMthWMnrUR8coxE5QxjUVZXeWMueeJzQhH/is7aaH8J81EQkbkM9OQiT5JPA==}
+    cpu: [arm64]
+    os: [openbsd]
+
+  lefthook-openbsd-x64@2.0.7:
+    resolution: {integrity: sha512-pYQnVikjpTgyJZBta1Lkxegh0Ls3L5us3MYgpNO7zlVScOmXUNYnagBBqKKXw2bD9rRqcb4BGvNgoWkXmmKMYg==}
+    cpu: [x64]
+    os: [openbsd]
+
+  lefthook-windows-arm64@2.0.7:
+    resolution: {integrity: sha512-DrgC+NVv3JbAPzwPebT/NtwfXlHlAtF3ak9AwKSWXWEYGQ78Wzv7JKLl3aNXeFVbJX0AxGmb9qcmImux88poSQ==}
+    cpu: [arm64]
+    os: [win32]
+
+  lefthook-windows-x64@2.0.7:
+    resolution: {integrity: sha512-y7vgTyTUgOnVuKMQVlNgY7Q/FaBqFwccRsQcGei9YfVR+2S/KF/pBMd6Tl2BnOA8mQDU4NjbR3M3z1tEE2Ex8Q==}
+    cpu: [x64]
+    os: [win32]
+
+  lefthook@2.0.7:
+    resolution: {integrity: sha512-B6ipwXZCDF5gD6QN2pdz9ImUB5ulNEBdO3jG8akKd0IO9QYiGgWu66sYcxEU1hci+vJCx2UWLQdLjzLNsfhqjA==}
+    hasBin: true
 
   loupe@3.2.1:
     resolution: {integrity: sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==}
@@ -2391,6 +2448,49 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
       openai: 6.9.1(ws@8.18.3)(zod@4.1.13)
+
+  lefthook-darwin-arm64@2.0.7:
+    optional: true
+
+  lefthook-darwin-x64@2.0.7:
+    optional: true
+
+  lefthook-freebsd-arm64@2.0.7:
+    optional: true
+
+  lefthook-freebsd-x64@2.0.7:
+    optional: true
+
+  lefthook-linux-arm64@2.0.7:
+    optional: true
+
+  lefthook-linux-x64@2.0.7:
+    optional: true
+
+  lefthook-openbsd-arm64@2.0.7:
+    optional: true
+
+  lefthook-openbsd-x64@2.0.7:
+    optional: true
+
+  lefthook-windows-arm64@2.0.7:
+    optional: true
+
+  lefthook-windows-x64@2.0.7:
+    optional: true
+
+  lefthook@2.0.7:
+    optionalDependencies:
+      lefthook-darwin-arm64: 2.0.7
+      lefthook-darwin-x64: 2.0.7
+      lefthook-freebsd-arm64: 2.0.7
+      lefthook-freebsd-x64: 2.0.7
+      lefthook-linux-arm64: 2.0.7
+      lefthook-linux-x64: 2.0.7
+      lefthook-openbsd-arm64: 2.0.7
+      lefthook-openbsd-x64: 2.0.7
+      lefthook-windows-arm64: 2.0.7
+      lefthook-windows-x64: 2.0.7
 
   loupe@3.2.1: {}
 

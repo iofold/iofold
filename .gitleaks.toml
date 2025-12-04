@@ -1,0 +1,55 @@
+# .gitleaks.toml - Gitleaks configuration
+# Docs: https://github.com/gitleaks/gitleaks
+
+title = "iofold gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlist for false positives"
+
+# Paths to ignore
+paths = [
+  '''\.env''',
+  '''\.env\..*''',
+  '''\.dev\.vars''',
+  '''\.tmp/.*''',
+  '''node_modules/.*''',
+  '''pnpm-lock\.yaml''',
+  '''package-lock\.json''',
+  '''\.next/.*''',
+  '''dist/.*''',
+  '''\.wrangler/.*''',
+  # Test files often have fake credentials
+  '''.*\.test\.(ts|tsx|js|jsx)''',
+  '''.*\.spec\.(ts|tsx|js|jsx)''',
+  '''e2e/.*''',
+  # Assets
+  '''.*\.(png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)''',
+]
+
+# Regex patterns that are known false positives
+regexes = [
+  # Example/placeholder values
+  '''example\.com''',
+  '''placeholder''',
+  '''your-.*-here''',
+  '''xxx+''',
+  '''test[-_]?key''',
+  '''fake[-_]?key''',
+  '''dummy[-_]?key''',
+  # Common false positive patterns
+  '''sk-ant-api03-.*-example''',
+]
+
+# Stopwords - strings that indicate false positives
+stopwords = [
+  "example",
+  "placeholder",
+  "your-api-key",
+  "INSERT_",
+  "REPLACE_",
+  "TODO",
+  "FIXME",
+]

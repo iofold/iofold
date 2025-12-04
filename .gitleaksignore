@@ -1,0 +1,6 @@
+# .gitleaksignore - Known false positives
+# Add fingerprints from gitleaks output when you encounter false positives
+# Format: <fingerprint>:<file>:<line>
+#
+# To get fingerprint, run: gitleaks detect --verbose
+# Then copy the fingerprint of the false positive here
