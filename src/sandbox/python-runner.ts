@@ -184,6 +184,62 @@ export class PythonRunner {
   }
 
   /**
+   * Build a Python script that executes the eval function on all traces in a single sandbox.
+   * This avoids the overhead of creating and destroying multiple sandboxes.
+   *
+   * @param evalCode - The user's eval function code
+   * @param functionName - Name of the eval function to call (e.g., "eval_test")
+   * @param traces - Array of traces to evaluate, each with trace_id and data
+   * @returns Complete Python script that loops over traces and outputs JSON results
+   */
+  private buildBatchScript(
+    evalCode: string,
+    functionName: string,
+    traces: Array<{ trace_id: string; data: any }>
+  ): string {
+    // Properly escape the traces JSON for embedding in Python string
+    // Use JSON.stringify twice: once for the data, then escape for Python triple quotes
+    const tracesJson = JSON.stringify(traces)
+      .replace(/\\/g, '\\\\')  // Escape backslashes
+      .replace(/'''/g, "\\'\\'\\'");  // Escape triple quotes
+
+    return `import json
+import time
+
+# User's eval function
+${evalCode}
+
+# All traces
+traces_json = '''${tracesJson}'''
+traces = json.loads(traces_json)
+
+results = []
+for trace_data in traces:
+    trace_id = trace_data.get('trace_id', '')
+    start_time = time.time()
+    try:
+        passed, reason = ${functionName}(trace_data.get('data', {}))
+        execution_time_ms = int((time.time() - start_time) * 1000)
+        results.append({
+            'trace_id': trace_id,
+            'success': True,
+            'passed': bool(passed),
+            'reason': str(reason),
+            'execution_time_ms': execution_time_ms
+        })
+    except Exception as e:
+        execution_time_ms = int((time.time() - start_time) * 1000)
+        results.append({
+            'trace_id': trace_id,
+            'success': False,
+            'error': str(e),
+            'execution_time_ms': execution_time_ms
+        })
+
+print(json.dumps({'results': results}))`;
+  }
+
+  /**
    * Execute Python code via HTTP service (dev mode only)
    * Calls the python-executor-service running on localhost:9999
    */
