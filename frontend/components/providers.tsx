@@ -4,9 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 import { Toaster } from 'sonner'
 import { ThemeProvider } from 'next-themes'
+import { useAuth } from '@clerk/nextjs'
 import { apiClient } from '@/lib/api-client'
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  const { getToken, isLoaded, isSignedIn } = useAuth()
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -19,10 +21,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
       })
   )
 
-  // Initialize API client with default workspace for MVP
+  // Initialize API client with Clerk token
   useEffect(() => {
-    apiClient.setAuth('', 'workspace_default')
-  }, [])
+    async function initAuth() {
+      if (isLoaded && isSignedIn) {
+        const token = await getToken()
+        // For MVP, all users share workspace_default
+        apiClient.setAuth(token || '', 'workspace_default')
+      } else if (isLoaded && !isSignedIn) {
+        // Clear auth when signed out
+        apiClient.setAuth('', 'workspace_default')
+      }
+    }
+    initAuth()
+  }, [isLoaded, isSignedIn, getToken])
 
   return (
     <ThemeProvider

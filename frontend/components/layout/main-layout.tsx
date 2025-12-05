@@ -1,6 +1,7 @@
 'use client'
 
 import { ReactNode } from 'react'
+import { useAuth } from '@clerk/nextjs'
 import { Sidebar, SidebarProvider, useSidebar } from '@/components/sidebar'
 import { cn } from '@/lib/utils'
 
@@ -20,6 +21,17 @@ function MainContent({ children }: { children: ReactNode }) {
 }
 
 export function MainLayout({ children }: { children: ReactNode }) {
+  const { isLoaded } = useAuth()
+
+  // Show loading while Clerk initializes
+  if (!isLoaded) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    )
+  }
+
   return (
     <SidebarProvider>
       <Sidebar />

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import NProgress from 'nprogress'
 import { cn } from '@/lib/utils'
 import { useSidebar } from './sidebar-context'
+import { UserButton, useUser } from '@clerk/nextjs'
 import {
   LayoutDashboard,
   Search,
@@ -133,6 +134,7 @@ function NavSectionComponent({
 
 export function Sidebar() {
   const { isExpanded, toggle } = useSidebar()
+  const { user, isLoaded } = useUser()
 
   return (
     <aside
@@ -183,17 +185,26 @@ export function Sidebar() {
       <div className="border-t border-border p-3">
         <div
           className={cn(
-            'flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors duration-200 cursor-pointer',
+            'flex items-center gap-3 p-2 rounded-lg transition-colors duration-200',
             !isExpanded && 'justify-center'
           )}
         >
-          <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center">
-            <User size={16} className="text-muted-foreground" />
-          </div>
-          {isExpanded && (
+          <UserButton
+            afterSignOutUrl="/sign-in"
+            appearance={{
+              elements: {
+                avatarBox: 'w-8 h-8',
+              },
+            }}
+          />
+          {isExpanded && isLoaded && user && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">User Account</p>
-              <p className="text-xs text-muted-foreground truncate">user@example.com</p>
+              <p className="text-sm font-medium text-foreground truncate">
+                {user.fullName || 'User'}
+              </p>
+              <p className="text-xs text-muted-foreground truncate">
+                {user.primaryEmailAddress?.emailAddress}
+              </p>
             </div>
           )}
         </div>
