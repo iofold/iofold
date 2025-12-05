@@ -4,3 +4,8 @@
 #
 # To get fingerprint, run: gitleaks detect --verbose
 # Then copy the fingerprint of the false positive here
+
+# Documentation placeholder tokens (not real secrets)
+7bc1dc86834de38e16e241b7a27a3de69fe7850b:docs/DEPLOYMENT_GUIDE.md:curl-auth-header:527
+7bc1dc86834de38e16e241b7a27a3de69fe7850b:docs/DEPLOYMENT_GUIDE.md:curl-auth-header:535
+d79918d2d97f8c14c5e89ce595b46f0b6a84f72a:docs/plans/2025-11-12-deployment-guide.md:curl-auth-header:173
