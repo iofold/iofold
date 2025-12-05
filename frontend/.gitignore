@@ -35,3 +35,8 @@ next-env.d.ts
 # Wrangler
 .wrangler/
 .dev.vars
+
+# Test artifacts
+test-results/
+playwright-report/
+.playwright-artifacts/

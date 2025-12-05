@@ -6,3 +6,13 @@ dist/
 .tmp/
 .playwright-mcp/
 .tmp
+
+# Test artifacts
+test-results/
+playwright-report/
+*.playwright-artifacts*/
+
+# Temporary/draft files
+*.bak
+*.swp
+*~
