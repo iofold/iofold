@@ -17,7 +17,6 @@ import {
   Grid3X3,
   Plug,
   Settings,
-  User,
   ChevronLeft,
   ChevronRight,
   ChevronDown,

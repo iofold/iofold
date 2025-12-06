@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useTheme } from 'next-themes'
+import { useUser } from '@clerk/nextjs'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,7 +16,6 @@ import {
   Key,
   Palette,
   Shield,
-  Upload,
   Copy,
   Download,
   RefreshCw,
@@ -29,11 +29,20 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+function UserInitials({ name, email }: { name?: string | null; email?: string }) {
+  const initials = name
+    ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    : email?.[0]?.toUpperCase() || 'U'
+
+  return (
+    <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center text-xl font-medium text-primary">
+      {initials}
+    </div>
+  )
+}
+
 export default function SettingsPage() {
-  // Profile state
-  const [displayName, setDisplayName] = useState('John Doe')
-  const [email] = useState('john.doe@example.com')
-  const [avatarUrl, setAvatarUrl] = useState('')
+  const { user, isLoaded } = useUser()
 
   // Notification state
   const [emailNotifications, setEmailNotifications] = useState(true)
@@ -50,7 +59,6 @@ export default function SettingsPage() {
   // Theme state
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
-  const [accentColor, setAccentColor] = useState('#4ECFA5')
 
   useEffect(() => {
     setMounted(true)
@@ -59,18 +67,6 @@ export default function SettingsPage() {
   // Save state
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
-
-  // Mock avatar upload
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setAvatarUrl(reader.result as string)
-      }
-      reader.readAsDataURL(file)
-    }
-  }
 
   // Copy API key
   const copyApiKey = () => {
@@ -139,73 +135,31 @@ export default function SettingsPage() {
                 <User className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <CardTitle>Profile Settings</CardTitle>
-                <CardDescription>Manage your personal information</CardDescription>
+                <CardTitle>Profile</CardTitle>
+                <CardDescription>Your account information from Clerk</CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Avatar Upload */}
-            <div className="space-y-2">
-              <Label>Profile Picture</Label>
-              <div className="flex items-center gap-4">
-                <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 border-border">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
-                  ) : (
-                    <User className="h-10 w-10 text-muted-foreground" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <input
-                    type="file"
-                    id="avatar-upload"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleAvatarUpload}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => document.getElementById('avatar-upload')?.click()}
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload New Picture
-                  </Button>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    JPG, PNG or GIF. Max 2MB.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Display Name */}
-            <div className="space-y-2">
-              <Label htmlFor="display-name">Display Name</Label>
-              <Input
-                id="display-name"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Enter your display name"
+            {/* User Info Display */}
+            <div className="flex items-center gap-4">
+              <UserInitials
+                name={user?.fullName}
+                email={user?.primaryEmailAddress?.emailAddress}
               />
+              <div className="flex-1">
+                <p className="text-lg font-medium">
+                  {isLoaded ? (user?.fullName || 'User') : 'Loading...'}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {isLoaded ? user?.primaryEmailAddress?.emailAddress : '...'}
+                </p>
+              </div>
             </div>
 
-            {/* Email (Read-only) */}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <div className="relative">
-                <Input
-                  id="email"
-                  value={email}
-                  disabled
-                  className="pr-10"
-                />
-                <Mail className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Contact support to change your email address
-              </p>
-            </div>
+            <p className="text-sm text-muted-foreground border-l-2 border-muted pl-3">
+              Profile information is managed through your Clerk account. To update your name, email, or profile picture, visit your Clerk account settings.
+            </p>
           </CardContent>
         </Card>
 
@@ -457,58 +411,6 @@ export default function SettingsPage() {
                 Choose your preferred color scheme
               </p>
             </div>
-
-            {/* Accent Color Picker */}
-            <div className="space-y-2">
-              <Label htmlFor="accent-color">Accent Color</Label>
-              <div className="flex gap-4 items-center">
-                <input
-                  type="color"
-                  id="accent-color"
-                  value={accentColor}
-                  onChange={(e) => setAccentColor(e.target.value)}
-                  className="h-12 w-24 rounded-md border border-input cursor-pointer"
-                />
-                <div className="flex-1">
-                  <Input
-                    value={accentColor}
-                    onChange={(e) => setAccentColor(e.target.value)}
-                    placeholder="#4ECFA5"
-                    className="font-mono"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Customize the primary color used throughout the interface
-              </p>
-            </div>
-
-            {/* Color Preview */}
-            <div className="p-4 border rounded-lg space-y-3">
-              <p className="text-sm font-medium mb-3">Preview</p>
-              <div className="flex gap-2">
-                <div
-                  className="h-10 w-10 rounded-md border"
-                  style={{ backgroundColor: accentColor }}
-                />
-                <div
-                  className="h-10 w-10 rounded-md border"
-                  style={{ backgroundColor: accentColor, opacity: 0.8 }}
-                />
-                <div
-                  className="h-10 w-10 rounded-md border"
-                  style={{ backgroundColor: accentColor, opacity: 0.6 }}
-                />
-                <div
-                  className="h-10 w-10 rounded-md border"
-                  style={{ backgroundColor: accentColor, opacity: 0.4 }}
-                />
-                <div
-                  className="h-10 w-10 rounded-md border"
-                  style={{ backgroundColor: accentColor, opacity: 0.2 }}
-                />
-              </div>
-            </div>
           </CardContent>
         </Card>
 
@@ -582,7 +484,7 @@ export default function SettingsPage() {
               </div>
               <Button
                 onClick={handleSaveChanges}
-                loading={isSaving}
+                disabled={isSaving}
                 size="lg"
               >
                 <Save className="h-4 w-4 mr-2" />
