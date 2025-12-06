@@ -25,7 +25,7 @@ import {
   Gamepad2,
   TrendingUp,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 
 interface NavItem {
   href: string
@@ -134,6 +134,7 @@ function NavSectionComponent({
 export function Sidebar() {
   const { isExpanded, toggle } = useSidebar()
   const { user, isLoaded } = useUser()
+  const userButtonRef = useRef<HTMLDivElement>(null)
 
   return (
     <aside
@@ -182,32 +183,42 @@ export function Sidebar() {
 
       {/* User Section */}
       <div className="border-t border-border p-3">
-        <div
+        <button
+          type="button"
+          onClick={() => {
+            // Programmatically trigger the UserButton click
+            const button = userButtonRef.current?.querySelector('button')
+            if (button) {
+              button.click()
+            }
+          }}
           className={cn(
-            'relative flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors duration-200 cursor-pointer',
+            'w-full flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors duration-200 cursor-pointer',
             !isExpanded && 'justify-center'
           )}
+          aria-label="Open user menu"
         >
-          <UserButton
-            afterSignOutUrl="/sign-in"
-            appearance={{
-              elements: {
-                avatarBox: 'w-8 h-8',
-                userButtonTrigger: 'after:absolute after:inset-0 after:content-[""]',
-                rootBox: 'static',
-              },
-            }}
-          >
-            <UserButton.MenuItems>
-              <UserButton.Link
-                href="/settings"
-                label="Settings"
-                labelIcon={<Settings size={16} />}
-              />
-            </UserButton.MenuItems>
-          </UserButton>
+          <div ref={userButtonRef} className="flex-shrink-0">
+            <UserButton
+              afterSignOutUrl="/sign-in"
+              appearance={{
+                elements: {
+                  avatarBox: 'w-8 h-8',
+                  rootBox: 'static',
+                },
+              }}
+            >
+              <UserButton.MenuItems>
+                <UserButton.Link
+                  href="/settings"
+                  label="Settings"
+                  labelIcon={<Settings size={16} />}
+                />
+              </UserButton.MenuItems>
+            </UserButton>
+          </div>
           {isExpanded && isLoaded && user && (
-            <div className="flex-1 min-w-0 pointer-events-none">
+            <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-medium text-foreground truncate">
                 {user.fullName || 'User'}
               </p>
@@ -216,7 +227,7 @@ export function Sidebar() {
               </p>
             </div>
           )}
-        </div>
+        </button>
       </div>
     </aside>
   )
