@@ -78,10 +78,10 @@ export class EvalsAPI {
     try {
       const validated = GenerateEvalSchema.parse(body) as GenerateEvalRequest;
 
-      // Check if agent exists
+      // Check if agent exists and belongs to workspace
       const agent = await this.db
-        .prepare('SELECT id FROM agents WHERE id = ?')
-        .bind(agentId)
+        .prepare('SELECT id FROM agents WHERE id = ? AND workspace_id = ?')
+        .bind(agentId, workspaceId)
         .first();
 
       if (!agent) {
@@ -163,14 +163,22 @@ export class EvalsAPI {
   }
 
   // POST /api/evals - Create eval directly (for testing/seeding)
-  async createEval(body: any): Promise<Response> {
+  async createEval(body: any, workspaceId?: string): Promise<Response> {
     try {
       const validated = CreateEvalSchema.parse(body);
 
-      // Check if agent exists
+      // Check if agent exists and belongs to workspace (if workspace provided)
+      let query = 'SELECT id FROM agents WHERE id = ?';
+      const params: any[] = [validated.agent_id];
+
+      if (workspaceId) {
+        query += ' AND workspace_id = ?';
+        params.push(workspaceId);
+      }
+
       const agent = await this.db
-        .prepare('SELECT id FROM agents WHERE id = ?')
-        .bind(validated.agent_id)
+        .prepare(query)
+        .bind(...params)
         .first();
 
       if (!agent) {
@@ -212,7 +220,7 @@ export class EvalsAPI {
   }
 
   // GET /api/evals - List evals
-  async listEvals(queryParams: URLSearchParams): Promise<Response> {
+  async listEvals(queryParams: URLSearchParams, workspaceId?: string): Promise<Response> {
     try {
       const params = {
         agent_id: queryParams.get('agent_id') || undefined,
@@ -222,12 +230,21 @@ export class EvalsAPI {
 
       const validated = ListEvalsSchema.parse(params);
 
-      let query = 'SELECT * FROM evals';
+      // Join with agents table to filter by workspace
+      let query = workspaceId
+        ? 'SELECT e.* FROM evals e INNER JOIN agents a ON e.agent_id = a.id'
+        : 'SELECT * FROM evals';
       const conditions: string[] = [];
       const bindings: any[] = [];
 
+      // Add workspace filter if provided
+      if (workspaceId) {
+        conditions.push('a.workspace_id = ?');
+        bindings.push(workspaceId);
+      }
+
       if (validated.agent_id) {
-        conditions.push('agent_id = ?');
+        conditions.push(workspaceId ? 'e.agent_id = ?' : 'agent_id = ?');
         bindings.push(validated.agent_id);
       }
 
@@ -240,7 +257,7 @@ export class EvalsAPI {
         query += ' WHERE ' + conditions.join(' AND ');
       }
 
-      query += ' ORDER BY created_at DESC LIMIT ?';
+      query += workspaceId ? ' ORDER BY e.created_at DESC LIMIT ?' : ' ORDER BY created_at DESC LIMIT ?';
       bindings.push(validated.limit! + 1); // Fetch one extra to check has_more
 
       const results = await this.db.prepare(query).bind(...bindings).all();
@@ -276,11 +293,18 @@ export class EvalsAPI {
   }
 
   // GET /api/evals/:id - Get eval details
-  async getEval(evalId: string): Promise<Response> {
+  async getEval(evalId: string, workspaceId?: string): Promise<Response> {
     try {
+      // Join with agents to verify workspace ownership
+      let query = workspaceId
+        ? 'SELECT e.* FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?'
+        : 'SELECT * FROM evals WHERE id = ?';
+
+      const params = workspaceId ? [evalId, workspaceId] : [evalId];
+
       const record = await this.db
-        .prepare('SELECT * FROM evals WHERE id = ?')
-        .bind(evalId)
+        .prepare(query)
+        .bind(...params)
         .first();
 
       if (!record) {
@@ -311,14 +335,20 @@ export class EvalsAPI {
   }
 
   // PATCH /api/evals/:id - Update eval
-  async updateEval(evalId: string, body: any): Promise<Response> {
+  async updateEval(evalId: string, body: any, workspaceId?: string): Promise<Response> {
     try {
       const validated = UpdateEvalSchema.parse(body) as UpdateEvalRequest;
 
-      // Check if eval exists
+      // Check if eval exists and belongs to workspace
+      let query = workspaceId
+        ? 'SELECT e.id FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?'
+        : 'SELECT id FROM evals WHERE id = ?';
+
+      const params = workspaceId ? [evalId, workspaceId] : [evalId];
+
       const existing = await this.db
-        .prepare('SELECT id FROM evals WHERE id = ?')
-        .bind(evalId)
+        .prepare(query)
+        .bind(...params)
         .first();
 
       if (!existing) {
@@ -358,7 +388,7 @@ export class EvalsAPI {
         .run();
 
       // Return updated eval
-      return this.getEval(evalId);
+      return this.getEval(evalId, workspaceId);
     } catch (error) {
       return handleError(error);
     }
@@ -373,10 +403,10 @@ export class EvalsAPI {
     try {
       const validated = ExecuteEvalSchema.parse(body) as ExecuteEvalRequest;
 
-      // Check if eval exists
+      // Check if eval exists and belongs to workspace
       const eval_ = await this.db
-        .prepare('SELECT id, agent_id FROM evals WHERE id = ?')
-        .bind(evalId)
+        .prepare('SELECT e.id, e.agent_id FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?')
+        .bind(evalId, workspaceId)
         .first();
 
       if (!eval_) {
@@ -448,12 +478,18 @@ export class EvalsAPI {
   }
 
   // DELETE /api/evals/:id - Delete eval
-  async deleteEval(evalId: string): Promise<Response> {
+  async deleteEval(evalId: string, workspaceId?: string): Promise<Response> {
     try {
-      // Check if eval exists
+      // Check if eval exists and belongs to workspace
+      let query = workspaceId
+        ? 'SELECT e.id FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?'
+        : 'SELECT id FROM evals WHERE id = ?';
+
+      const params = workspaceId ? [evalId, workspaceId] : [evalId];
+
       const existing = await this.db
-        .prepare('SELECT id FROM evals WHERE id = ?')
-        .bind(evalId)
+        .prepare(query)
+        .bind(...params)
         .first();
 
       if (!existing) {
@@ -481,10 +517,10 @@ export class EvalsAPI {
     try {
       const validated = PlaygroundRunSchema.parse(body);
 
-      // Check if eval exists and get agent_id
+      // Check if eval exists, belongs to workspace, and get agent_id
       const evalRecord = await this.db
-        .prepare('SELECT id, agent_id FROM evals WHERE id = ?')
-        .bind(evalId)
+        .prepare('SELECT e.id, e.agent_id FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?')
+        .bind(evalId, workspaceId)
         .first();
 
       if (!evalRecord) {

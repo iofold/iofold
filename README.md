@@ -327,4 +327,4 @@ Note: Requires environment variables to be set in Cloudflare dashboard.
 
 ## License
 
-ISC
+MIT

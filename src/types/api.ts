@@ -15,6 +15,7 @@ export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancell
 
 export interface Job {
   id: string;
+  workspace_id: string;
   type: JobType;
   status: JobStatus;
   progress: number; // 0-100

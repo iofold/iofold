@@ -28,7 +28,6 @@ After completing ANY task, append to `docs/progress_log.ndjson` using jq (see us
 3. **Langfuse only for MVP** - Resist scope creep
 4. **User-triggered actions** - No auto-magic for eval generation/refinement
 5. **Eval accuracy > speed** - Quality is paramount
-6. dev server should run on the tailscale interface which is bound at hostname "dev4"
 
 ## Security: Python Sandbox
 

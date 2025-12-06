@@ -104,7 +104,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ```bash
 # Run dev server with hot reload
-npm run dev
+pnpm run dev
 
 # Build for production
 pnpm run build

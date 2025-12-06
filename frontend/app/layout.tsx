@@ -3,7 +3,6 @@ import { Inter } from 'next/font/google'
 import { ClerkProvider } from '@clerk/nextjs'
 import './globals.css'
 import { Providers } from '@/components/providers'
-import { MainLayout } from '@/components/layout'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { NProgressProvider } from '@/components/providers/nprogress-provider'
 
@@ -26,9 +25,7 @@ export default function RootLayout({
           <Providers>
             <ErrorBoundary>
               <NProgressProvider>
-                <MainLayout>
-                  {children}
-                </MainLayout>
+                {children}
               </NProgressProvider>
             </ErrorBoundary>
           </Providers>

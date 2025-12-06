@@ -34,16 +34,16 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
 
     const body = await parseJsonBody<{
       trace_id: string;
-      agent_id: string;
+      agent_id?: string;  // Now optional
       rating: 'positive' | 'negative' | 'neutral';
       notes?: string;
     }>(request);
 
-    // Validate required fields
-    if (!body.trace_id || !body.agent_id || !body.rating) {
+    // Validate required fields (only trace_id and rating are required)
+    if (!body.trace_id || !body.rating) {
       return createErrorResponse(
         'MISSING_REQUIRED_FIELD',
-        'trace_id, agent_id, and rating are required',
+        'trace_id and rating are required',
         400
       );
     }
@@ -68,22 +68,24 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
       return createErrorResponse('NOT_FOUND', 'Trace not found', 404);
     }
 
-    // Verify agent exists and belongs to workspace
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(body.agent_id, workspaceId)
-      .first();
+    // Verify agent exists and belongs to workspace (only if agent_id provided)
+    if (body.agent_id) {
+      const agent = await env.DB.prepare(
+        'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
+      )
+        .bind(body.agent_id, workspaceId)
+        .first();
 
-    if (!agent) {
-      return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
+      if (!agent) {
+        return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
+      }
     }
 
-    // Check for existing feedback - use upsert pattern
+    // Check for existing feedback - use upsert pattern (feedback is 1:1 with trace)
     const existing = await env.DB.prepare(
-      'SELECT id, created_at FROM feedback WHERE trace_id = ? AND agent_id = ?'
+      'SELECT id, created_at FROM feedback WHERE trace_id = ?'
     )
-      .bind(body.trace_id, body.agent_id)
+      .bind(body.trace_id)
       .first();
 
     const now = new Date().toISOString();
@@ -91,16 +93,16 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
     if (existing) {
       // Update existing feedback (upsert)
       await env.DB.prepare(
-        `UPDATE feedback SET rating = ?, rating_detail = ? WHERE id = ?`
+        `UPDATE feedback SET rating = ?, rating_detail = ?, agent_id = ? WHERE id = ?`
       )
-        .bind(body.rating, body.notes || null, existing.id)
+        .bind(body.rating, body.notes || null, body.agent_id || null, existing.id)
         .run();
 
       return createSuccessResponse(
         {
           id: existing.id,
           trace_id: body.trace_id,
-          agent_id: body.agent_id,
+          agent_id: body.agent_id || null,
           rating: body.rating,
           notes: body.notes || null,
           created_at: existing.created_at,
@@ -114,13 +116,13 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
     const feedbackId = `fb_${crypto.randomUUID()}`;
 
     await env.DB.prepare(
-      `INSERT INTO feedback (id, agent_id, trace_id, rating, rating_detail, created_at)
+      `INSERT INTO feedback (id, trace_id, agent_id, rating, rating_detail, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`
     )
       .bind(
         feedbackId,
-        body.agent_id,
         body.trace_id,
+        body.agent_id || null,
         body.rating,
         body.notes || null,
         now
@@ -131,7 +133,7 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
       {
         id: feedbackId,
         trace_id: body.trace_id,
-        agent_id: body.agent_id,
+        agent_id: body.agent_id || null,
         rating: body.rating,
         notes: body.notes || null,
         created_at: now,

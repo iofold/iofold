@@ -250,19 +250,19 @@ export default function DashboardPage() {
   // Get top performing evals (by accuracy)
   const topPerformingEvals = useMemo(() => {
     return [...evals]
-      .filter(e => e.execution_count > 0)
-      .sort((a, b) => b.accuracy - a.accuracy)
+      .filter(e => e.execution_count > 0 && e.accuracy != null)
+      .sort((a, b) => (b.accuracy ?? 0) - (a.accuracy ?? 0))
       .slice(0, 3)
-      .map(e => ({ name: e.name, rate: e.accuracy }))
+      .map(e => ({ name: e.name, rate: e.accuracy ?? 0 }))
   }, [evals])
 
   // Get evals needing attention (low accuracy)
   const needsAttentionEvals = useMemo(() => {
     return [...evals]
-      .filter(e => e.execution_count > 0 && e.accuracy < 85)
-      .sort((a, b) => a.accuracy - b.accuracy)
+      .filter(e => e.execution_count > 0 && e.accuracy != null && e.accuracy < 85)
+      .sort((a, b) => (a.accuracy ?? 0) - (b.accuracy ?? 0))
       .slice(0, 3)
-      .map(e => ({ name: e.name, rate: e.accuracy }))
+      .map(e => ({ name: e.name, rate: e.accuracy ?? 0 }))
   }, [evals])
 
   // Get recent agent deployments

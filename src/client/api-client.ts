@@ -189,6 +189,7 @@ interface MatrixStats {
 
 interface Job {
   id: string;
+  workspace_id: string;
   type: 'import' | 'generate' | 'execute';
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress: number; // 0-100

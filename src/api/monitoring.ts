@@ -21,6 +21,28 @@ export interface Env {
 }
 
 /**
+ * Verify eval exists and belongs to workspace
+ */
+async function verifyEvalWorkspaceAccess(
+  db: D1Database,
+  evalId: string,
+  workspaceId: string | null
+): Promise<boolean> {
+  if (!workspaceId) {
+    return false;
+  }
+
+  const result = await db
+    .prepare(
+      'SELECT e.id FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?'
+    )
+    .bind(evalId, workspaceId)
+    .first();
+
+  return !!result;
+}
+
+/**
  * GET /api/evals/:id/metrics
  *
  * Get current performance metrics for an eval.
@@ -38,12 +60,9 @@ export async function getEvalMetrics(
     const url = new URL(request.url);
     const windowDays = parseInt(url.searchParams.get('window') || '7', 10);
 
-    // Verify eval exists
-    const evalRecord = await env.DB.prepare(
-      'SELECT id FROM evals WHERE id = ?'
-    ).bind(evalId).first();
-
-    if (!evalRecord) {
+    // Verify eval exists and belongs to workspace
+    const hasAccess = await verifyEvalWorkspaceAccess(env.DB, evalId, workspaceId);
+    if (!hasAccess) {
       return createErrorResponse('NOT_FOUND', 'Eval not found', 404);
     }
 
@@ -87,12 +106,9 @@ export async function getPerformanceTrend(
     const url = new URL(request.url);
     const days = parseInt(url.searchParams.get('days') || '30', 10);
 
-    // Verify eval exists
-    const evalRecord = await env.DB.prepare(
-      'SELECT id FROM evals WHERE id = ?'
-    ).bind(evalId).first();
-
-    if (!evalRecord) {
+    // Verify eval exists and belongs to workspace
+    const hasAccess = await verifyEvalWorkspaceAccess(env.DB, evalId, workspaceId);
+    if (!hasAccess) {
       return createErrorResponse('NOT_FOUND', 'Eval not found', 404);
     }
 
@@ -135,12 +151,9 @@ export async function getEvalAlerts(
     const url = new URL(request.url);
     const status = url.searchParams.get('status') || 'unresolved';
 
-    // Verify eval exists
-    const evalRecord = await env.DB.prepare(
-      'SELECT id FROM evals WHERE id = ?'
-    ).bind(evalId).first();
-
-    if (!evalRecord) {
+    // Verify eval exists and belongs to workspace
+    const hasAccess = await verifyEvalWorkspaceAccess(env.DB, evalId, workspaceId);
+    if (!hasAccess) {
       return createErrorResponse('NOT_FOUND', 'Eval not found', 404);
     }
 
@@ -237,6 +250,12 @@ export async function updateEvalSettings(
     const workspaceId = getWorkspaceId(request) || 'workspace_default';
     validateWorkspaceAccess(workspaceId);
 
+    // Verify eval exists and belongs to workspace
+    const hasAccess = await verifyEvalWorkspaceAccess(env.DB, evalId, workspaceId);
+    if (!hasAccess) {
+      return createErrorResponse('NOT_FOUND', 'Eval not found', 404);
+    }
+
     const body = await parseJsonBody<{
       auto_execute_enabled?: boolean;
       auto_refine_enabled?: boolean;
@@ -312,12 +331,9 @@ export async function getPromptCoverage(
     const workspaceId = getWorkspaceId(request) || 'workspace_default';
     validateWorkspaceAccess(workspaceId);
 
-    // Verify eval exists
-    const evalRecord = await env.DB.prepare(
-      'SELECT id FROM evals WHERE id = ?'
-    ).bind(evalId).first();
-
-    if (!evalRecord) {
+    // Verify eval exists and belongs to workspace
+    const hasAccess = await verifyEvalWorkspaceAccess(env.DB, evalId, workspaceId);
+    if (!hasAccess) {
       return createErrorResponse('NOT_FOUND', 'Eval not found', 404);
     }
 
@@ -363,6 +379,12 @@ export async function getRefinementHistory(
   try {
     const workspaceId = getWorkspaceId(request) || 'workspace_default';
     validateWorkspaceAccess(workspaceId);
+
+    // Verify eval exists and belongs to workspace
+    const hasAccess = await verifyEvalWorkspaceAccess(env.DB, evalId, workspaceId);
+    if (!hasAccess) {
+      return createErrorResponse('NOT_FOUND', 'Eval not found', 404);
+    }
 
     const result = await env.DB.prepare(
       `SELECT

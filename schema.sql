@@ -55,14 +55,14 @@ CREATE TABLE traces (
 -- User feedback on traces
 CREATE TABLE feedback (
   id TEXT PRIMARY KEY,
-  agent_id TEXT NOT NULL,
   trace_id TEXT NOT NULL,
+  agent_id TEXT, -- Optional - traces already linked to agents via agent_version_id
   rating TEXT NOT NULL, -- 'positive' | 'negative' | 'neutral'
   rating_detail TEXT, -- optional notes
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
   FOREIGN KEY (trace_id) REFERENCES traces(id) ON DELETE CASCADE,
-  UNIQUE(agent_id, trace_id)
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+  UNIQUE(trace_id) -- Feedback is 1:1 with trace
 );
 
 -- Generated eval functions

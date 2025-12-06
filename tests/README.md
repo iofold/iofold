@@ -8,7 +8,7 @@ Comprehensive end-to-end tests for the eval set and eval generation/execution wo
 
 1. **Install Dependencies**:
 ```bash
-npm install
+pnpm install
 npx playwright install chromium
 ```
 
@@ -26,10 +26,10 @@ export LANGFUSE_BASE_URL="https://cloud.langfuse.com"
 3. **Start Backend and Frontend**:
 ```bash
 # Terminal 1: Backend
-npm run dev
+pnpm run dev
 
 # Terminal 2: Frontend
-cd frontend && npm run dev
+cd frontend && pnpm run dev
 ```
 
 ### Run Tests
@@ -284,10 +284,10 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 18
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
       - run: npx playwright install --with-deps chromium
-      - run: npm run dev &
-      - run: cd frontend && npm run dev &
+      - run: pnpm run dev &
+      - run: cd frontend && pnpm run dev &
       - run: npx playwright test
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

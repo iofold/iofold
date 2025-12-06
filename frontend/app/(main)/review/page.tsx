@@ -196,7 +196,7 @@ function ReviewPageContent() {
     }: {
       trace_id: string
       rating: 'positive' | 'negative' | 'neutral'
-      agent_id: string
+      agent_id?: string  // Now optional
       notes?: string
     }) => {
       return apiClient.submitFeedback({
@@ -229,20 +229,17 @@ function ReviewPageContent() {
       [rating]: prev[rating] + 1,
     }))
 
-    // Submit to API if using real data and trace has an agent_id
-    // Use trace's agent_id (from agent_version), fallback to URL param
-    const effectiveAgentId = currentTrace.agent_id || agentId
-    if (!useMockData && effectiveAgentId) {
+    // Submit to API if using real data
+    // Use trace's agent_id (from agent_version), fallback to URL param, or omit if neither available
+    const effectiveAgentId = currentTrace.agent_id || agentId || undefined
+    if (!useMockData) {
       const apiRating = rating === 'good' ? 'positive' : rating === 'bad' ? 'negative' : 'neutral'
       submitFeedbackMutation.mutate({
         trace_id: currentTrace.id,
         rating: apiRating,
-        agent_id: effectiveAgentId,
+        agent_id: effectiveAgentId,  // Optional - will be undefined if no agent
         notes: notes.trim() || undefined,
       })
-    } else if (!useMockData) {
-      // No agent_id available - show warning
-      toast.warning('Trace not assigned to an agent', { duration: 2000 })
     } else {
       // Mock feedback toast
       const emoji = rating === 'good' ? '✅' : rating === 'bad' ? '❌' : '➖'

@@ -229,6 +229,7 @@ export class JobWorker {
   private jobFromRecord(record: any): Job {
     return {
       id: record.id as string,
+      workspace_id: record.workspace_id as string,
       type: record.type as JobType,
       status: record.status as 'queued' | 'running' | 'completed' | 'failed' | 'cancelled',
       progress: record.progress as number,

@@ -73,7 +73,7 @@ export interface EvalSummary {
 export interface Feedback {
   id: string;
   trace_id: string;
-  agent_id: string;
+  agent_id?: string;  // Now optional - feedback is 1:1 with trace
   rating: 'positive' | 'negative' | 'neutral';
   notes: string | null;
   created_at: string;
@@ -280,7 +280,7 @@ export interface ImportTracesRequest {
 
 export interface SubmitFeedbackRequest {
   trace_id: string;
-  agent_id: string;
+  agent_id?: string;  // Now optional - feedback is 1:1 with trace
   rating: 'positive' | 'negative' | 'neutral';
   notes?: string;
 }

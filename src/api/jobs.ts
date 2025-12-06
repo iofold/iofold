@@ -43,11 +43,16 @@ export class JobsAPI {
   }
 
   // GET /api/jobs/:id - Get job status
-  async getJob(jobId: string): Promise<Response> {
+  async getJob(jobId: string, workspaceId?: string): Promise<Response> {
     try {
       const job = await this.jobManager.getJob(jobId);
 
       if (!job) {
+        return notFoundError('Job', jobId);
+      }
+
+      // Verify workspace ownership if workspaceId provided
+      if (workspaceId && job.workspace_id !== workspaceId) {
         return notFoundError('Job', jobId);
       }
 
@@ -60,11 +65,16 @@ export class JobsAPI {
   }
 
   // GET /api/jobs/:id/stream - Stream job progress via SSE
-  async streamJob(jobId: string): Promise<Response> {
+  async streamJob(jobId: string, workspaceId?: string): Promise<Response> {
     try {
       const job = await this.jobManager.getJob(jobId);
 
       if (!job) {
+        return notFoundError('Job', jobId);
+      }
+
+      // Verify workspace ownership if workspaceId provided
+      if (workspaceId && job.workspace_id !== workspaceId) {
         return notFoundError('Job', jobId);
       }
 
@@ -115,8 +125,19 @@ export class JobsAPI {
   }
 
   // POST /api/jobs/:id/cancel - Cancel a running job
-  async cancelJob(jobId: string): Promise<Response> {
+  async cancelJob(jobId: string, workspaceId?: string): Promise<Response> {
     try {
+      // Verify ownership before cancellation
+      if (workspaceId) {
+        const job = await this.jobManager.getJob(jobId);
+        if (!job) {
+          return notFoundError('Job', jobId);
+        }
+        if (job.workspace_id !== workspaceId) {
+          return notFoundError('Job', jobId);
+        }
+      }
+
       const success = await this.jobManager.cancelJob(jobId);
 
       if (!success) {
@@ -176,11 +197,16 @@ export class JobsAPI {
   }
 
   // GET /api/jobs/:id/retries - Get retry history for a job
-  async getJobRetries(jobId: string): Promise<Response> {
+  async getJobRetries(jobId: string, workspaceId?: string): Promise<Response> {
     try {
-      // Verify job exists
+      // Verify job exists and belongs to workspace
       const job = await this.jobManager.getJob(jobId);
       if (!job) {
+        return notFoundError('Job', jobId);
+      }
+
+      // Verify workspace ownership if workspaceId provided
+      if (workspaceId && job.workspace_id !== workspaceId) {
         return notFoundError('Job', jobId);
       }
 
@@ -207,11 +233,16 @@ export class JobsAPI {
   }
 
   // POST /api/jobs/:id/retry - Manually retry a failed job
-  async retryJob(jobId: string): Promise<Response> {
+  async retryJob(jobId: string, workspaceId?: string): Promise<Response> {
     try {
       // Verify job exists and is failed
       const job = await this.jobManager.getJob(jobId);
       if (!job) {
+        return notFoundError('Job', jobId);
+      }
+
+      // Verify workspace ownership if workspaceId provided
+      if (workspaceId && job.workspace_id !== workspaceId) {
         return notFoundError('Job', jobId);
       }
 

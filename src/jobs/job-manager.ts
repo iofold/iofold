@@ -40,6 +40,7 @@ export class JobManager {
 
     return {
       id,
+      workspace_id: workspaceId,
       type,
       status: 'queued',
       progress: 0,
@@ -271,6 +272,7 @@ export class JobManager {
   private jobFromRecord(record: any): Job {
     return {
       id: record.id as string,
+      workspace_id: record.workspace_id as string,
       type: record.type as JobType,
       status: record.status as JobStatus,
       progress: record.progress as number,

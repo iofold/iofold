@@ -222,31 +222,36 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   // GET /api/jobs/:id - Get job status
   const jobMatch = path.match(/^\/api\/jobs\/([^\/]+)$/);
   if (jobMatch && method === 'GET') {
-    return jobsAPI.getJob(jobMatch[1]);
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return jobsAPI.getJob(jobMatch[1], workspaceId);
   }
 
   // GET /api/jobs/:id/stream - Stream job progress
   const jobStreamMatch = path.match(/^\/api\/jobs\/([^\/]+)\/stream$/);
   if (jobStreamMatch && method === 'GET') {
-    return jobsAPI.streamJob(jobStreamMatch[1]);
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return jobsAPI.streamJob(jobStreamMatch[1], workspaceId);
   }
 
   // POST /api/jobs/:id/cancel - Cancel job
   const jobCancelMatch = path.match(/^\/api\/jobs\/([^\/]+)\/cancel$/);
   if (jobCancelMatch && method === 'POST') {
-    return jobsAPI.cancelJob(jobCancelMatch[1]);
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return jobsAPI.cancelJob(jobCancelMatch[1], workspaceId);
   }
 
   // GET /api/jobs/:id/retries - Get retry history for a job
   const jobRetriesMatch = path.match(/^\/api\/jobs\/([^\/]+)\/retries$/);
   if (jobRetriesMatch && method === 'GET') {
-    return jobsAPI.getJobRetries(jobRetriesMatch[1]);
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return jobsAPI.getJobRetries(jobRetriesMatch[1], workspaceId);
   }
 
   // POST /api/jobs/:id/retry - Manually retry a failed job
   const jobRetryMatch = path.match(/^\/api\/jobs\/([^\/]+)\/retry$/);
   if (jobRetryMatch && method === 'POST') {
-    return jobsAPI.retryJob(jobRetryMatch[1]);
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return jobsAPI.retryJob(jobRetryMatch[1], workspaceId);
   }
 
   // GET /api/jobs - List recent jobs
@@ -265,29 +270,34 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   // POST /api/evals - Create eval directly
   if (path === '/api/evals' && method === 'POST') {
     const body = await request.json();
-    return evalsAPI.createEval(body);
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return evalsAPI.createEval(body, workspaceId);
   }
 
   // GET /api/evals - List evals
   if (path === '/api/evals' && method === 'GET') {
-    return evalsAPI.listEvals(url.searchParams);
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return evalsAPI.listEvals(url.searchParams, workspaceId);
   }
 
   // GET /api/evals/:id - Get eval details
   const evalMatch = path.match(/^\/api\/evals\/([^\/]+)$/);
   if (evalMatch && method === 'GET') {
-    return evalsAPI.getEval(evalMatch[1]);
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return evalsAPI.getEval(evalMatch[1], workspaceId);
   }
 
   // PATCH /api/evals/:id - Update eval
   if (evalMatch && method === 'PATCH') {
     const body = await request.json();
-    return evalsAPI.updateEval(evalMatch[1], body);
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return evalsAPI.updateEval(evalMatch[1], body, workspaceId);
   }
 
   // DELETE /api/evals/:id - Delete eval
   if (evalMatch && method === 'DELETE') {
-    return evalsAPI.deleteEval(evalMatch[1]);
+    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    return evalsAPI.deleteEval(evalMatch[1], workspaceId);
   }
 
   // GET /api/evals/:id/executions - List executions for eval
