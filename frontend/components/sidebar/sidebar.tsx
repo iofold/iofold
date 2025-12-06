@@ -184,7 +184,7 @@ export function Sidebar() {
       <div className="border-t border-border p-3">
         <div
           className={cn(
-            'flex items-center gap-3 p-2 rounded-lg transition-colors duration-200',
+            'relative flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors duration-200 cursor-pointer',
             !isExpanded && 'justify-center'
           )}
         >
@@ -193,11 +193,21 @@ export function Sidebar() {
             appearance={{
               elements: {
                 avatarBox: 'w-8 h-8',
+                userButtonTrigger: 'after:absolute after:inset-0 after:content-[""]',
+                rootBox: 'static',
               },
             }}
-          />
+          >
+            <UserButton.MenuItems>
+              <UserButton.Link
+                href="/settings"
+                label="Settings"
+                labelIcon={<Settings size={16} />}
+              />
+            </UserButton.MenuItems>
+          </UserButton>
           {isExpanded && isLoaded && user && (
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 pointer-events-none">
               <p className="text-sm font-medium text-foreground truncate">
                 {user.fullName || 'User'}
               </p>
@@ -207,17 +217,6 @@ export function Sidebar() {
             </div>
           )}
         </div>
-        <Link
-          href="/settings"
-          onClick={() => NProgress.start()}
-          className={cn(
-            'flex items-center gap-3 px-3 py-2 mt-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors duration-200',
-            !isExpanded && 'justify-center px-2'
-          )}
-        >
-          <Settings size={18} />
-          {isExpanded && <span>Settings</span>}
-        </Link>
       </div>
     </aside>
   )
