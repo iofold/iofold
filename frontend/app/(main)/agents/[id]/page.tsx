@@ -11,7 +11,6 @@ import { ArrowLeft, Plus, ChevronDown, ChevronUp, CheckCircle, XCircle, Play, Sp
 import Link from 'next/link'
 import { formatRelativeTime, formatPercentage } from '@/lib/utils'
 import { CreateAgentVersionModal } from '@/components/modals/create-agent-version-modal'
-import { GenerateEvalModal } from '@/components/modals/generate-eval-modal'
 import { toast } from 'sonner'
 import type { AgentVersionStatus, AgentVersionSource } from '@/types/agent'
 
@@ -47,7 +46,6 @@ export default function AgentDetailPage() {
   const params = useParams()
   const agentId = params.id as string
   const [createVersionModalOpen, setCreateVersionModalOpen] = useState(false)
-  const [generateEvalModalOpen, setGenerateEvalModalOpen] = useState(false)
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -155,17 +153,12 @@ export default function AgentDetailPage() {
                 Playground
               </Button>
             </Link>
-            {agent.metrics.positive_feedback_count >= 1 && agent.metrics.negative_feedback_count >= 1 ? (
-              <Button variant="outline" onClick={() => setGenerateEvalModalOpen(true)}>
+            <Link href={`/agents/${agentId}/evals`}>
+              <Button variant="outline">
                 <Sparkles className="w-4 h-4 mr-2" />
                 Generate Eval
               </Button>
-            ) : (
-              <Button variant="outline" disabled title="Need both positive and negative feedback to generate an eval">
-                <Sparkles className="w-4 h-4 mr-2" />
-                Need examples
-              </Button>
-            )}
+            </Link>
             <Button onClick={() => setCreateVersionModalOpen(true)}>
               <Plus className="w-4 h-4 mr-2" />
               New Version
@@ -321,12 +314,6 @@ export default function AgentDetailPage() {
       <CreateAgentVersionModal
         open={createVersionModalOpen}
         onOpenChange={setCreateVersionModalOpen}
-        agentId={agentId}
-      />
-
-      <GenerateEvalModal
-        open={generateEvalModalOpen}
-        onOpenChange={setGenerateEvalModalOpen}
         agentId={agentId}
       />
     </div>

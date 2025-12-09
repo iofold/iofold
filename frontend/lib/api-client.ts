@@ -215,6 +215,73 @@ class APIClient {
     })
   }
 
+  // GEPA workflow endpoints
+  async extractTasks(agentId: string, options?: { force?: boolean }): Promise<{ tasks: string[] }> {
+    return this.request(`/api/agents/${agentId}/tasks/extract`, {
+      method: 'POST',
+      body: JSON.stringify(options || {}),
+    })
+  }
+
+  async getTasks(agentId: string): Promise<{ tasks: string[] }> {
+    return this.request(`/api/agents/${agentId}/tasks`)
+  }
+
+  async generateEvalCandidates(
+    agentId: string,
+    options?: { num_candidates?: number; model?: string }
+  ): Promise<{
+    candidates: Array<{
+      id: string
+      variation_type: string
+      code: string
+      created_at: string
+    }>
+  }> {
+    return this.request(`/api/agents/${agentId}/evals/generate`, {
+      method: 'POST',
+      body: JSON.stringify(options || {}),
+    })
+  }
+
+  async testEvalCandidates(
+    agentId: string,
+    candidateIds: string[]
+  ): Promise<{
+    results: Array<{
+      candidate_id: string
+      accuracy: number
+      kappa: number
+      f1_score: number
+      test_results: {
+        correct: number
+        incorrect: number
+        errors: number
+        total: number
+      }
+    }>
+  }> {
+    return this.request(`/api/agents/${agentId}/evals/test`, {
+      method: 'POST',
+      body: JSON.stringify({ candidate_ids: candidateIds }),
+    })
+  }
+
+  async selectEvalWinner(
+    agentId: string,
+    candidateId: string,
+    options?: { activate?: boolean }
+  ): Promise<{ eval_id: string; activated: boolean }> {
+    return this.request(`/api/agents/${agentId}/evals/select-winner`, {
+      method: 'POST',
+      body: JSON.stringify({ candidate_id: candidateId, ...options }),
+    })
+  }
+
+  async getActiveEval(agentId: string): Promise<Eval | null> {
+    return this.request(`/api/agents/${agentId}/evals/active`)
+  }
+
   async listEvals(params?: {
     agent_id?: string
     cursor?: string
