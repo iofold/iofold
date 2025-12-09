@@ -290,18 +290,28 @@ export async function getAgentById(request: Request, env: Env, agentId: string):
       .bind(agentId)
       .first();
 
-    // Calculate accuracy and contradiction rate from eval executions if available
-    // Use feedback.agent_id directly to filter by agent
-    const evalStatsResult = await env.DB.prepare(
-      `SELECT
-        AVG(CASE WHEN ee.predicted_result = (f.rating = 'positive') THEN 1.0 ELSE 0.0 END) as accuracy,
-        AVG(CASE WHEN ee.predicted_result != (f.rating = 'positive') THEN 1.0 ELSE 0.0 END) as contradiction_rate
-      FROM eval_executions ee
-      JOIN feedback f ON ee.trace_id = f.trace_id AND f.agent_id = ?
-      WHERE f.rating IN ('positive', 'negative')`
-    )
-      .bind(agentId)
-      .first();
+    // Calculate accuracy from active eval candidate if available
+    // Note: The eval_executions table schema changed for GEPA - using eval_candidates metrics now
+    let evalStatsResult: { accuracy: number | null; contradiction_rate: number | null } | null = null;
+    try {
+      const activeEvalResult = await env.DB.prepare(
+        `SELECT accuracy FROM eval_candidates
+         WHERE agent_id = ? AND status = 'active'
+         LIMIT 1`
+      )
+        .bind(agentId)
+        .first();
+
+      if (activeEvalResult && activeEvalResult.accuracy !== null) {
+        evalStatsResult = {
+          accuracy: activeEvalResult.accuracy as number,
+          contradiction_rate: 1 - (activeEvalResult.accuracy as number)
+        };
+      }
+    } catch {
+      // Table may not exist yet, that's fine
+      evalStatsResult = null;
+    }
 
     const extractor = functionsResult.results.find((f: any) => f.role === 'extractor');
     const injector = functionsResult.results.find((f: any) => f.role === 'injector');

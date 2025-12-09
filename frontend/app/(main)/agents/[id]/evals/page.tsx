@@ -302,13 +302,13 @@ export default function EvalGenerationPage() {
             </Button>
 
             {/* Extracted Tasks */}
-            {(extractedTasks.length > 0 || tasksData?.tasks.length) && (
+            {(extractedTasks.length > 0 || tasksData?.tasks?.length) && (
               <div className="mt-4">
                 <h4 className="font-medium mb-2">Extracted Tasks</h4>
                 <div className="space-y-2">
-                  {(extractedTasks.length > 0 ? extractedTasks : tasksData?.tasks || []).map((task, idx) => (
-                    <div key={idx} className="p-3 bg-muted rounded-lg text-sm">
-                      {task}
+                  {(extractedTasks.length > 0 ? extractedTasks : tasksData?.tasks || []).map((task: any, idx) => (
+                    <div key={task.id || idx} className="p-3 bg-muted rounded-lg text-sm">
+                      {typeof task === 'string' ? task : task.task?.user_message || JSON.stringify(task)}
                     </div>
                   ))}
                 </div>
