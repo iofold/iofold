@@ -15,6 +15,7 @@ This directory contains SQL migration scripts for the iofold database schema.
 - `009_feedback_optional_agent.sql` - Make agent_id optional in feedback table (2025-12-06)
 - `010_task_metadata.sql` - Add task metadata and enrichment tables for GEPA Phase 1B-3 (2025-12-09)
 - `011_eval_candidates.sql` - Add eval candidates and cross-validation tables for GEPA Phase 2A-2 (2025-12-09)
+- `012_llm_cache.sql` - Add LLM cache and eval execution logging tables for GEPA Phase 3A-3 (2025-12-09)
 
 ## Running Migrations
 
@@ -106,6 +107,7 @@ Cloudflare D1 does not support automatic rollbacks. If a migration fails:
 | 009_feedback_optional_agent.sql | 2025-12-06 | Make agent_id optional in feedback table | Applied |
 | 010_task_metadata.sql | 2025-12-09 | Add task metadata and enrichment tables for GEPA | Pending |
 | 011_eval_candidates.sql | 2025-12-09 | Add eval candidates and cross-validation tables for GEPA Phase 2A-2 | Pending |
+| 012_llm_cache.sql | 2025-12-09 | Add LLM cache and eval execution logging for GEPA Phase 3A-3 | Pending |
 
 ## Troubleshooting
 
