@@ -1,4 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
+import dotenv from 'dotenv'
+import path from 'path'
+
+// Load environment variables from .env.local
+dotenv.config({ path: path.resolve(__dirname, '.env.local') })
 
 // Use staging by default, override with BASE_URL env var for local
 const useStaging = process.env.USE_STAGING !== 'false'
@@ -6,7 +11,15 @@ const stagingBaseURL = 'https://platform.staging.iofold.com'
 const localBaseURL = 'http://dev4:3000'
 
 /**
- * See https://playwright.dev/docs/test-configuration.
+ * Playwright Configuration for iofold E2E Tests
+ *
+ * Features:
+ * - Clerk authentication bypass via Testing Tokens
+ * - Staging-first testing (configurable via USE_STAGING=false)
+ * - Parallel test execution
+ *
+ * @see https://playwright.dev/docs/test-configuration
+ * @see https://clerk.com/docs/testing/playwright
  */
 export default defineConfig({
   testDir: './e2e',
@@ -31,19 +44,26 @@ export default defineConfig({
 
   /* Configure projects for major browsers */
   projects: [
+    // Clerk global setup - runs FIRST to obtain Testing Token
+    {
+      name: 'clerk-setup',
+      testMatch: /global\.setup\.ts/,
+    },
+    // Main test projects - depend on clerk-setup
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      dependencies: ['clerk-setup'],
     },
-
     {
       name: 'firefox',
       use: { ...devices['Desktop Firefox'] },
+      dependencies: ['clerk-setup'],
     },
-
     {
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
+      dependencies: ['clerk-setup'],
     },
   ],
 
