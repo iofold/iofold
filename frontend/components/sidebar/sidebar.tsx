@@ -183,13 +183,33 @@ export function Sidebar() {
 
       {/* User Section */}
       <div className="border-t border-border p-3">
-        <button
-          type="button"
-          onClick={() => {
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            // Don't trigger if clicking directly on the UserButton
+            const target = e.target as HTMLElement
+            if (target.closest('[data-clerk-component]')) {
+              return
+            }
             // Programmatically trigger the UserButton click
-            const button = userButtonRef.current?.querySelector('button')
-            if (button) {
-              button.click()
+            // Try multiple selectors for Clerk's various render modes
+            const clerkTrigger = userButtonRef.current?.querySelector(
+              'button, [data-clerk-component-trigger], .cl-userButtonTrigger, [role="button"]'
+            ) as HTMLElement | null
+            if (clerkTrigger) {
+              clerkTrigger.click()
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              const clerkTrigger = userButtonRef.current?.querySelector(
+                'button, [data-clerk-component-trigger], .cl-userButtonTrigger, [role="button"]'
+              ) as HTMLElement | null
+              if (clerkTrigger) {
+                clerkTrigger.click()
+              }
             }
           }}
           className={cn(
@@ -227,7 +247,7 @@ export function Sidebar() {
               </p>
             </div>
           )}
-        </button>
+        </div>
       </div>
     </aside>
   )

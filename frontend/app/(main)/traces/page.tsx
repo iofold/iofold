@@ -1,7 +1,7 @@
 'use client'
 
-import { Suspense, useState, useMemo, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { Suspense, useState, useMemo, useEffect, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { apiClient } from '@/lib/api-client'
@@ -29,7 +29,9 @@ import {
   XCircle,
   Clock3,
   MoreHorizontal,
-  FileSearch
+  FileSearch,
+  Bot,
+  Loader2,
 } from 'lucide-react'
 import { formatRelativeTime, truncate } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -41,6 +43,8 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
+import { TracePreview } from '@/components/traces/trace-preview'
+import type { Trace as FullTrace } from '@/types/api'
 
 // Trace interface matching API response (TraceSummary)
 interface Trace {
@@ -50,6 +54,8 @@ interface Trace {
   timestamp: string
   imported_at?: string
   step_count: number
+  agent_id?: string | null
+  agent_version_id?: string | null
   summary: {
     input_preview: string
     output_preview: string
@@ -60,6 +66,12 @@ interface Trace {
     notes?: string | null
     agent_id?: string | null
   }
+}
+
+// Agent interface for lookup
+interface AgentLookup {
+  id: string
+  name: string
 }
 
 // KPI Card Component
@@ -213,6 +225,30 @@ function TracesPageContent() {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['traces', queryParams],
     queryFn: () => apiClient.listTraces(queryParams),
+  })
+
+  // Fetch agents for name lookup
+  const { data: agentsData } = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => apiClient.listAgents(),
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  })
+
+  // Create agent lookup map
+  const agentLookup = useMemo(() => {
+    const lookup = new Map<string, string>()
+    agentsData?.agents?.forEach((agent: AgentLookup) => {
+      lookup.set(agent.id, agent.name)
+    })
+    return lookup
+  }, [agentsData])
+
+  // Fetch full trace details when one is selected
+  const { data: fullTraceData, isLoading: isLoadingFullTrace } = useQuery({
+    queryKey: ['trace', selectedTrace?.id],
+    queryFn: () => selectedTrace ? apiClient.getTrace(selectedTrace.id) : null,
+    enabled: !!selectedTrace,
+    staleTime: 30 * 1000, // Cache for 30 seconds
   })
 
   // Handle refresh with toast
@@ -621,6 +657,9 @@ function TracesPageContent() {
                       Input Preview
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Agent
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Status
                     </th>
                     <th
@@ -696,6 +735,20 @@ function TracesPageContent() {
                           <span className="line-clamp-2" title={trace.summary.input_preview}>
                             {trace.summary.input_preview || 'No input'}
                           </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          {trace.agent_id ? (
+                            <Link
+                              href={`/agents/${trace.agent_id}`}
+                              className="inline-flex items-center gap-1.5 text-xs bg-primary/10 text-primary px-2 py-1 rounded hover:bg-primary/20 transition-colors"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Bot className="h-3 w-3" />
+                              {agentLookup.get(trace.agent_id) || 'Unknown Agent'}
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-4">
                           <StatusBadge hasError={trace.summary.has_errors} feedback={trace.feedback} />
@@ -844,20 +897,34 @@ function TracesPageContent() {
                   <p className="mt-1">{selectedTrace.step_count}</p>
                 </div>
 
-                {/* Input Preview */}
+                {/* Conversation Preview - from full trace */}
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground">Input</label>
-                  <div className="mt-1 p-4 bg-muted/30 rounded-lg border">
-                    <p className="text-sm">{selectedTrace.summary.input_preview || 'No input recorded'}</p>
-                  </div>
-                </div>
-
-                {/* Output Preview */}
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Output</label>
-                  <div className="mt-1 p-4 bg-muted/30 rounded-lg border">
-                    <p className="text-sm whitespace-pre-wrap">{selectedTrace.summary.output_preview || 'No output recorded'}</p>
-                  </div>
+                  <label className="text-sm font-medium text-muted-foreground mb-2 block">Conversation</label>
+                  {isLoadingFullTrace ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <span className="ml-2 text-sm text-muted-foreground">Loading trace details...</span>
+                    </div>
+                  ) : fullTraceData ? (
+                    <TracePreview
+                      trace={fullTraceData}
+                      maxMessageLength={400}
+                      showToolCalls={true}
+                      collapsible={true}
+                    />
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Fallback to summary preview if full trace not loaded */}
+                      <div className="p-4 bg-muted/30 rounded-lg border">
+                        <label className="text-xs text-muted-foreground mb-1 block">Input</label>
+                        <p className="text-sm">{selectedTrace.summary.input_preview || 'No input recorded'}</p>
+                      </div>
+                      <div className="p-4 bg-muted/30 rounded-lg border">
+                        <label className="text-xs text-muted-foreground mb-1 block">Output</label>
+                        <p className="text-sm whitespace-pre-wrap">{selectedTrace.summary.output_preview || 'No output recorded'}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Feedback */}
@@ -882,7 +949,7 @@ function TracesPageContent() {
                 {/* Actions */}
                 <div className="flex gap-2 pt-4 border-t">
                   <Button variant="outline" asChild>
-                    <Link href={`/traces/${selectedTrace.id}`}>
+                    <Link href={`/traces/${selectedTrace.id}`} className="inline-flex items-center">
                       <Eye className="h-4 w-4 mr-2" />
                       View Full Details
                     </Link>

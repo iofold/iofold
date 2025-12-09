@@ -27,6 +27,8 @@ export interface TraceSummary {
   source: string;
   timestamp: string;
   step_count: number;
+  agent_id?: string | null;
+  agent_version_id?: string | null;
   feedback?: Feedback;
   summary: {
     input_preview: string;
