@@ -82,6 +82,16 @@ import {
   listAllPlaygroundSessions,
 } from './playground';
 
+import {
+  extractTasks,
+  listTasks,
+  generateEvals,
+  testEvalCandidates,
+  selectWinner,
+  activateEval,
+  getActiveEval,
+} from './eval-generation';
+
 export interface Env {
   DB: D1Database;
   ANTHROPIC_API_KEY?: string;
@@ -505,6 +515,52 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   // GET /api/playground/sessions - List all sessions across all agents
   if (path === '/api/playground/sessions' && method === 'GET') {
     return listAllPlaygroundSessions(request, env);
+  }
+
+  // ============================================================================
+  // Eval Generation Endpoints (GEPA Flow)
+  // ============================================================================
+
+  // POST /api/agents/:id/tasks/extract - Extract tasks from traces
+  const extractTasksMatch = path.match(/^\/api\/agents\/([^\/]+)\/tasks\/extract$/);
+  if (extractTasksMatch && method === 'POST') {
+    return extractTasks(request, env, extractTasksMatch[1]);
+  }
+
+  // GET /api/agents/:id/tasks - List extracted tasks
+  const listTasksMatch = path.match(/^\/api\/agents\/([^\/]+)\/tasks$/);
+  if (listTasksMatch && method === 'GET') {
+    return listTasks(request, env, listTasksMatch[1]);
+  }
+
+  // POST /api/agents/:id/evals/generate - Generate candidate evals
+  const generateEvalsMatch = path.match(/^\/api\/agents\/([^\/]+)\/evals\/generate$/);
+  if (generateEvalsMatch && method === 'POST') {
+    return generateEvals(request, env, generateEvalsMatch[1]);
+  }
+
+  // POST /api/agents/:id/evals/test - Test candidate evals
+  const testEvalsMatch = path.match(/^\/api\/agents\/([^\/]+)\/evals\/test$/);
+  if (testEvalsMatch && method === 'POST') {
+    return testEvalCandidates(request, env, testEvalsMatch[1]);
+  }
+
+  // POST /api/agents/:id/evals/select-winner - Select and activate winner
+  const selectWinnerMatch = path.match(/^\/api\/agents\/([^\/]+)\/evals\/select-winner$/);
+  if (selectWinnerMatch && method === 'POST') {
+    return selectWinner(request, env, selectWinnerMatch[1]);
+  }
+
+  // POST /api/agents/:id/evals/:evalId/activate - Activate specific eval
+  const activateEvalMatch = path.match(/^\/api\/agents\/([^\/]+)\/evals\/([^\/]+)\/activate$/);
+  if (activateEvalMatch && method === 'POST') {
+    return activateEval(request, env, activateEvalMatch[1], activateEvalMatch[2]);
+  }
+
+  // GET /api/agents/:id/evals/active - Get active eval
+  const activeEvalMatch = path.match(/^\/api\/agents\/([^\/]+)\/evals\/active$/);
+  if (activeEvalMatch && method === 'GET') {
+    return getActiveEval(request, env, activeEvalMatch[1]);
   }
 
   // ============================================================================
