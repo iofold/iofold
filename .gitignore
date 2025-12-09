@@ -16,3 +16,4 @@ playwright-report/
 *.bak
 *.swp
 *~
+.mcp.json
