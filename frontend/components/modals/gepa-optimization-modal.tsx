@@ -113,7 +113,7 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
         toast.success('Optimization completed successfully!')
       })
 
-      eventSource.addEventListener('error', (event) => {
+      eventSource.addEventListener('error', (event: MessageEvent) => {
         const data = JSON.parse(event.data)
         setRunStatus((prev) => (prev ? { ...prev, status: 'failed', error: data.error } : null))
         setIsStreaming(false)
