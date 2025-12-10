@@ -108,6 +108,7 @@ import {
 import {
   startGEPAOptimization,
   getGEPARunStatus,
+  streamGEPAProgress,
 } from './gepa';
 
 export interface Env {
@@ -632,6 +633,12 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   const gepaStartMatch = path.match(/^\/api\/agents\/([^\/]+)\/gepa\/start$/);
   if (gepaStartMatch && method === 'POST') {
     return startGEPAOptimization(request, env, gepaStartMatch[1]);
+  }
+
+  // GET /api/agents/:id/gepa/runs/:runId/stream - Stream GEPA run progress
+  const gepaRunStreamMatch = path.match(/^\/api\/agents\/([^\/]+)\/gepa\/runs\/([^\/]+)\/stream$/);
+  if (gepaRunStreamMatch && method === 'GET') {
+    return streamGEPAProgress(request, env, gepaRunStreamMatch[1], gepaRunStreamMatch[2]);
   }
 
   // GET /api/agents/:id/gepa/runs/:runId - Get GEPA run status

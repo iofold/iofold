@@ -360,3 +360,166 @@ export async function getGEPARunStatus(
     return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
   }
 }
+
+// ============================================================================
+// GET /api/agents/:agentId/gepa/runs/:runId/stream
+// ============================================================================
+
+/**
+ * GET /api/agents/:agentId/gepa/runs/:runId/stream
+ *
+ * Stream real-time progress updates for a GEPA optimization run via Server-Sent Events.
+ *
+ * @param request - HTTP request
+ * @param env - Cloudflare environment with D1 database
+ * @param agentId - Agent ID from URL
+ * @param runId - Run ID from URL
+ * @returns SSE stream with progress updates
+ */
+export async function streamGEPAProgress(
+  request: Request,
+  env: Env,
+  agentId: string,
+  runId: string
+): Promise<Response> {
+  try {
+    const workspaceId = getWorkspaceId(request);
+    validateWorkspaceAccess(workspaceId);
+
+    // 1. Validate agent exists and user has access
+    const agent = await env.DB.prepare(
+      `SELECT id FROM agents WHERE id = ? AND workspace_id = ?`
+    ).bind(agentId, workspaceId).first();
+
+    if (!agent) {
+      return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
+    }
+
+    // 2. Validate run exists
+    const run = await env.DB.prepare(`
+      SELECT id, status
+      FROM gepa_runs
+      WHERE id = ? AND agent_id = ? AND workspace_id = ?
+    `).bind(runId, agentId, workspaceId).first();
+
+    if (!run) {
+      return createErrorResponse('NOT_FOUND', 'GEPA run not found', 404);
+    }
+
+    // 3. Create SSE stream
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const encoder = new TextEncoder();
+
+    // Helper to send SSE event
+    const sendEvent = async (event: string, data: any) => {
+      const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+      await writer.write(encoder.encode(message));
+    };
+
+    // Helper to send keepalive comment
+    const sendKeepalive = async () => {
+      await writer.write(encoder.encode(': keepalive\n\n'));
+    };
+
+    // Start polling in background
+    (async () => {
+      try {
+        let lastStatus = run.status as string;
+        let pollCount = 0;
+        const maxPolls = 400; // 10 minutes at 1.5s interval = 400 polls
+
+        // Poll until completed, failed, or timeout
+        while (pollCount < maxPolls) {
+          // Get latest run state
+          const currentRun = await env.DB.prepare(`
+            SELECT
+              status,
+              progress_metric_calls,
+              max_metric_calls,
+              best_score,
+              total_candidates,
+              best_prompt,
+              error
+            FROM gepa_runs
+            WHERE id = ?
+          `).bind(runId).first();
+
+          if (!currentRun) {
+            await sendEvent('error', { error: 'Run not found' });
+            break;
+          }
+
+          const status = currentRun.status as string;
+
+          // Send progress event
+          if (status === 'pending' || status === 'running') {
+            await sendEvent('progress', {
+              metric_calls: currentRun.progress_metric_calls || 0,
+              max_metric_calls: currentRun.max_metric_calls,
+              best_score: currentRun.best_score || null,
+              total_candidates: currentRun.total_candidates || 0,
+            });
+          }
+
+          // Send completion event
+          if (status === 'completed') {
+            await sendEvent('complete', {
+              best_prompt: currentRun.best_prompt,
+              best_score: currentRun.best_score,
+              total_candidates: currentRun.total_candidates || 0,
+            });
+            break;
+          }
+
+          // Send error event
+          if (status === 'failed') {
+            await sendEvent('error', {
+              error: currentRun.error || 'Optimization failed',
+            });
+            break;
+          }
+
+          // Wait 1.5 seconds before next poll
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          pollCount++;
+
+          // Send keepalive every few polls to prevent timeout
+          if (pollCount % 10 === 0) {
+            await sendKeepalive();
+          }
+        }
+
+        // Timeout reached
+        if (pollCount >= maxPolls) {
+          await sendEvent('error', { error: 'Stream timeout reached' });
+        }
+
+      } catch (error: any) {
+        // Send error event on exception
+        await sendEvent('error', {
+          error: error.message || 'Internal error during streaming',
+        });
+      } finally {
+        // Close the stream
+        await writer.close();
+      }
+    })();
+
+    // 4. Return SSE response
+    return new Response(readable, {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+
+  } catch (error: any) {
+    if (error.message === 'Missing X-Workspace-Id header') {
+      return createErrorResponse('VALIDATION_ERROR', error.message, 400);
+    }
+    return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
+  }
+}
