@@ -7,8 +7,9 @@
  * 3. Build configuration for Python runner
  * 4. Spawn Python sandbox with gepa_runner.py
  * 5. Stream progress updates from stderr → update gepa_runs
- * 6. Handle completion → update gepa_runs with best_prompt, best_score
- * 7. Handle errors → update status to 'failed' with error message
+ * 6. Handle completion → create new agent version with optimized prompt
+ * 7. Update gepa_runs with best_prompt, best_score, and version_id
+ * 8. Handle errors → update status to 'failed' with error message
  */
 
 import type { D1Database, DurableObjectNamespace } from '@cloudflare/workers-types';
@@ -121,12 +122,15 @@ export class GEPAOptimizationJob {
       // Step 5: Execute GEPA optimization in Python sandbox
       const result = await this.runGEPAOptimization(gepaConfig);
 
-      // Step 6: Update gepa_runs with results
-      await this.updateGEPARunResults(result);
+      // Step 6: Create agent version with optimized prompt
+      const versionId = await this.createAgentVersion(result.best_prompt, result.best_score, result.total_candidates);
+
+      // Step 7: Update gepa_runs with results and version_id
+      await this.updateGEPARunResults(result, versionId);
 
       // Mark job as completed
       await this.jobManager.completeJob(this.config.jobId, result);
-      this.emitProgress('completed', 100, result);
+      this.emitProgress('completed', 100, { ...result, version_id: versionId });
 
       return result;
     } catch (error: any) {
@@ -305,9 +309,64 @@ except Exception as e:
   }
 
   /**
+   * Create a new agent version with the optimized prompt
+   */
+  private async createAgentVersion(
+    optimizedPrompt: string,
+    bestScore: number,
+    totalCandidates: number
+  ): Promise<string> {
+    // Get the current active version to use as parent
+    const agent = await this.deps.db
+      .prepare('SELECT active_version_id FROM agents WHERE id = ?')
+      .bind(this.config.agentId)
+      .first();
+
+    // Get the next version number
+    const maxVersionResult = await this.deps.db
+      .prepare('SELECT MAX(version) as max_version FROM agent_versions WHERE agent_id = ?')
+      .bind(this.config.agentId)
+      .first();
+
+    const nextVersion = (maxVersionResult?.max_version as number || 0) + 1;
+
+    // Create new version with GEPA optimization metadata
+    const versionId = `ver_${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+
+    const metadata = {
+      gepa_run_id: this.config.runId,
+      best_score: bestScore,
+      total_candidates: totalCandidates,
+      optimization_type: 'gepa'
+    };
+
+    await this.deps.db
+      .prepare(
+        `INSERT INTO agent_versions (id, agent_id, version, prompt_template, variables, source,
+                                      parent_version_id, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        versionId,
+        this.config.agentId,
+        nextVersion,
+        optimizedPrompt,
+        JSON.stringify([]), // No variables for GEPA-optimized prompts
+        'ai_improved', // Source indicates AI-generated improvement
+        agent?.active_version_id || null,
+        'candidate', // Start as candidate, user can promote to active
+        now
+      )
+      .run();
+
+    return versionId;
+  }
+
+  /**
    * Update gepa_runs table with optimization results
    */
-  private async updateGEPARunResults(result: GEPAResult): Promise<void> {
+  private async updateGEPARunResults(result: GEPAResult, versionId: string): Promise<void> {
     const now = new Date().toISOString();
 
     await this.deps.db
@@ -318,6 +377,7 @@ except Exception as e:
              best_score = ?,
              total_candidates = ?,
              progress_metric_calls = ?,
+             optimized_version_id = ?,
              completed_at = ?
          WHERE id = ?`
       )
@@ -326,6 +386,7 @@ except Exception as e:
         result.best_score,
         result.total_candidates,
         result.total_metric_calls,
+        versionId,
         now,
         this.config.runId
       )

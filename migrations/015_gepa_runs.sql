@@ -35,13 +35,17 @@ CREATE TABLE IF NOT EXISTS gepa_runs (
   -- Error tracking
   error TEXT,                         -- Error message if status is 'failed'
 
+  -- Version tracking
+  optimized_version_id TEXT,          -- FK to agent_versions - the version created from best_prompt
+
   -- Timestamps
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   completed_at DATETIME,              -- When the run completed/failed
 
   FOREIGN KEY (workspace_id) REFERENCES workspaces(id),
   FOREIGN KEY (agent_id) REFERENCES agents(id),
-  FOREIGN KEY (eval_id) REFERENCES evals(id)
+  FOREIGN KEY (eval_id) REFERENCES evals(id),
+  FOREIGN KEY (optimized_version_id) REFERENCES agent_versions(id)
 );
 
 -- ============================================================================
