@@ -547,8 +547,12 @@ class APIClient {
   async startGEPAOptimization(
     agentId: string,
     data: {
-      eval_id: string
-      test_case_ids?: string[]
+      eval_id?: string
+      tasks?: Array<{
+        user_message: string
+        expected_output?: string
+      }>
+      seed_prompt?: string
       max_metric_calls?: number
       parallelism?: number
     }
