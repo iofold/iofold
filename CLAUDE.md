@@ -1,43 +1,71 @@
 # CLAUDE.md
 
-## MANDATORY: Progress Log Updates
-
-After completing ANY task, append to `docs/progress_log.ndjson` using jq (see user CLAUDE.md for protocol). A Stop hook blocks if not updated.
+## MANDATORY: Progress Log
+After ANY task, append to `docs/progress_log.ndjson` (see user CLAUDE.md for jq protocol).
 
 ## Project Overview
+**iofold.com** - Auto-generate code-based evals from labeled traces via meta-prompting.
 
-**iofold.com** - Automated eval generation platform for AI agents. Integrates with observability tools (Langfuse, Langsmith, OpenAI) to generate code-based eval functions from labeled traces via meta-prompting.
+| Stack | Technology |
+|-------|------------|
+| Infra | Cloudflare Workers, D1, R2, Pages |
+| Frontend | Next.js (React) |
+| Backend | TypeScript + Python sandbox |
+| Package Manager | **pnpm only** |
 
-## Tech Stack
+## Quick Reference
 
-- **Infra:** Cloudflare Workers, D1, R2, Pages
-- **Frontend:** Next.js (React)
-- **Backend:** TypeScript + Python (eval generation)
-- **Package Manager:** pnpm only (no npm/yarn)
+| Task | Command |
+|------|---------|
+| Dev server (backend) | `pnpm run dev` → `:8787` |
+| Dev server (frontend) | `cd frontend && pnpm dev` → `:3000` |
+| Unit tests | `pnpm test` |
+| E2E tests | `cd frontend && pnpm test:e2e` |
+| Deploy staging | `wrangler deploy --env staging` |
+| ART-E benchmark | `npx tsx scripts/run-art-e-benchmark.ts --agent ID --limit 10` |
 
-## Key Documentation
+## Documentation
 
-- `docs/2025-11-05-iofold-auto-evals-design.md` - Full architecture
-- `docs/2025-11-05-iofold-evals-todo.md` - Implementation tasks
-- `docs/success_criteria.md` - Success metrics
+| Guide | Path | Contents |
+|-------|------|----------|
+| Architecture | `docs/2025-11-05-iofold-auto-evals-design.md` | Full system design |
+| Testing | `docs/testing-guide.md` | E2E + Unit + API testing |
+| Deployment | `docs/deployment-guide.md` | Envs, secrets, gotchas |
+| Tool Registry | `docs/tool-registry.md` | DB schema, API, handlers |
+| ART-E Benchmark | `docs/art-e-benchmark.md` | CLI, scoring, Enron DB |
+| Module Overview | `docs/MODULE_OVERVIEW.md` | Code walkthrough |
 
 ## Development Rules
-
-1. **pnpm only** - Use `pnpm` for all package management
-2. **Consult design docs first** - Architecture decisions are documented
-3. **Langfuse only for MVP** - Resist scope creep
-4. **User-triggered actions** - No auto-magic for eval generation/refinement
-5. **Eval accuracy > speed** - Quality is paramount
+1. **pnpm only** - Never npm/yarn
+2. **Consult design docs** - Architecture is documented
+3. **Langfuse only (MVP)** - No scope creep
+4. **User-triggered** - No auto-magic for eval gen
+5. **Accuracy > speed** - Quality paramount
 
 ## Security: Python Sandbox
-
-Eval execution MUST enforce:
-- Whitelist imports: `json`, `re`, `typing` only
-- 5s timeout, 50MB memory limit
-- No network/file I/O/subprocess
+Evals run in container with: `json`, `re`, `typing` only | 5s timeout | 50MB RAM | No network/filesystem
 
 ## Core Schema
+Tables: `users`, `workspaces`, `agents`, `traces`, `evals`, `tools`, `agent_tools`
 
-Key tables: `users`, `workspaces`, `integrations`, `traces`, `eval_sets`, `feedback`, `evals`, `eval_executions`
+## Key Gotchas
+| Issue | Impact |
+|-------|--------|
+| Local DB = Staging DB | Data pollution risk |
+| No `[env.production]` | Can't deploy to prod |
+| DLQ not monitored | Silent job failures |
+| ENCRYPTION_KEY fallback | Uses weak default |
 
-Traces normalized to `LangGraphExecutionStep` schema (see design doc).
+## Test Auth (E2E)
+```
+Email: e2e+clerk_test@iofold.com
+Pass:  E2eTestPassword123!
+OTP:   424242
+```
+See `docs/testing-guide.md` for Clerk Testing Token setup.
+
+## API Pattern
+```bash
+curl http://localhost:8787/v1/api/agents -H "X-Workspace-Id: workspace_default"
+```
+All endpoints require `X-Workspace-Id` header.

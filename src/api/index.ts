@@ -131,6 +131,18 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   const method = request.method;
 
   // ============================================================================
+  // Health Check Endpoint
+  // ============================================================================
+
+  // GET /api/health - Health check endpoint (no auth required)
+  if (path === '/api/health' && method === 'GET') {
+    return new Response(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // ============================================================================
   // Trace Management Endpoints
   // ============================================================================
 

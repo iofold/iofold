@@ -179,7 +179,7 @@ LLM-powered eval function generation.
 #### Generation Flow
 1. Fetch labeled traces (positive/negative examples)
 2. Build meta-prompt with examples and instructions
-3. Call Claude API (claude-3-haiku default for cost)
+3. Call Claude API (claude-haiku-4-5 default for cost)
 4. Extract Python code from response
 5. Test on training data
 6. Calculate accuracy and store

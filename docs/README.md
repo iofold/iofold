@@ -2,8 +2,8 @@
 
 **Welcome to the iofold platform documentation.** This directory contains all design documents, implementation guides, and operational documentation for the automated evaluation generation platform.
 
-**Last Updated**: 2025-12-01
-**Project Status**: Production Ready
+**Last Updated**: 2025-12-10
+**Project Status**: MVP Ready
 
 ---
 
@@ -17,8 +17,10 @@
 ### Key Documents
 - [API Specification](./API_SPECIFICATION.md) - Complete REST API reference
 - [Module Overview](./MODULE_OVERVIEW.md) - Codebase structure and modules
-- [Deployment Guide](./DEPLOYMENT_GUIDE.md) - Production deployment instructions
-- [Testing Guide](./E2E_TESTING_QUICK_REFERENCE.md) - Running tests
+- [Deployment Guide](./deployment-guide.md) - Environments, secrets, gotchas
+- [Testing Guide](./testing-guide.md) - E2E + Unit + API testing
+- [Tool Registry](./tool-registry.md) - DB-driven tool management
+- [ART-E Benchmark](./art-e-benchmark.md) - Email task benchmark
 
 ---
 
@@ -63,6 +65,7 @@ Reduce eval writing time by automatically generating code-based eval functions f
 | **Core** | users, workspaces, workspace_members, integrations, traces |
 | **Evals** | eval_sets, feedback, evals, eval_executions |
 | **Agents** | agents, agent_versions, functions, agent_functions |
+| **Tools** | tools, agent_tools |
 | **Jobs** | jobs, job_retry_history |
 | **Monitoring** | system_prompts, performance_snapshots, performance_alerts |
 
@@ -196,10 +199,11 @@ cd frontend && pnpm run test:e2e
 |------|-------------|
 | [API_SPECIFICATION.md](./API_SPECIFICATION.md) | Complete REST API documentation |
 | [MODULE_OVERVIEW.md](./MODULE_OVERVIEW.md) | Codebase architecture and modules |
-| [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) | Production deployment guide |
-| [E2E_TESTING_QUICK_REFERENCE.md](./E2E_TESTING_QUICK_REFERENCE.md) | Test commands reference |
+| [deployment-guide.md](./deployment-guide.md) | Environments, secrets, deploy commands |
+| [testing-guide.md](./testing-guide.md) | E2E, Unit, API testing |
+| [tool-registry.md](./tool-registry.md) | Tool management system |
+| [art-e-benchmark.md](./art-e-benchmark.md) | ART-E email benchmark |
 | [CHANGELOG.md](./CHANGELOG.md) | Version history |
-| [success_criteria.md](./success_criteria.md) | Success metrics |
 
 ### Implementation Plans (docs/plans/)
 Recent plans for reference:
@@ -237,7 +241,7 @@ Recent plans for reference:
 5. **Eval accuracy > speed** - Quality is paramount
 
 ### Progress Tracking
-All work should be logged in [docs/progress_log.md](./progress_log.md) with timestamps.
+All work should be logged in [docs/progress_log.ndjson](./progress_log.ndjson) (NDJSON format).
 
 ---
 
@@ -253,4 +257,4 @@ For questions:
 
 ---
 
-**Last Updated**: 2025-12-01
+**Last Updated**: 2025-12-10

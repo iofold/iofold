@@ -26,6 +26,7 @@ LANGFUSE_BASE_URL = "https://cloud.langfuse.com"
 # Cloudflare AI Gateway configuration
 # Create gateway at: https://dash.cloudflare.com/?to=/:account/ai/ai-gateway
 CF_AI_GATEWAY_ID = "iofold-ai-gw"
+CF_ACCOUNT_ID = "b26e4af8b7631a2c8d99476fd7bce974"
 
 [[env.staging.d1_databases]]
 binding = "DB"
