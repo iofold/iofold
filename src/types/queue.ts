@@ -12,7 +12,7 @@ export interface QueueMessage {
   /** Unique job identifier */
   job_id: string;
   /** Job type determines which handler processes the message */
-  type: JobType | 'monitor' | 'auto_refine' | 'agent_discovery' | 'prompt_improvement' | 'prompt_evaluation' | 'template_drift' | 'eval_revalidation';
+  type: JobType | 'monitor' | 'auto_refine' | 'agent_discovery' | 'prompt_improvement' | 'prompt_evaluation' | 'template_drift' | 'eval_revalidation' | 'rollout_task';
   /** Workspace this job belongs to */
   workspace_id: string;
   /** Job-specific payload data */
@@ -53,7 +53,8 @@ export type JobPayload =
   | AutoRefineJobPayload
   | AgentDiscoveryJobPayload
   | PromptImprovementJobPayload
-  | PromptEvaluationJobPayload;
+  | PromptEvaluationJobPayload
+  | RolloutTaskPayload;
 
 /**
  * Payload for trace import jobs
@@ -154,6 +155,33 @@ export interface PromptEvaluationJobPayload {
   agent_version_id: string;
   /** Maximum traces to evaluate (default: 50) */
   max_traces?: number;
+}
+
+/**
+ * Payload for rollout task execution (GEPA integration)
+ */
+export interface RolloutTaskPayload {
+  type: 'rollout_task';
+  /** Batch ID this task belongs to */
+  batch_id: string;
+  /** Unique task identifier within the batch */
+  task_id: string;
+  /** Agent ID to execute */
+  agent_id: string;
+  /** Optional agent version to use */
+  agent_version_id?: string;
+  /** Candidate system prompt to test */
+  system_prompt: string;
+  /** User message to send to agent */
+  user_message: string;
+  /** Optional context for the task */
+  context?: Record<string, any>;
+  /** Task execution configuration */
+  config?: {
+    parallelism?: number;
+    timeout_per_task_ms?: number;
+    model_id?: string;
+  };
 }
 
 /**

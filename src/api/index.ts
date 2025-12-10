@@ -92,11 +92,24 @@ import {
   getActiveEval,
 } from './eval-generation';
 
+import {
+  listTools,
+  getToolById,
+  getAgentTools,
+  attachToolToAgent,
+  detachToolFromAgent,
+} from './tools';
+
+import {
+  createBatchRollout,
+  getBatchStatus,
+} from './internal/rollouts';
+
 export interface Env {
   DB: D1Database;
-  ANTHROPIC_API_KEY?: string;
-  OPENAI_API_KEY?: string;
-  GOOGLE_API_KEY?: string;
+  CF_ACCOUNT_ID?: string;
+  CF_AI_GATEWAY_ID?: string;
+  CF_AI_GATEWAY_TOKEN?: string;
   SANDBOX?: any;
   ENCRYPTION_KEY?: string;
   /** Cloudflare Queue binding for job processing */
@@ -219,7 +232,9 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
 
   const jobsAPI = new JobsAPI({
     db: env.DB,
-    anthropicApiKey: env.ANTHROPIC_API_KEY,
+    cfAccountId: env.CF_ACCOUNT_ID || '',
+    cfGatewayId: env.CF_AI_GATEWAY_ID || '',
+    cfGatewayToken: env.CF_AI_GATEWAY_TOKEN,
     sandboxBinding: env.SANDBOX,
     encryptionKey: env.ENCRYPTION_KEY || 'default-dev-key'
   });
@@ -275,7 +290,16 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   // Evals Endpoints
   // ============================================================================
 
-  const evalsAPI = new EvalsAPI(env.DB, env.ANTHROPIC_API_KEY || '', env.SANDBOX, ctx);
+  const evalsAPI = new EvalsAPI(
+    env.DB,
+    {
+      cfAccountId: env.CF_ACCOUNT_ID || '',
+      cfGatewayId: env.CF_AI_GATEWAY_ID || '',
+      cfGatewayToken: env.CF_AI_GATEWAY_TOKEN
+    },
+    env.SANDBOX,
+    ctx
+  );
 
   // POST /api/evals - Create eval directly
   if (path === '/api/evals' && method === 'POST') {
@@ -561,6 +585,53 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   const activeEvalMatch = path.match(/^\/api\/agents\/([^\/]+)\/evals\/active$/);
   if (activeEvalMatch && method === 'GET') {
     return getActiveEval(request, env, activeEvalMatch[1]);
+  }
+
+  // ============================================================================
+  // Tools Endpoints
+  // ============================================================================
+
+  // GET /api/tools - List all available tools
+  if (path === '/api/tools' && method === 'GET') {
+    return listTools(request, env);
+  }
+
+  // GET /api/tools/:id - Get tool details
+  const toolMatch = path.match(/^\/api\/tools\/([^\/]+)$/);
+  if (toolMatch && method === 'GET') {
+    return getToolById(request, env, toolMatch[1]);
+  }
+
+  // GET /api/agents/:agentId/tools - Get tools for agent
+  const agentToolsMatch = path.match(/^\/api\/agents\/([^\/]+)\/tools$/);
+  if (agentToolsMatch && method === 'GET') {
+    return getAgentTools(request, env, agentToolsMatch[1]);
+  }
+
+  // POST /api/agents/:agentId/tools - Attach tool to agent
+  if (agentToolsMatch && method === 'POST') {
+    return attachToolToAgent(request, env, agentToolsMatch[1]);
+  }
+
+  // DELETE /api/agents/:agentId/tools/:toolId - Detach tool from agent
+  const agentToolDetachMatch = path.match(/^\/api\/agents\/([^\/]+)\/tools\/([^\/]+)$/);
+  if (agentToolDetachMatch && method === 'DELETE') {
+    return detachToolFromAgent(request, env, agentToolDetachMatch[1], agentToolDetachMatch[2]);
+  }
+
+  // ============================================================================
+  // Internal APIs (GEPA Integration)
+  // ============================================================================
+
+  // POST /api/internal/rollouts/batch - Create batch rollout request
+  if (path === '/api/internal/rollouts/batch' && method === 'POST') {
+    return createBatchRollout(request, env);
+  }
+
+  // GET /api/internal/rollouts/batch/:batchId - Get batch status
+  const batchStatusMatch = path.match(/^\/api\/internal\/rollouts\/batch\/([^\/]+)$/);
+  if (batchStatusMatch && method === 'GET') {
+    return getBatchStatus(request, env, batchStatusMatch[1]);
   }
 
   // ============================================================================

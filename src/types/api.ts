@@ -35,6 +35,14 @@ export interface JobMetadata {
   agentVersionId?: string;
   triggerEvent?: string;
   triggerThreshold?: string;
+  // Eval generation fields
+  name?: string;
+  description?: string;
+  model?: string;
+  custom_instructions?: string;
+  // Import job fields
+  integration_id?: string;
+  filters?: Record<string, any>;
 }
 
 // Eval Generation Types
@@ -61,8 +69,8 @@ export interface TestResults {
 
 export interface TestCaseResult {
   trace_id: string;
-  expected: boolean;
-  predicted: boolean;
+  expected: number; // 0.0 = low quality, 1.0 = high quality
+  predicted: number;
   match: boolean;
   reason: string;
   execution_time_ms: number;
@@ -140,4 +148,64 @@ export interface JobFailedData {
   status: 'failed';
   error: string;
   details?: string;
+}
+
+// Rollout Types for GEPA Integration
+export interface BatchRolloutRequest {
+  agent_id: string;
+  agent_version_id?: string;      // Optional, defaults to active version
+  system_prompt: string;          // Candidate prompt to test (overrides agent default)
+  tasks: Array<{
+    task_id: string;
+    user_message: string;
+    context?: Record<string, any>;
+  }>;
+  config?: {
+    parallelism?: number;         // Max concurrent executions (default: 5)
+    timeout_per_task_ms?: number; // Per-task timeout (default: 30000)
+    model_id?: string;            // Override model
+  };
+}
+
+export interface BatchRolloutResponse {
+  batch_id: string;
+  task_count: number;
+  status: 'queued';
+  created_at: string;
+}
+
+export interface BatchStatusResponse {
+  batch_id: string;
+  status: 'queued' | 'running' | 'completed' | 'partial' | 'failed';
+  progress: {
+    total: number;
+    completed: number;
+    failed: number;
+    pending: number;
+  };
+  results: Array<{
+    task_id: string;
+    status: 'completed' | 'failed' | 'timeout';
+    trace?: any[]; // LangGraphExecutionStep[]
+    execution_time_ms?: number;
+    error?: string;
+  }>;
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface RolloutTaskMessage {
+  type: 'rollout_task';
+  batch_id: string;
+  task_id: string;
+  agent_id: string;
+  agent_version_id?: string;
+  system_prompt: string;
+  user_message: string;
+  context?: Record<string, any>;
+  config?: {
+    parallelism?: number;
+    timeout_per_task_ms?: number;
+    model_id?: string;
+  };
 }
