@@ -187,13 +187,13 @@ export async function loadArtEDataset(
 /**
  * Get dataset statistics
  */
-export async function getDatasetStats(split: 'train' | 'test'): Promise<{
+export async function getDatasetStats(split: 'train' | 'test', useJson: boolean = false): Promise<{
   totalTasks: number;
   avgRealisticScore: number;
   uniqueInboxes: number;
   avgMessageIdsPerTask: number;
 }> {
-  const tasks = await loadArtEDataset(split);
+  const tasks = await loadArtEDataset(split, undefined, useJson);
 
   const uniqueInboxes = new Set(tasks.map(t => t.inbox_address)).size;
   const avgRealisticScore = tasks.reduce((sum, t) => sum + t.how_realistic, 0) / tasks.length;

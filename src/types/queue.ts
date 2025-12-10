@@ -200,8 +200,11 @@ export interface GEPAOptimizationJobPayload {
   eval_code?: string;
   /** Seed prompt to optimize from */
   seed_prompt: string;
-  /** Test cases for optimization */
-  test_case_ids: string[];
+  /** Test cases for optimization (passed directly, not stored in DB) */
+  test_cases: Array<{
+    user_message: string;
+    expected_output?: string;
+  }>;
   /** Train/val split ratio (default: 0.7) */
   train_split?: number;
   /** Maximum metric calls (default: 50) */

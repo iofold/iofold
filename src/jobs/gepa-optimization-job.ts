@@ -26,7 +26,10 @@ export interface GEPAOptimizationJobConfig {
   evalId?: string;
   evalCode?: string;
   seedPrompt: string;
-  testCaseIds: string[];
+  testCases: Array<{
+    user_message: string;
+    expected_output?: string;
+  }>;
   trainSplit?: number;
   maxMetricCalls?: number;
   parallelism?: number;
@@ -57,12 +60,6 @@ interface GEPAResult {
     system_prompt: string;
     score: number;
   }>;
-}
-
-interface TestCase {
-  id: string;
-  task: Record<string, any>;
-  task_metadata: Record<string, any>;
 }
 
 export class GEPAOptimizationJob {
@@ -106,11 +103,10 @@ export class GEPAOptimizationJob {
       // Step 2: Get eval code
       const evalCode = await this.getEvalCode();
 
-      this.emitProgress('fetching_test_cases', 10);
+      this.emitProgress('preparing_test_cases', 10);
 
-      // Step 3: Fetch test cases and split into train/val
-      const testCases = await this.fetchTestCases();
-      const { trainset, valset } = this.splitTrainVal(testCases);
+      // Step 3: Split test cases into train/val
+      const { trainset, valset } = this.splitTrainVal(this.config.testCases);
 
       this.emitProgress('preparing_sandbox', 15);
 
@@ -185,32 +181,9 @@ export class GEPAOptimizationJob {
   }
 
   /**
-   * Fetch test cases from database
-   */
-  private async fetchTestCases(): Promise<TestCase[]> {
-    const placeholders = this.config.testCaseIds.map(() => '?').join(',');
-    const query = `
-      SELECT id, task, task_metadata
-      FROM test_cases
-      WHERE id IN (${placeholders})
-    `;
-
-    const results = await this.deps.db
-      .prepare(query)
-      .bind(...this.config.testCaseIds)
-      .all();
-
-    return results.results.map(row => ({
-      id: row.id as string,
-      task: JSON.parse(row.task as string),
-      task_metadata: JSON.parse((row.task_metadata as string) || '{}')
-    }));
-  }
-
-  /**
    * Split test cases into train and validation sets
    */
-  private splitTrainVal(testCases: TestCase[]): {
+  private splitTrainVal(testCases: Array<{ user_message: string; expected_output?: string }>): {
     trainset: Array<{ task: Record<string, any>; task_metadata: Record<string, any> }>;
     valset: Array<{ task: Record<string, any>; task_metadata: Record<string, any> }>;
   } {
@@ -220,14 +193,21 @@ export class GEPAOptimizationJob {
     // Shuffle test cases for random split
     const shuffled = [...testCases].sort(() => Math.random() - 0.5);
 
+    // Convert test cases to the format expected by GEPA runner
     const trainset = shuffled.slice(0, trainSize).map(tc => ({
-      task: tc.task,
-      task_metadata: tc.task_metadata
+      task: {
+        user_message: tc.user_message,
+        expected_output: tc.expected_output || null
+      },
+      task_metadata: {}
     }));
 
     const valset = shuffled.slice(trainSize).map(tc => ({
-      task: tc.task,
-      task_metadata: tc.task_metadata
+      task: {
+        user_message: tc.user_message,
+        expected_output: tc.expected_output || null
+      },
+      task_metadata: {}
     }));
 
     return { trainset, valset };

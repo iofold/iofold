@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS gepa_runs (
 
   -- Timestamps
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  started_at DATETIME,                -- When the run actually started executing
   completed_at DATETIME,              -- When the run completed/failed
 
   FOREIGN KEY (workspace_id) REFERENCES workspaces(id),

@@ -67,6 +67,7 @@ interface GEPARunStatus {
   };
   error?: string;
   created_at: string;
+  started_at?: string;
   completed_at?: string;
 }
 
@@ -235,6 +236,11 @@ export async function startGEPAOptimization(
       );
     }
 
+    // Get API base URL and session token for the GEPA job
+    const url = new URL(request.url);
+    const apiBaseUrl = `${url.protocol}//${url.host}`;
+    const sessionToken = request.headers.get('Authorization')?.replace('Bearer ', '') || '';
+
     await env.JOB_QUEUE.send({
       type: 'gepa_optimization',
       run_id: runId,
@@ -244,6 +250,8 @@ export async function startGEPAOptimization(
       test_cases: testCases,
       max_metric_calls: maxMetricCalls,
       parallelism: parallelism,
+      api_base_url: apiBaseUrl,
+      session_token: sessionToken,
       workspace_id: workspaceId,
     });
 
@@ -335,6 +343,11 @@ export async function getGEPARunStatus(
       },
       created_at: run.created_at as string,
     };
+
+    // Add started_at if present (when status is 'running', 'completed', or 'failed')
+    if (run.started_at) {
+      response.started_at = run.started_at as string;
+    }
 
     // Add result if completed
     if (run.status === 'completed' && run.best_prompt) {

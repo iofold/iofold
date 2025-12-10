@@ -467,7 +467,7 @@ export class QueueConsumer {
         evalId: payload.eval_id,
         evalCode: payload.eval_code,
         seedPrompt: payload.seed_prompt,
-        testCaseIds: payload.test_case_ids,
+        testCases: payload.test_cases,
         trainSplit: payload.train_split,
         maxMetricCalls: payload.max_metric_calls,
         parallelism: payload.parallelism,

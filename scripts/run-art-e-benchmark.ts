@@ -79,10 +79,10 @@ Environment:
 `);
 }
 
-async function showStats(split: 'train' | 'test'): Promise<void> {
+async function showStats(split: 'train' | 'test', useJson: boolean = false): Promise<void> {
   console.log(`\nFetching ART-E dataset statistics for ${split} split...\n`);
 
-  const stats = await getDatasetStats(split);
+  const stats = await getDatasetStats(split, useJson);
 
   console.log('═'.repeat(60));
   console.log(`ART-E Dataset Statistics (${split} split)`);
@@ -170,7 +170,7 @@ async function main(): Promise<void> {
   try {
     // Show stats and exit if requested
     if (showStatsOnly) {
-      await showStats(split);
+      await showStats(split, useJson);
       return;
     }
 
