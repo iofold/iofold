@@ -74,7 +74,16 @@ export async function createBatchRollout(
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
-    // 2. Create batch record
+    // 2. Validate queue exists before creating any records
+    if (!env.JOB_QUEUE) {
+      return createErrorResponse(
+        'INTERNAL_ERROR',
+        'Queue not configured',
+        500
+      );
+    }
+
+    // 3. Create batch record
     const batchId = generateId('rb');
     const now = new Date().toISOString();
     const config = JSON.stringify(body.config || {});
@@ -92,14 +101,7 @@ export async function createBatchRollout(
       now
     ).run();
 
-    // 3. Queue each task
-    if (!env.JOB_QUEUE) {
-      return createErrorResponse(
-        'INTERNAL_ERROR',
-        'Queue not configured',
-        500
-      );
-    }
+    // 4. Queue each task
 
     const parallelism = body.config?.parallelism || 5;
     const timeoutPerTask = body.config?.timeout_per_task_ms || 30000;
@@ -196,7 +198,22 @@ export async function getBatchStatus(
       status = 'queued';
     }
 
-    // 4. Build response with results
+    // 4. Update batch status in database if completed
+    const currentDbStatus = batch.status as string;
+    if (pending === 0 && currentDbStatus !== status) {
+      const completedAt = new Date().toISOString();
+      await env.DB.prepare(`
+        UPDATE rollout_batches
+        SET status = ?, completed_at = ?
+        WHERE id = ?
+      `).bind(status, completedAt, batchId).run();
+
+      // Update the batch object for response
+      (batch as any).status = status;
+      (batch as any).completed_at = completedAt;
+    }
+
+    // 5. Build response with results
     const response: BatchStatusResponse = {
       batch_id: batchId,
       status,
