@@ -17,6 +17,7 @@ import type {
   PromptImprovementJobPayload,
   PromptEvaluationJobPayload,
   RolloutTaskPayload,
+  GEPAOptimizationJobPayload,
   RetryAttempt
 } from '../types/queue';
 import { JobManager } from '../jobs/job-manager';
@@ -26,6 +27,7 @@ import { EvalExecutionJob } from '../jobs/eval-execution-job';
 import { AgentDiscoveryJob } from '../jobs/agent-discovery-job';
 import { PromptImprovementJob } from '../jobs/prompt-improvement-job';
 import { PromptEvaluationJob } from '../jobs/prompt-evaluation-job';
+import { GEPAOptimizationJob } from '../jobs/gepa-optimization-job';
 import { classifyError, isRetryable, getErrorCategoryDescription, type ErrorCategory } from '../errors/classifier';
 import { calculateBackoffDelay, shouldRetry as shouldRetryBackoff, DEFAULT_RETRY_CONFIG } from '../retry/backoff';
 
@@ -215,6 +217,9 @@ export class QueueConsumer {
           break;
         case 'rollout_task':
           await this.processRolloutTask(job_id, workspace_id, payload as RolloutTaskPayload);
+          break;
+        case 'gepa_optimization':
+          await this.processGEPAOptimizationJob(job_id, workspace_id, payload as GEPAOptimizationJobPayload);
           break;
         default:
           throw new Error(`Unknown job type: ${type}`);
@@ -444,6 +449,44 @@ export class QueueConsumer {
     );
 
     await evaluationJob.execute();
+  }
+
+  /**
+   * Process GEPA optimization job
+   */
+  private async processGEPAOptimizationJob(
+    jobId: string,
+    workspaceId: string,
+    payload: GEPAOptimizationJobPayload
+  ): Promise<void> {
+    const optimizationJob = new GEPAOptimizationJob(
+      {
+        jobId,
+        runId: payload.run_id,
+        agentId: payload.agent_id,
+        evalId: payload.eval_id,
+        evalCode: payload.eval_code,
+        seedPrompt: payload.seed_prompt,
+        testCaseIds: payload.test_case_ids,
+        trainSplit: payload.train_split,
+        maxMetricCalls: payload.max_metric_calls,
+        parallelism: payload.parallelism,
+        pollTimeoutSeconds: payload.poll_timeout_seconds,
+        scoreThreshold: payload.score_threshold,
+        apiBaseUrl: payload.api_base_url,
+        sessionToken: payload.session_token,
+        workspaceId
+      },
+      {
+        db: this.db,
+        sandboxBinding: this.sandboxBinding,
+        cfAccountId: this.cfAccountId,
+        cfGatewayId: this.cfGatewayId,
+        cfGatewayToken: this.cfGatewayToken,
+      }
+    );
+
+    await optimizationJob.execute();
   }
 
   /**

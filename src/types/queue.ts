@@ -12,7 +12,7 @@ export interface QueueMessage {
   /** Unique job identifier */
   job_id: string;
   /** Job type determines which handler processes the message */
-  type: JobType | 'monitor' | 'auto_refine' | 'agent_discovery' | 'prompt_improvement' | 'prompt_evaluation' | 'template_drift' | 'eval_revalidation' | 'rollout_task';
+  type: JobType | 'monitor' | 'auto_refine' | 'agent_discovery' | 'prompt_improvement' | 'prompt_evaluation' | 'template_drift' | 'eval_revalidation' | 'rollout_task' | 'gepa_optimization';
   /** Workspace this job belongs to */
   workspace_id: string;
   /** Job-specific payload data */
@@ -54,7 +54,8 @@ export type JobPayload =
   | AgentDiscoveryJobPayload
   | PromptImprovementJobPayload
   | PromptEvaluationJobPayload
-  | RolloutTaskPayload;
+  | RolloutTaskPayload
+  | GEPAOptimizationJobPayload;
 
 /**
  * Payload for trace import jobs
@@ -182,6 +183,39 @@ export interface RolloutTaskPayload {
     timeout_per_task_ms?: number;
     model_id?: string;
   };
+}
+
+/**
+ * Payload for GEPA optimization job
+ */
+export interface GEPAOptimizationJobPayload {
+  type: 'gepa_optimization';
+  /** GEPA run ID in gepa_runs table */
+  run_id: string;
+  /** Agent ID to optimize */
+  agent_id: string;
+  /** Eval ID to use for scoring */
+  eval_id?: string;
+  /** Eval code (if not using eval_id) */
+  eval_code?: string;
+  /** Seed prompt to optimize from */
+  seed_prompt: string;
+  /** Test cases for optimization */
+  test_case_ids: string[];
+  /** Train/val split ratio (default: 0.7) */
+  train_split?: number;
+  /** Maximum metric calls (default: 50) */
+  max_metric_calls?: number;
+  /** Parallelism for rollouts (default: 5) */
+  parallelism?: number;
+  /** Timeout for polling rollouts in seconds (default: 600) */
+  poll_timeout_seconds?: number;
+  /** Stop early if best >= threshold (default: no threshold) */
+  score_threshold?: number;
+  /** API base URL for internal calls */
+  api_base_url: string;
+  /** Session token for authentication */
+  session_token: string;
 }
 
 /**
