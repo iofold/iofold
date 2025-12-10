@@ -24,13 +24,13 @@ const MODEL_PRICING = {
     input: 3.00,
     output: 15.00
   },
-  'claude-haiku-4-5-20250514': {
-    input: 0.25,
-    output: 1.25
+  'claude-haiku-4-5-20250929': {
+    input: 1.00,
+    output: 5.00
   },
-  'gpt-4o-mini': {
-    input: 0.15,
-    output: 0.60
+  'claude-opus-4-5-20251101': {
+    input: 15.00,
+    output: 75.00
   }
 } as const;
 

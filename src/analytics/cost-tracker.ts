@@ -7,55 +7,21 @@ export interface CostMetrics {
 }
 
 export class CostTracker {
-  // Claude pricing (as of Nov 2025)
+  // Claude pricing (Dec 2025) - Only latest models supported
   private static CLAUDE_PRICING = {
-    // Claude 4.5 series (latest)
+    // Claude 4.5 series (current)
     'claude-sonnet-4-5-20250929': {
       input: 3.00 / 1_000_000,
       output: 15.00 / 1_000_000
     },
-    'claude-sonnet-4-5': {
-      input: 3.00 / 1_000_000,
-      output: 15.00 / 1_000_000
-    },
-    'claude-haiku-4-5': {
+    'claude-haiku-4-5-20250929': {
       input: 1.00 / 1_000_000,
       output: 5.00 / 1_000_000
     },
-    // Claude 4 series
-    'claude-opus-4-1-20250805': {
+    // Claude Opus 4.5
+    'claude-opus-4-5-20251101': {
       input: 15.00 / 1_000_000,
       output: 75.00 / 1_000_000
-    },
-    'claude-sonnet-4': {
-      input: 3.00 / 1_000_000,
-      output: 15.00 / 1_000_000
-    },
-    'claude-opus-4': {
-      input: 15.00 / 1_000_000,
-      output: 75.00 / 1_000_000
-    },
-    // Claude 3.5 series (legacy)
-    'claude-3-5-sonnet-20241022': {
-      input: 3.00 / 1_000_000,
-      output: 15.00 / 1_000_000
-    },
-    'claude-3-5-haiku-20241022': {
-      input: 1.00 / 1_000_000,
-      output: 5.00 / 1_000_000
-    },
-    // Claude 3 series (legacy)
-    'claude-3-opus-20240229': {
-      input: 15.00 / 1_000_000,
-      output: 75.00 / 1_000_000
-    },
-    'claude-3-sonnet-20240229': {
-      input: 3.00 / 1_000_000,
-      output: 15.00 / 1_000_000
-    },
-    'claude-3-haiku-20240307': {
-      input: 0.25 / 1_000_000,
-      output: 1.25 / 1_000_000
     }
   };
 

@@ -30,7 +30,7 @@ export interface LLMCallOptions {
   prompt: string;
 
   /** Model to use (default: claude-sonnet-4-5-20250929) */
-  model?: "claude-sonnet-4-5-20250929" | "claude-haiku-4-5-20250514" | "gpt-4o-mini";
+  model?: "claude-sonnet-4-5-20250929" | "claude-haiku-4-5-20250929";
 
   /** Temperature (default: 0.0 for determinism) */
   temperature?: number;

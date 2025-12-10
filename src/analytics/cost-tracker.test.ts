@@ -3,9 +3,9 @@ import { CostTracker } from './cost-tracker';
 
 describe('CostTracker', () => {
   describe('calculateCost', () => {
-    it('should calculate cost for Claude 3.5 Sonnet correctly', () => {
+    it('should calculate cost for Claude Sonnet 4.5 correctly', () => {
       const result = CostTracker.calculateCost({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-sonnet-4-5-20250929',
         promptTokens: 1000,
         completionTokens: 500
       });
@@ -17,12 +17,12 @@ describe('CostTracker', () => {
       expect(result.promptTokens).toBe(1000);
       expect(result.completionTokens).toBe(500);
       expect(result.estimatedCostUSD).toBeCloseTo(0.0105, 4);
-      expect(result.model).toBe('claude-3-5-sonnet-20241022');
+      expect(result.model).toBe('claude-sonnet-4-5-20250929');
     });
 
-    it('should calculate cost for Claude 3 Opus correctly', () => {
+    it('should calculate cost for Claude Opus 4.5 correctly', () => {
       const result = CostTracker.calculateCost({
-        model: 'claude-3-opus-20240229',
+        model: 'claude-opus-4-5-20251101',
         promptTokens: 1000,
         completionTokens: 500
       });
@@ -33,17 +33,17 @@ describe('CostTracker', () => {
       expect(result.estimatedCostUSD).toBeCloseTo(0.0525, 4);
     });
 
-    it('should calculate cost for Claude 3 Haiku correctly', () => {
+    it('should calculate cost for Claude Haiku 4.5 correctly', () => {
       const result = CostTracker.calculateCost({
-        model: 'claude-3-haiku-20240307',
+        model: 'claude-haiku-4-5-20250929',
         promptTokens: 1000,
         completionTokens: 500
       });
 
-      // Input: 1000 tokens * $0.25/million = $0.00025
-      // Output: 500 tokens * $1.25/million = $0.000625
-      // Total: $0.000875
-      expect(result.estimatedCostUSD).toBeCloseTo(0.000875, 6);
+      // Input: 1000 tokens * $1/million = $0.001
+      // Output: 500 tokens * $5/million = $0.0025
+      // Total: $0.0035
+      expect(result.estimatedCostUSD).toBeCloseTo(0.0035, 4);
     });
 
     it('should throw error for unknown model', () => {

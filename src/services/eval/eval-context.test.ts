@@ -65,13 +65,13 @@ describe('EvalContextImpl', () => {
       ).rejects.toThrow('Unsupported model');
     });
 
-    it('should throw error for OpenAI models (not yet supported)', async () => {
+    it('should throw error for unsupported models', async () => {
       await expect(
         ctx.call_llm({
           prompt: 'Test',
-          model: 'gpt-4o-mini'
+          model: 'gpt-4o-mini' as any
         })
-      ).rejects.toThrow('OpenAI models not yet supported');
+      ).rejects.toThrow('Unsupported model');
     });
   });
 

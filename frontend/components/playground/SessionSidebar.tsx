@@ -64,18 +64,10 @@ function formatRelativeTime(dateString: string): string {
 // Get model display name - synced with backend models/index.ts
 function getModelLabel(provider: string, modelId: string): string {
   const modelMap: Record<string, string> = {
+    // Claude 4.5 series (primary)
     'claude-sonnet-4-5-20250929': 'Claude Sonnet 4.5',
     'claude-haiku-4-5-20250929': 'Claude Haiku 4.5',
-    'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku', // Legacy
-    'gpt-5.1-mini': 'GPT-5.1 Mini',
-    'gpt-5.1-nano': 'GPT-5.1 Nano',
-    'gemini-2.5-flash': 'Gemini 2.5 Flash',
-    'gemini-2.5-pro': 'Gemini 2.5 Pro',
-    // Legacy models for existing sessions
-    'gemini-2.0-flash': 'Gemini 2.0 Flash',
-    'gemini-1.5-pro': 'Gemini 1.5 Pro',
-    'gpt-4o': 'GPT-4o',
-    'gpt-4o-mini': 'GPT-4o Mini',
+    'claude-opus-4-5-20251101': 'Claude Opus 4.5',
   }
   return modelMap[modelId] || modelId
 }

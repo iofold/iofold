@@ -518,9 +518,9 @@ function TracesPageContent() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All models</SelectItem>
-                    <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                    <SelectItem value="gpt-4o-mini">GPT-4o Mini</SelectItem>
-                    <SelectItem value="claude-4.5-sonnet">Claude 4.5 Sonnet</SelectItem>
+                    <SelectItem value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</SelectItem>
+                    <SelectItem value="claude-haiku-4-5-20250929">Claude Haiku 4.5</SelectItem>
+                    <SelectItem value="claude-opus-4-5-20251101">Claude Opus 4.5</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
