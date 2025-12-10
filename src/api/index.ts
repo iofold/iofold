@@ -105,6 +105,11 @@ import {
   getBatchStatus,
 } from './internal/rollouts';
 
+import {
+  startGEPAOptimization,
+  getGEPARunStatus,
+} from './gepa';
+
 export interface Env {
   DB: D1Database;
   CF_ACCOUNT_ID?: string;
@@ -617,6 +622,22 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   const agentToolDetachMatch = path.match(/^\/api\/agents\/([^\/]+)\/tools\/([^\/]+)$/);
   if (agentToolDetachMatch && method === 'DELETE') {
     return detachToolFromAgent(request, env, agentToolDetachMatch[1], agentToolDetachMatch[2]);
+  }
+
+  // ============================================================================
+  // GEPA Optimization Endpoints
+  // ============================================================================
+
+  // POST /api/agents/:id/gepa/start - Start GEPA optimization
+  const gepaStartMatch = path.match(/^\/api\/agents\/([^\/]+)\/gepa\/start$/);
+  if (gepaStartMatch && method === 'POST') {
+    return startGEPAOptimization(request, env, gepaStartMatch[1]);
+  }
+
+  // GET /api/agents/:id/gepa/runs/:runId - Get GEPA run status
+  const gepaRunStatusMatch = path.match(/^\/api\/agents\/([^\/]+)\/gepa\/runs\/([^\/]+)$/);
+  if (gepaRunStatusMatch && method === 'GET') {
+    return getGEPARunStatus(request, env, gepaRunStatusMatch[1], gepaRunStatusMatch[2]);
   }
 
   // ============================================================================
