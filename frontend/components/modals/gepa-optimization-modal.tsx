@@ -26,13 +26,19 @@ interface GEPAOptimizationModalProps {
 interface GEPARunStatus {
   id: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
-  progress_metric_calls: number
-  max_metric_calls: number
-  best_prompt?: string
-  best_score?: number
-  total_candidates?: number
+  progress: {
+    metric_calls: number
+    max_metric_calls: number
+    best_score?: number
+    total_candidates: number
+  }
+  result?: {
+    best_prompt: string
+    best_score: number
+  }
   error?: string
   created_at: string
+  started_at?: string
   completed_at?: string
 }
 
@@ -74,8 +80,11 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
       setRunStatus({
         id: data.run_id,
         status: 'pending',
-        progress_metric_calls: 0,
-        max_metric_calls: 50,
+        progress: {
+          metric_calls: 0,
+          max_metric_calls: 50,
+          total_candidates: 0,
+        },
         created_at: new Date().toISOString(),
       })
 
@@ -98,12 +107,38 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
 
       eventSource.addEventListener('progress', (event) => {
         const data = JSON.parse(event.data)
-        setRunStatus((prev) => (prev ? { ...prev, ...data } : null))
+        setRunStatus((prev) => {
+          if (!prev) return null
+          return {
+            ...prev,
+            status: 'running',
+            progress: {
+              metric_calls: data.metric_calls,
+              max_metric_calls: data.max_metric_calls,
+              best_score: data.best_score,
+              total_candidates: data.total_candidates,
+            },
+          }
+        })
       })
 
       eventSource.addEventListener('complete', (event) => {
         const data = JSON.parse(event.data)
-        setRunStatus((prev) => (prev ? { ...prev, ...data, status: 'completed' } : null))
+        setRunStatus((prev) => {
+          if (!prev) return null
+          return {
+            ...prev,
+            status: 'completed',
+            result: {
+              best_prompt: data.best_prompt,
+              best_score: data.best_score,
+            },
+            progress: {
+              ...prev.progress,
+              total_candidates: data.total_candidates,
+            },
+          }
+        })
         setIsStreaming(false)
         eventSource.close()
 
@@ -167,7 +202,7 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
   }
 
   const progress = runStatus
-    ? (runStatus.progress_metric_calls / runStatus.max_metric_calls) * 100
+    ? (runStatus.progress.metric_calls / runStatus.progress.max_metric_calls) * 100
     : 0
 
   return (
@@ -272,7 +307,7 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
                   )}
                 </div>
                 <span className="text-sm text-muted-foreground">
-                  {runStatus.progress_metric_calls} / {runStatus.max_metric_calls}
+                  {runStatus.progress.metric_calls} / {runStatus.progress.max_metric_calls}
                 </span>
               </div>
 
@@ -280,7 +315,7 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
               <Progress value={progress} />
 
               {/* Results (when completed) */}
-              {runStatus.status === 'completed' && runStatus.best_score !== undefined && (
+              {runStatus.status === 'completed' && runStatus.result && (
                 <div className="p-4 bg-success/10 border border-success/20 rounded-lg">
                   <div className="flex gap-2">
                     <TrendingUp className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
@@ -289,11 +324,11 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div>
                           <div className="text-muted-foreground">Best Score</div>
-                          <div className="font-bold text-lg">{formatPercentage(runStatus.best_score)}</div>
+                          <div className="font-bold text-lg">{formatPercentage(runStatus.result.best_score)}</div>
                         </div>
                         <div>
                           <div className="text-muted-foreground">Candidates Tested</div>
-                          <div className="font-bold text-lg">{runStatus.total_candidates}</div>
+                          <div className="font-bold text-lg">{runStatus.progress.total_candidates}</div>
                         </div>
                       </div>
                       <div className="mt-3 text-sm text-muted-foreground">

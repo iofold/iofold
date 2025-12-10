@@ -565,11 +565,16 @@ class APIClient {
   ): Promise<{
     id: string
     status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
-    progress_metric_calls: number
-    max_metric_calls: number
-    best_prompt?: string
-    best_score?: number
-    total_candidates?: number
+    progress: {
+      metric_calls: number
+      max_metric_calls: number
+      best_score?: number
+      total_candidates: number
+    }
+    result?: {
+      best_prompt: string
+      best_score: number
+    }
     error?: string
     created_at: string
     completed_at?: string
