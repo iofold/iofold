@@ -30,7 +30,7 @@ export interface PythonRunnerConfig {
   devExecutorUrl?: string;
 }
 
-const ALLOWED_IMPORTS = ['json', 're', 'typing', 'httpx', 'openai'];
+const ALLOWED_IMPORTS = ['json', 're', 'typing', 'httpx', 'openai', 'time', 'dataclasses', 'traceback', 'asyncio'];
 const BLOCKED_IMPORTS = [
   'os', 'sys', 'subprocess', 'socket', 'urllib',
   'requests', 'http', 'ftplib', 'smtplib',

@@ -87,7 +87,7 @@ except ImportError:
     from .iofold_adapter import IofoldGEPAAdapter, DataInst
 
 
-def log_progress(data: Dict[str, Any]) -> None:
+def report_progress(data: Dict[str, Any]) -> None:
     """
     Write progress update to stderr as NDJSON.
 
@@ -99,34 +99,17 @@ def log_progress(data: Dict[str, Any]) -> None:
 
 def run_gepa_optimization(config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Run GEPA optimization with iofold adapter.
+    Main entry point for GEPA optimization.
 
     Args:
-        config: Configuration dictionary with required fields:
-            - api_base_url: Base URL for iofold API
-            - session_token: Authentication token
-            - agent_id: Agent ID to optimize
-            - eval_code: Python code defining eval_function
-            - seed_prompt: Initial system prompt
-            - trainset: List of training examples
-            - valset: List of validation examples
-            - ai_gateway_url: Cloudflare AI Gateway URL
-            - ai_gateway_token: AI Gateway authentication token
-            - max_metric_calls: Maximum number of metric evaluations
-            - parallelism: Number of concurrent rollouts
+        config: Dict with keys: api_base_url, session_token, agent_id, eval_code,
+                seed_prompt, trainset, valset, ai_gateway_url, ai_gateway_token,
+                max_metric_calls, parallelism
 
     Returns:
-        Dictionary containing:
-            - best_prompt: Best system prompt found
-            - best_score: Validation score of best prompt
-            - total_candidates: Number of candidates evaluated
-            - total_metric_calls: Total metric calls made
-            - all_candidates: List of all candidates with scores
-
-    Raises:
-        ValueError: If required config fields are missing
-        ImportError: If GEPA library is not installed
-        Exception: If optimization fails
+        Dict with keys: success, result (or error)
+        On success: {"success": True, "result": {"best_prompt": "...", "best_score": 0.85, ...}}
+        On error: {"success": False, "error": "message", "error_type": "ValueError"}
     """
     # Validate required fields
     required_fields = [
@@ -143,9 +126,18 @@ def run_gepa_optimization(config: Dict[str, Any]) -> Dict[str, Any]:
 
     missing_fields = [f for f in required_fields if f not in config]
     if missing_fields:
-        raise ValueError(f"Missing required config fields: {', '.join(missing_fields)}")
+        error_msg = f"Missing required config fields: {', '.join(missing_fields)}"
+        report_progress({
+            "type": "error",
+            "message": error_msg,
+        })
+        return {
+            "success": False,
+            "error": error_msg,
+            "error_type": "ValueError",
+        }
 
-    log_progress({
+    report_progress({
         "type": "start",
         "message": "Initializing GEPA optimization",
         "max_metric_calls": config.get("max_metric_calls", 50),
@@ -155,32 +147,71 @@ def run_gepa_optimization(config: Dict[str, Any]) -> Dict[str, Any]:
     })
 
     # Create adapter
-    log_progress({
+    report_progress({
         "type": "init",
         "message": "Creating iofold adapter",
     })
 
-    adapter = IofoldGEPAAdapter(
-        api_base_url=config["api_base_url"],
-        session_token=config["session_token"],
-        agent_id=config["agent_id"],
-        eval_code=config["eval_code"],
-        parallelism=config.get("parallelism", 5),
-    )
+    try:
+        adapter = IofoldGEPAAdapter(
+            api_base_url=config["api_base_url"],
+            session_token=config["session_token"],
+            agent_id=config["agent_id"],
+            eval_code=config["eval_code"],
+            parallelism=config.get("parallelism", 5),
+        )
+    except ValueError as e:
+        error_msg = f"Adapter initialization failed: {str(e)}"
+        report_progress({
+            "type": "error",
+            "message": error_msg,
+        })
+        return {
+            "success": False,
+            "error": error_msg,
+            "error_type": "ValueError",
+        }
+    except Exception as e:
+        error_msg = f"Unexpected error during adapter initialization: {str(e)}"
+        report_progress({
+            "type": "error",
+            "message": error_msg,
+        })
+        return {
+            "success": False,
+            "error": error_msg,
+            "error_type": type(e).__name__,
+        }
 
     # Create reflection LLM client pointing to AI Gateway
-    log_progress({
+    report_progress({
         "type": "init",
         "message": "Configuring reflection LLM via AI Gateway",
     })
 
-    reflection_lm = OpenAI(
-        api_key=config["ai_gateway_token"],
-        base_url=config["ai_gateway_url"],
-    )
+    try:
+        reflection_lm = OpenAI(
+            api_key=config["ai_gateway_token"],
+            base_url=config["ai_gateway_url"],
+        )
+    except Exception as e:
+        error_msg = f"Failed to initialize OpenAI client: {str(e)}"
+        report_progress({
+            "type": "error",
+            "message": error_msg,
+        })
+        try:
+            adapter.close()
+        except Exception:
+            pass
+        return {
+            "success": False,
+            "error": error_msg,
+            "error_type": type(e).__name__,
+        }
 
     # Convert trainset/valset to DataInst
-    log_progress({
+    report_progress({
         "type": "init",
         "message": "Converting datasets to GEPA format",
     })
@@ -203,17 +234,23 @@ def run_gepa_optimization(config: Dict[str, Any]) -> Dict[str, Any]:
 
     # Check if GEPA is available
     if not GEPA_AVAILABLE:
-        log_progress({
+        error_msg = "GEPA library not installed. This is expected in development. The runner is ready to use once GEPA is installed."
+        report_progress({
             "type": "error",
-            "message": "GEPA library not installed",
+            "message": error_msg,
         })
-        raise ImportError(
-            "GEPA library not installed. This is expected in development. "
-            "The runner is ready to use once GEPA is installed."
-        )
+        try:
+            adapter.close()
+        except Exception:
+            pass
+        return {
+            "success": False,
+            "error": error_msg,
+            "error_type": "ImportError",
+        }
 
     # Run GEPA optimization
-    log_progress({
+    report_progress({
         "type": "optimize_start",
         "message": "Starting GEPA optimization loop",
         "seed_prompt_length": len(config["seed_prompt"]),
@@ -229,7 +266,7 @@ def run_gepa_optimization(config: Dict[str, Any]) -> Dict[str, Any]:
             max_metric_calls=config.get("max_metric_calls", 50),
         )
 
-        log_progress({
+        report_progress({
             "type": "optimize_complete",
             "message": "GEPA optimization completed",
             "best_score": result.best_validation_score,
@@ -239,33 +276,44 @@ def run_gepa_optimization(config: Dict[str, Any]) -> Dict[str, Any]:
 
         # Build response
         return {
-            "best_prompt": result.best_candidate.get("system_prompt", ""),
-            "best_score": result.best_validation_score,
-            "total_candidates": len(result.all_candidates),
-            "total_metric_calls": result.total_metric_calls,
-            "all_candidates": [
-                {
-                    "system_prompt": c.get("system_prompt", ""),
-                    "score": s,
-                }
-                for c, s in zip(result.all_candidates, result.all_scores)
-            ],
+            "success": True,
+            "result": {
+                "best_prompt": result.best_candidate.get("system_prompt", ""),
+                "best_score": result.best_validation_score,
+                "total_candidates": len(result.all_candidates),
+                "total_metric_calls": result.total_metric_calls,
+                "all_candidates": [
+                    {
+                        "system_prompt": c.get("system_prompt", ""),
+                        "score": s,
+                    }
+                    for c, s in zip(result.all_candidates, result.all_scores)
+                ],
+            },
         }
 
     except Exception as e:
-        log_progress({
+        error_msg = f"GEPA optimization failed: {str(e)}"
+        error_trace = traceback.format_exc()
+        report_progress({
             "type": "error",
-            "message": f"GEPA optimization failed: {str(e)}",
+            "message": error_msg,
             "error_type": type(e).__name__,
+            "traceback": error_trace,
         })
-        raise
+        return {
+            "success": False,
+            "error": error_msg,
+            "error_type": type(e).__name__,
+            "traceback": error_trace,
+        }
 
     finally:
         # Clean up adapter
         try:
             adapter.close()
         except Exception as e:
-            log_progress({
+            report_progress({
                 "type": "warning",
                 "message": f"Error closing adapter: {str(e)}",
             })
@@ -273,48 +321,36 @@ def run_gepa_optimization(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def main() -> None:
     """
-    Main entry point for GEPA runner.
+    Main entry point for CLI usage.
 
     Reads config from stdin, runs optimization, writes result to stdout.
     Progress updates are written to stderr as NDJSON.
 
-    Exit codes:
-        0: Success
-        1: Error (details in JSON output)
+    This function is kept for CLI testing but run_gepa_optimization()
+    is the primary interface for programmatic use.
     """
     try:
         # Read config from stdin
-        log_progress({
+        report_progress({
             "type": "input",
             "message": "Reading configuration from stdin",
         })
 
         config_text = sys.stdin.read()
         if not config_text.strip():
-            raise ValueError("No input received on stdin")
+            output = {
+                "success": False,
+                "error": "No input received on stdin",
+                "error_type": "ValueError",
+            }
+            print(json.dumps(output, indent=2))
+            return
 
         config = json.loads(config_text)
 
-        # Run optimization
-        result = run_gepa_optimization(config)
-
-        # Write success response to stdout
-        output = {
-            "success": True,
-            "result": result,
-        }
-        print(json.dumps(output, indent=2))
-
-        log_progress({
-            "type": "complete",
-            "message": "GEPA runner completed successfully",
-        })
-
-        sys.exit(0)
-
     except json.JSONDecodeError as e:
         error_msg = f"Invalid JSON input: {str(e)}"
-        log_progress({
+        report_progress({
             "type": "error",
             "message": error_msg,
         })
@@ -325,56 +361,34 @@ def main() -> None:
             "error_type": "JSONDecodeError",
         }
         print(json.dumps(output, indent=2))
-        sys.exit(1)
-
-    except ValueError as e:
-        error_msg = f"Configuration error: {str(e)}"
-        log_progress({
-            "type": "error",
-            "message": error_msg,
-        })
-
-        output = {
-            "success": False,
-            "error": error_msg,
-            "error_type": "ValueError",
-        }
-        print(json.dumps(output, indent=2))
-        sys.exit(1)
-
-    except ImportError as e:
-        error_msg = str(e)
-        log_progress({
-            "type": "error",
-            "message": error_msg,
-        })
-
-        output = {
-            "success": False,
-            "error": error_msg,
-            "error_type": "ImportError",
-        }
-        print(json.dumps(output, indent=2))
-        sys.exit(1)
+        return
 
     except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        error_trace = traceback.format_exc()
-
-        log_progress({
+        error_msg = f"Error reading input: {str(e)}"
+        report_progress({
             "type": "error",
             "message": error_msg,
-            "traceback": error_trace,
         })
 
         output = {
             "success": False,
             "error": error_msg,
             "error_type": type(e).__name__,
-            "traceback": error_trace,
         }
         print(json.dumps(output, indent=2))
-        sys.exit(1)
+        return
+
+    # Run optimization - returns a dict with success/error
+    result = run_gepa_optimization(config)
+
+    # Write result to stdout
+    print(json.dumps(result, indent=2))
+
+    if result.get("success"):
+        report_progress({
+            "type": "complete",
+            "message": "GEPA runner completed successfully",
+        })
 
 
 if __name__ == "__main__":
