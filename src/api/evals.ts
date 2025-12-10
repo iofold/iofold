@@ -230,6 +230,11 @@ export class EvalsAPI {
   // GET /api/evals - List evals
   async listEvals(queryParams: URLSearchParams, workspaceId?: string): Promise<Response> {
     try {
+      // Validate workspace ID is required
+      if (!workspaceId) {
+        return validationError('Missing X-Workspace-Id header');
+      }
+
       const params = {
         agent_id: queryParams.get('agent_id') || undefined,
         cursor: queryParams.get('cursor') || undefined,
@@ -239,33 +244,26 @@ export class EvalsAPI {
       const validated = ListEvalsSchema.parse(params);
 
       // Join with agents table to filter by workspace
-      let query = workspaceId
-        ? 'SELECT e.* FROM evals e INNER JOIN agents a ON e.agent_id = a.id'
-        : 'SELECT * FROM evals';
+      let query = 'SELECT e.* FROM evals e INNER JOIN agents a ON e.agent_id = a.id';
       const conditions: string[] = [];
       const bindings: any[] = [];
 
-      // Add workspace filter if provided
-      if (workspaceId) {
-        conditions.push('a.workspace_id = ?');
-        bindings.push(workspaceId);
-      }
+      // Add workspace filter (required)
+      conditions.push('a.workspace_id = ?');
+      bindings.push(workspaceId);
 
       if (validated.agent_id) {
-        conditions.push(workspaceId ? 'e.agent_id = ?' : 'agent_id = ?');
+        conditions.push('e.agent_id = ?');
         bindings.push(validated.agent_id);
       }
 
       if (validated.cursor) {
-        conditions.push('id > ?');
+        conditions.push('e.created_at < ?');
         bindings.push(validated.cursor);
       }
 
-      if (conditions.length > 0) {
-        query += ' WHERE ' + conditions.join(' AND ');
-      }
-
-      query += workspaceId ? ' ORDER BY e.created_at DESC LIMIT ?' : ' ORDER BY created_at DESC LIMIT ?';
+      query += ' WHERE ' + conditions.join(' AND ');
+      query += ' ORDER BY e.created_at DESC LIMIT ?';
       bindings.push(validated.limit! + 1); // Fetch one extra to check has_more
 
       const results = await this.db.prepare(query).bind(...bindings).all();
@@ -288,7 +286,7 @@ export class EvalsAPI {
       return new Response(
         JSON.stringify({
           evals: evalSummaries,
-          next_cursor: hasMore ? evals[evals.length - 1].id : null,
+          next_cursor: hasMore ? (evals[evals.length - 1].created_at as string) : null,
           has_more: hasMore
         }),
         {

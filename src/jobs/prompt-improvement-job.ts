@@ -249,8 +249,8 @@ export class PromptImprovementJob {
         `SELECT
           f.trace_id,
           f.rating as human_rating,
-          ee.predicted_result,
-          ee.predicted_reason,
+          ee.result as predicted_result,
+          ee.reason as predicted_reason,
           t.trace_data
          FROM feedback f
          JOIN eval_executions ee ON f.trace_id = ee.trace_id
@@ -258,8 +258,8 @@ export class PromptImprovementJob {
          JOIN agent_versions av ON t.agent_version_id = av.id
          WHERE av.agent_id = ?
            AND (
-             (f.rating = 'positive' AND ee.predicted_result = 0)
-             OR (f.rating = 'negative' AND ee.predicted_result = 1)
+             (f.rating = 'positive' AND ee.result = 0)
+             OR (f.rating = 'negative' AND ee.result = 1)
            )
          ORDER BY f.created_at DESC
          LIMIT ?`
