@@ -3,6 +3,10 @@ main = ".open-next/worker.js"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Fix for __name is not defined error with next-themes
+# See: https://opennext.js.org/cloudflare/howtos/keep_names
+keep_names = false
+
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
