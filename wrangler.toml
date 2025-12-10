@@ -33,9 +33,9 @@ database_name = "iofold-staging-db"
 database_id = "9eaff631-3152-432f-9d07-20de2ed8857f"
 
 [[env.staging.d1_databases]]
-binding = "ENRON_DB"
-database_name = "enron-emails"
-database_id = "TO_BE_CREATED"  # Create with: npx wrangler d1 create enron-emails
+binding = "BENCHMARKS_DB"
+database_name = "iofold-benchmarks"
+database_id = "e5357be6-fc4e-43ad-9b14-3a05189ed9f9"
 
 [[env.staging.queues.producers]]
 binding = "JOB_QUEUE"
@@ -98,8 +98,8 @@ database_name = "iofold-staging-db"
 database_id = "9eaff631-3152-432f-9d07-20de2ed8857f"
 
 [[d1_databases]]
-binding = "ENRON_DB"
-database_name = "enron-emails"
+binding = "BENCHMARKS_DB"
+database_name = "iofold-benchmarks"
 database_id = "local"  # Local D1 uses "local" as ID
 
 [[queues.producers]]

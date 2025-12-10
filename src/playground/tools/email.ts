@@ -9,7 +9,7 @@
  * Context interface for email tool handlers
  */
 export interface EmailToolContext {
-  ENRON_DB: D1Database;
+  BENCHMARKS_DB: D1Database;
 }
 
 /**
@@ -67,7 +67,7 @@ export interface EmailGetParams {
  * Returns matching emails with snippets for the given inbox.
  *
  * @param params - Search parameters (query, inbox_id, optional limit)
- * @param context - Email tool context with ENRON_DB binding
+ * @param context - Email tool context with BENCHMARKS_DB binding
  * @returns Promise with array of matching emails and total count
  *
  * @example
@@ -76,7 +76,7 @@ export interface EmailGetParams {
  *   query: 'meeting schedule',
  *   inbox_id: 'john.arnold@enron.com',
  *   limit: 10
- * }, { ENRON_DB: env.ENRON_DB });
+ * }, { BENCHMARKS_DB: env.BENCHMARKS_DB });
  * ```
  */
 export async function emailSearchHandler(
@@ -102,8 +102,8 @@ export async function emailSearchHandler(
     throw new Error('Invalid limit: must be a number between 1 and 100');
   }
 
-  if (!context.ENRON_DB) {
-    throw new Error('ENRON_DB binding not configured');
+  if (!context.BENCHMARKS_DB) {
+    throw new Error('BENCHMARKS_DB binding not configured');
   }
 
   try {
@@ -125,7 +125,7 @@ export async function emailSearchHandler(
       LIMIT ?
     `;
 
-    const results = await context.ENRON_DB.prepare(searchQuery)
+    const results = await context.BENCHMARKS_DB.prepare(searchQuery)
       .bind(query, inbox_id, limit)
       .all<{
         message_id: string;
@@ -165,14 +165,14 @@ export async function emailSearchHandler(
  * Retrieves the complete email content including body and all metadata.
  *
  * @param params - Get parameters (message_id)
- * @param context - Email tool context with ENRON_DB binding
+ * @param context - Email tool context with BENCHMARKS_DB binding
  * @returns Promise with full email object
  *
  * @example
  * ```typescript
  * const email = await emailGetHandler({
  *   message_id: '<1234567890@enron.com>'
- * }, { ENRON_DB: env.ENRON_DB });
+ * }, { BENCHMARKS_DB: env.BENCHMARKS_DB });
  * ```
  */
 export async function emailGetHandler(
@@ -190,8 +190,8 @@ export async function emailGetHandler(
     throw new Error('Invalid message_id: must be a non-empty string');
   }
 
-  if (!context.ENRON_DB) {
-    throw new Error('ENRON_DB binding not configured');
+  if (!context.BENCHMARKS_DB) {
+    throw new Error('BENCHMARKS_DB binding not configured');
   }
 
   try {
@@ -209,7 +209,7 @@ export async function emailGetHandler(
       LIMIT 1
     `;
 
-    const result = await context.ENRON_DB.prepare(query)
+    const result = await context.BENCHMARKS_DB.prepare(query)
       .bind(message_id)
       .first<{
         message_id: string;

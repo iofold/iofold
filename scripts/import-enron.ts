@@ -2,7 +2,7 @@
 /**
  * Enron Email Dataset Import Script
  *
- * Downloads and imports the Enron email dataset into the ENRON_DB D1 database.
+ * Downloads and imports the Enron email dataset into the BENCHMARKS_DB D1 database.
  * Uses the preprocessed Enron dataset from Kaggle/HuggingFace.
  *
  * Dataset source: https://www.cs.cmu.edu/~enron/ (original)
@@ -12,7 +12,7 @@
  *   npx tsx scripts/import-enron.ts [options]
  *
  * Options:
- *   --database-id, -d    D1 Database ID for enron-emails (required)
+ *   --database-id, -d    D1 Database ID for iofold-benchmarks (required)
  *   --limit, -l          Limit number of emails to import (default: unlimited)
  *   --batch-size, -b     Batch size for inserts (default: 100)
  *   --local              Use local D1 database (default: false)
@@ -104,7 +104,7 @@ Usage:
   npx tsx scripts/import-enron.ts [options]
 
 Options:
-  --database-id, -d    D1 Database ID for enron-emails (required for remote)
+  --database-id, -d    D1 Database ID for iofold-benchmarks (required for remote)
   --limit, -l          Limit number of emails to import (default: unlimited)
   --batch-size, -b     Batch size for inserts (default: 100)
   --local              Use local D1 database (default: false)
@@ -285,7 +285,7 @@ async function executeWranglerD1(
       'wrangler',
       'd1',
       'execute',
-      config.local ? 'enron-emails' : config.databaseId!,
+      config.local ? 'iofold-benchmarks' : config.databaseId!,
       '--file',
       tempSqlFile
     ];
@@ -448,13 +448,13 @@ async function main(): Promise<void> {
     console.log('Next steps:');
     console.log('  1. Verify import:');
     if (config.local) {
-      console.log('     npx wrangler d1 execute enron-emails --local --command "SELECT COUNT(*) FROM emails"');
+      console.log('     npx wrangler d1 execute iofold-benchmarks --local --command "SELECT COUNT(*) FROM emails"');
     } else {
       console.log(`     npx wrangler d1 execute ${config.databaseId} --command "SELECT COUNT(*) FROM emails"`);
     }
     console.log('\n  2. Test search:');
     if (config.local) {
-      console.log('     npx wrangler d1 execute enron-emails --local --command "SELECT * FROM emails_fts WHERE emails_fts MATCH \'meeting\' LIMIT 5"');
+      console.log('     npx wrangler d1 execute iofold-benchmarks --local --command "SELECT * FROM emails_fts WHERE emails_fts MATCH \'meeting\' LIMIT 5"');
     } else {
       console.log(`     npx wrangler d1 execute ${config.databaseId} --command "SELECT * FROM emails_fts WHERE emails_fts MATCH 'meeting' LIMIT 5"`);
     }

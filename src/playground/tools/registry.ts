@@ -25,7 +25,7 @@ export interface ToolContext {
   sessionId: string;
   sandbox?: DurableObjectNamespace<Sandbox>;
   env?: Record<string, string>;
-  ENRON_DB?: D1Database; // Enron email database for email search tools
+  BENCHMARKS_DB?: D1Database; // Benchmarks database (Enron emails, ART-E, etc.)
 }
 
 /**
@@ -172,12 +172,12 @@ async function listFilesHandler(params: unknown, context: ToolContext): Promise<
  * Wrapper around the email.ts implementation
  */
 async function emailSearchHandler(params: unknown, context: ToolContext): Promise<string> {
-  if (!context.ENRON_DB) {
-    return 'Error: ENRON_DB binding not configured';
+  if (!context.BENCHMARKS_DB) {
+    return 'Error: BENCHMARKS_DB binding not configured';
   }
 
   try {
-    const result = await emailSearchHandlerImpl(params, { ENRON_DB: context.ENRON_DB });
+    const result = await emailSearchHandlerImpl(params, { BENCHMARKS_DB: context.BENCHMARKS_DB });
     return JSON.stringify(result, null, 2);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -190,12 +190,12 @@ async function emailSearchHandler(params: unknown, context: ToolContext): Promis
  * Wrapper around the email.ts implementation
  */
 async function emailGetHandler(params: unknown, context: ToolContext): Promise<string> {
-  if (!context.ENRON_DB) {
-    return 'Error: ENRON_DB binding not configured';
+  if (!context.BENCHMARKS_DB) {
+    return 'Error: BENCHMARKS_DB binding not configured';
   }
 
   try {
-    const result = await emailGetHandlerImpl(params, { ENRON_DB: context.ENRON_DB });
+    const result = await emailGetHandlerImpl(params, { BENCHMARKS_DB: context.BENCHMARKS_DB });
     return JSON.stringify(result, null, 2);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
