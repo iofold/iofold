@@ -214,7 +214,7 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
             Optimize Prompt with GEPA
           </DialogTitle>
           <DialogDescription>
-            GEPA will automatically improve your agent's prompt by testing variations and selecting the best performer.
+            GEPA will automatically improve your agent&apos;s prompt by testing variations and selecting the best performer.
           </DialogDescription>
         </DialogHeader>
 
