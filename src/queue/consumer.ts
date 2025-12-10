@@ -30,6 +30,16 @@ import { classifyError, isRetryable, getErrorCategoryDescription, type ErrorCate
 import { calculateBackoffDelay, shouldRetry as shouldRetryBackoff, DEFAULT_RETRY_CONFIG } from '../retry/backoff';
 
 /**
+ * Custom error class for rollout task timeouts
+ */
+class RolloutTimeoutError extends Error {
+  constructor() {
+    super('Task timeout');
+    this.name = 'RolloutTimeoutError';
+  }
+}
+
+/**
  * Cloudflare Queue message batch type
  */
 export interface MessageBatch<T> {
@@ -451,20 +461,9 @@ export class QueueConsumer {
 
     // Import createPlaygroundDeepAgent dynamically to avoid circular dependencies
     const { createPlaygroundDeepAgent } = await import('../playground/agent-deepagents');
-    const { D1TraceCollector } = await import('../playground/tracing/d1-collector');
 
     try {
-      // 1. Create trace collector for this session
-      const collector = new D1TraceCollector(this.db);
-      const traceId = `trace_${crypto.randomUUID()}`;
-      collector.startTrace(traceId, {
-        sessionId,
-        workspaceId,
-        integrationId: 'rollout',
-        agentId: payload.agent_id,
-      } as any);
-
-      // 2. Create agent with candidate system prompt
+      // 1. Create agent with candidate system prompt
       const agent = await createPlaygroundDeepAgent({
         db: this.db,
         sandbox: this.sandboxBinding,
@@ -482,28 +481,40 @@ export class QueueConsumer {
         agentId: payload.agent_id,
       });
 
-      // 3. Execute agent with timeout
+      // 2. Execute agent with timeout
       const messages = [{ role: 'user' as const, content: payload.user_message }];
 
       const result = await Promise.race([
         agent.invoke(messages),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Task timeout')), timeoutMs)
+          setTimeout(() => reject(new RolloutTimeoutError()), timeoutMs)
         ),
       ]);
 
-      // 4. End trace and flush to database
-      await collector.endTrace(traceId, result);
+      const executionTimeMs = Date.now() - startTime;
 
-      // 5. Get trace from database
-      const traceRow = await this.db
-        .prepare('SELECT steps FROM traces WHERE id = ?')
-        .bind(traceId)
-        .first<{ steps: string }>();
+      // 3. Build simple trace with input/output for eval function
+      const traceId = `rollout_${payload.batch_id}_${payload.task_id}`;
 
-      const trace = traceRow ? JSON.parse(traceRow.steps) : [];
+      const simpleTrace = [{
+        step_id: 'step_0',
+        trace_id: traceId,
+        timestamp: new Date().toISOString(),
+        input: { user_message: payload.user_message },
+        output: { response: result },
+        messages_added: [
+          { role: 'user' as const, content: payload.user_message },
+          { role: 'assistant' as const, content: result }
+        ],
+        tool_calls: [],
+        metadata: {
+          system_prompt: payload.system_prompt,
+          model_id: payload.config?.model_id || 'claude-sonnet-4-5',
+          execution_time_ms: executionTimeMs
+        }
+      }];
 
-      // 6. Store successful result in rollout_results
+      // 4. Store successful result in rollout_results
       const resultId = this.generateResultId('rr');
       await this.db
         .prepare(
@@ -515,15 +526,17 @@ export class QueueConsumer {
           payload.batch_id,
           payload.task_id,
           'completed',
-          JSON.stringify(trace),
-          Date.now() - startTime
+          JSON.stringify(simpleTrace),
+          executionTimeMs
         )
         .run();
 
-      console.log(`[RolloutTask] Completed task ${payload.task_id} in ${Date.now() - startTime}ms`);
+      console.log(`[RolloutTask] Completed task ${payload.task_id} in ${executionTimeMs}ms`);
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
-      const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('Timeout');
+      const isTimeout = error?.name === 'RolloutTimeoutError' ||
+                        errorMessage.includes('timeout') ||
+                        errorMessage.includes('Timeout');
       const status = isTimeout ? 'timeout' : 'failed';
 
       console.error(`[RolloutTask] Task ${payload.task_id} ${status}:`, errorMessage);
