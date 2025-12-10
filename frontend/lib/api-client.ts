@@ -539,6 +539,48 @@ class APIClient {
   }> {
     return this.request('/api/playground/sessions')
   }
+
+  // ============================================================================
+  // GEPA Optimization
+  // ============================================================================
+
+  async startGEPAOptimization(
+    agentId: string,
+    data: {
+      eval_id: string
+      test_case_ids?: string[]
+      max_metric_calls?: number
+      parallelism?: number
+    }
+  ): Promise<{ run_id: string; status: string }> {
+    return this.request(`/api/agents/${agentId}/gepa/start`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getGEPARunStatus(
+    agentId: string,
+    runId: string
+  ): Promise<{
+    id: string
+    status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+    progress_metric_calls: number
+    max_metric_calls: number
+    best_prompt?: string
+    best_score?: number
+    total_candidates?: number
+    error?: string
+    created_at: string
+    completed_at?: string
+  }> {
+    return this.request(`/api/agents/${agentId}/gepa/runs/${runId}`)
+  }
+
+  streamGEPARun(agentId: string, runId: string): EventSource {
+    const url = `${this.baseURL}/api/agents/${agentId}/gepa/runs/${runId}/stream`
+    return new EventSource(url)
+  }
 }
 
 export class APIError extends Error {

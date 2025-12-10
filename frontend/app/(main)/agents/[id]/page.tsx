@@ -7,10 +7,11 @@ import { apiClient } from '@/lib/api-client'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ErrorState } from '@/components/ui/error-state'
-import { ArrowLeft, Plus, ChevronDown, ChevronUp, CheckCircle, XCircle, Play, Sparkles } from 'lucide-react'
+import { ArrowLeft, Plus, ChevronDown, ChevronUp, CheckCircle, XCircle, Play, Sparkles, Zap } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime, formatPercentage } from '@/lib/utils'
 import { CreateAgentVersionModal } from '@/components/modals/create-agent-version-modal'
+import { GEPAOptimizationModal } from '@/components/modals/gepa-optimization-modal'
 import { toast } from 'sonner'
 import type { AgentVersionStatus, AgentVersionSource } from '@/types/agent'
 
@@ -46,6 +47,7 @@ export default function AgentDetailPage() {
   const params = useParams()
   const agentId = params.id as string
   const [createVersionModalOpen, setCreateVersionModalOpen] = useState(false)
+  const [gepaOptimizationModalOpen, setGepaOptimizationModalOpen] = useState(false)
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -159,6 +161,10 @@ export default function AgentDetailPage() {
                 Generate Eval
               </Button>
             </Link>
+            <Button variant="outline" onClick={() => setGepaOptimizationModalOpen(true)}>
+              <Zap className="w-4 h-4 mr-2" />
+              Optimize Prompt
+            </Button>
             <Button onClick={() => setCreateVersionModalOpen(true)}>
               <Plus className="w-4 h-4 mr-2" />
               New Version
@@ -314,6 +320,12 @@ export default function AgentDetailPage() {
       <CreateAgentVersionModal
         open={createVersionModalOpen}
         onOpenChange={setCreateVersionModalOpen}
+        agentId={agentId}
+      />
+
+      <GEPAOptimizationModal
+        open={gepaOptimizationModalOpen}
+        onOpenChange={setGepaOptimizationModalOpen}
         agentId={agentId}
       />
     </div>
