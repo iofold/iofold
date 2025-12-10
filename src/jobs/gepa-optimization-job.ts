@@ -141,10 +141,11 @@ export class GEPAOptimizationJob {
         .prepare(
           `UPDATE gepa_runs
            SET status = 'failed',
+               error = ?,
                completed_at = ?
            WHERE id = ?`
         )
-        .bind(new Date().toISOString(), this.config.runId)
+        .bind(error.message, new Date().toISOString(), this.config.runId)
         .run();
 
       await this.jobManager.failJob(this.config.jobId, error.message);

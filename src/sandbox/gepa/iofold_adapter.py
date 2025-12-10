@@ -134,7 +134,7 @@ class IofoldGEPAAdapter:
             EvaluationBatch containing outputs, scores, and optional trajectories
 
         Raises:
-            httpx.HTTPError: If API requests fail
+            RuntimeError: If API requests fail (HTTP errors, timeouts, network errors)
         """
         # 1. Request rollouts from platform
         tasks_payload = [
@@ -146,20 +146,28 @@ class IofoldGEPAAdapter:
             for i, inst in enumerate(batch)
         ]
 
-        response = self.client.post(
-            "/api/internal/rollouts/batch",
-            json={
-                "agent_id": self.agent_id,
-                "system_prompt": candidate.get("system_prompt", ""),
-                "tasks": tasks_payload,
-                "config": {
-                    "parallelism": self.parallelism,
-                    "timeout_per_task_ms": self.timeout_per_task_ms,
+        try:
+            response = self.client.post(
+                "/api/internal/rollouts/batch",
+                json={
+                    "agent_id": self.agent_id,
+                    "system_prompt": candidate.get("system_prompt", ""),
+                    "tasks": tasks_payload,
+                    "config": {
+                        "parallelism": self.parallelism,
+                        "timeout_per_task_ms": self.timeout_per_task_ms,
+                    },
                 },
-            },
-        )
-        response.raise_for_status()
-        batch_id = response.json()["batch_id"]
+            )
+            response.raise_for_status()
+            batch_id = response.json()["batch_id"]
+        except httpx.HTTPStatusError as e:
+            # Handle HTTP errors (4xx, 5xx)
+            raise RuntimeError(f"API request failed: {e.response.status_code} - {e.response.text}")
+        except httpx.TimeoutException:
+            raise RuntimeError("API request timed out")
+        except httpx.RequestError as e:
+            raise RuntimeError(f"Network error: {str(e)}")
 
         # 2. Poll for completion
         results = self._poll_for_completion(batch_id)
@@ -225,29 +233,45 @@ class IofoldGEPAAdapter:
             List of result dictionaries for each task
 
         Raises:
-            httpx.HTTPError: If API requests fail
+            RuntimeError: If API requests fail
         """
         start_time = time.time()
 
         while time.time() - start_time < self.poll_timeout_seconds:
+            try:
+                response = self.client.get(f"/api/internal/rollouts/batch/{batch_id}")
+                response.raise_for_status()
+                data = response.json()
+
+                status = data.get("status")
+                if status in ("completed", "partial", "failed"):
+                    return data.get("results", [])
+
+                time.sleep(self.poll_interval_seconds)
+            except httpx.HTTPStatusError as e:
+                # Handle HTTP errors (4xx, 5xx)
+                raise RuntimeError(f"API request failed: {e.response.status_code} - {e.response.text}")
+            except httpx.TimeoutException:
+                raise RuntimeError("API request timed out")
+            except httpx.RequestError as e:
+                raise RuntimeError(f"Network error: {str(e)}")
+
+        # Timeout - fetch whatever results we have
+        try:
             response = self.client.get(f"/api/internal/rollouts/batch/{batch_id}")
             response.raise_for_status()
             data = response.json()
 
-            status = data.get("status")
-            if status in ("completed", "partial", "failed"):
-                return data.get("results", [])
-
-            time.sleep(self.poll_interval_seconds)
-
-        # Timeout - fetch whatever results we have
-        response = self.client.get(f"/api/internal/rollouts/batch/{batch_id}")
-        response.raise_for_status()
-        data = response.json()
-
-        # Return whatever results are available
-        # Tasks that didn't complete will be handled by evaluate() method
-        return data.get("results", [])
+            # Return whatever results are available
+            # Tasks that didn't complete will be handled by evaluate() method
+            return data.get("results", [])
+        except httpx.HTTPStatusError as e:
+            # Handle HTTP errors (4xx, 5xx)
+            raise RuntimeError(f"API request failed: {e.response.status_code} - {e.response.text}")
+        except httpx.TimeoutException:
+            raise RuntimeError("API request timed out")
+        except httpx.RequestError as e:
+            raise RuntimeError(f"Network error: {str(e)}")
 
     def _run_eval(self, inst: DataInst, trace: List[Dict]) -> Tuple[float, str]:
         """
