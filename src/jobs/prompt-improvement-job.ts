@@ -274,7 +274,7 @@ export class PromptImprovementJob {
     const prompt = this.buildFailureAnalysisPrompt(contradictions);
 
     const response = await this.anthropicClient.messages.create({
-      model: 'claude-sonnet-4.5',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 2048,
       messages: [{
         role: 'user',
@@ -365,7 +365,7 @@ Focus on actionable insights that can improve the agent's prompt.`;
     );
 
     const response = await this.anthropicClient.messages.create({
-      model: 'claude-sonnet-4.5',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 4096,
       messages: [{
         role: 'user',

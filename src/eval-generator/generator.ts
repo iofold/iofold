@@ -30,7 +30,7 @@ export class EvalGenerator {
   private model: string;
 
   constructor(config: EvalGeneratorConfig) {
-    this.model = config.model || 'claude-3-haiku-20240307';
+    this.model = config.model || 'claude-sonnet-4-5-20250929';
     this.client = new Anthropic({
       apiKey: config.anthropicApiKey
     });
