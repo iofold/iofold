@@ -35,21 +35,21 @@ export function buildEvalGenerationPrompt(
 
   return `You are an expert at writing evaluation functions for AI agent execution traces.
 
-Your task is to generate a Python function that can distinguish between good and bad traces based on the examples provided below.
+Your task is to generate a Python function that scores traces on a continuous scale (0.0 to 1.0) based on the examples provided below.
 
-## GOOD TRACES (should return True):
+## HIGH-QUALITY TRACES (should score close to 1.0):
 ${positiveJson}
 
-## BAD TRACES (should return False):
+## LOW-QUALITY TRACES (should score close to 0.0):
 ${negativeJson}
 
 ## Requirements:
 
 1. **Function signature:**
    \`\`\`python
-   def eval_${name}(trace: dict) -> tuple[bool, str]:
+   def eval_${name}(trace: dict, ctx: EvalContext = None) -> tuple[float, str]:
        """
-       Evaluates a trace and returns (pass/fail, reason).
+       Evaluates a trace and returns (score, feedback).
 
        Args:
            trace: Dictionary containing trace data with keys:
@@ -59,33 +59,69 @@ ${negativeJson}
                    - output: any
                    - tool_calls: list
                    - error: str or None
+           ctx: Optional EvalContext for LLM-as-judge evaluation
 
        Returns:
-           tuple: (True, reason) if trace passes, (False, reason) if it fails
+           tuple[float, str]: (score from 0.0 to 1.0, feedback explaining the score)
+               - 1.0 = excellent quality, matches high-quality examples
+               - 0.0 = poor quality, matches low-quality examples
+               - Values in between reflect partial quality
        """
        # Your implementation here
    \`\`\`
 
-2. **Allowed imports ONLY:** json, re, typing
+2. **EvalContext API (ctx parameter - optional, for LLM-as-judge):**
+   When ctx is provided, you can use these methods for semantic evaluation:
+
+   \`\`\`python
+   if ctx:
+       # Call an LLM for semantic evaluation
+       response = ctx.call_llm(
+           prompt="Evaluate the quality of this response: ...",
+           model="claude-haiku-4-5-20250929",  # Optional: cheaper/faster model
+           temperature=0.0,  # Optional: default 0.0 for determinism
+           max_tokens=500,   # Optional: default 500
+           cache_key="my_key"  # Optional: cache results for same key
+       )
+
+       # Cost tracking
+       cost_so_far = ctx.get_cost_so_far()      # Total USD spent
+       remaining = ctx.get_remaining_budget()    # USD budget remaining
+
+       # Caching (persists within single eval execution)
+       ctx.set_cache("key", "value")
+       cached = ctx.get_cache("key")  # Returns str or None
+       exists = ctx.has_cache("key")  # Returns bool
+   \`\`\`
+
+3. **Evaluation strategy (prefer heuristics first):**
+   - **Prefer heuristics** for clear, deterministic checks (errors, lengths, patterns)
+   - **Use LLM-as-judge** only when semantic understanding is needed (tone, relevance, accuracy)
+   - **Combine both** for comprehensive scoring when appropriate
+   - **Cost-conscious**: Use \`claude-haiku-4-5-20250929\` for LLM checks when possible
+
+4. **Allowed imports ONLY:** json, re, typing, math, datetime, difflib
    - Do not import any other modules
    - No os, sys, subprocess, requests, etc.
 
-3. **Be specific about what makes traces good vs bad:**
-   - Identify concrete patterns from the examples
-   - Check specific fields (output quality, error presence, tool usage, etc.)
-   - Explain your reasoning in the return message
+5. **Scoring guidelines:**
+   - Identify multiple quality dimensions from the examples
+   - Weight each dimension appropriately
+   - Return a nuanced score, not just 0 or 1
+   - Example: if 3 of 4 quality checks pass, return ~0.75
 
-4. **Handle edge cases:**
+6. **Handle edge cases:**
    - Missing fields (use .get() with defaults)
    - Different data types
    - Empty lists/dicts
    - Unexpected structures
 
-5. **Add clear comments explaining your logic**
+7. **Add clear comments explaining your scoring logic**
 
-6. **Return format:**
-   - Return (True, "Clear reason why this passed") for good traces
-   - Return (False, "Clear reason why this failed") for bad traces
+8. **Return format:**
+   - Return (score, "Detailed feedback explaining the score")
+   - Feedback should mention which quality dimensions passed/failed
+   - Score must be a float between 0.0 and 1.0 inclusive
 
 ## Output:
 

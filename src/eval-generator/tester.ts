@@ -5,7 +5,7 @@ import type { Sandbox } from '@cloudflare/sandbox';
 
 export interface TestCase {
   trace: Trace;
-  expectedPass: boolean;
+  expectedScore: number; // 0.0 to 1.0 (1.0 = high quality, 0.0 = low quality)
 }
 
 export interface TestResult {
@@ -14,18 +14,22 @@ export interface TestResult {
   errors: number;
   total: number;
   accuracy: number;
+  meanAbsoluteError: number; // Average |predicted - expected| for scored cases
   details: TestCaseResult[];
 }
 
 export interface TestCaseResult {
   traceId: string;
-  expected: boolean;
-  predicted: boolean;
-  reason: string;
-  match: boolean;
+  expectedScore: number;
+  predictedScore: number;
+  feedback: string;
+  match: boolean; // True if prediction direction matches expectation
   error?: string;
   executionTimeMs: number;
 }
+
+// Threshold for converting scores to pass/fail
+const PASS_THRESHOLD = 0.5;
 
 export interface EvalTesterConfig {
   sandboxBinding?: DurableObjectNamespace<Sandbox>;
@@ -54,12 +58,21 @@ export class EvalTester {
     const errors = results.filter(r => r.error).length;
     const total = results.length;
 
+    // Calculate mean absolute error for non-error cases
+    const scoredResults = results.filter(r => !r.error);
+    const totalAbsError = scoredResults.reduce(
+      (sum, r) => sum + Math.abs(r.predictedScore - r.expectedScore),
+      0
+    );
+    const meanAbsoluteError = scoredResults.length > 0 ? totalAbsError / scoredResults.length : 0;
+
     return {
       correct,
       incorrect: total - correct - errors,
       errors,
       total,
       accuracy: total > 0 ? correct / total : 0,
+      meanAbsoluteError,
       details: results
     };
   }
@@ -98,63 +111,63 @@ ${evalCode}
 
 trace_data = json.loads("${traceJson}")
 result = ${functionName}(trace_data)
-result_dict = {"passed": result[0], "reason": result[1]}
+# Handle both float scores (new format) and boolean (legacy format)
+score = float(result[0]) if isinstance(result[0], (int, float)) else (1.0 if result[0] else 0.0)
+result_dict = {"score": score, "feedback": str(result[1])}
 print(json.dumps(result_dict))
 `;
 
     try {
-      // Debug: log execution code
-      // console.log('Execution code:', executionCode);
-
       const execution = await this.runner.execute(executionCode);
-
-      // Debug: log execution result
-      // console.log('Execution result:', JSON.stringify(execution, null, 2));
 
       if (!execution.success) {
         return {
           traceId: testCase.trace.id,
-          expected: testCase.expectedPass,
-          predicted: false,
-          reason: '',
+          expectedScore: testCase.expectedScore,
+          predictedScore: 0,
+          feedback: '',
           match: false,
           error: execution.error,
           executionTimeMs: execution.executionTimeMs
         };
       }
 
-      // Parse result from output
+      // Parse result from output - look for JSON with score and feedback
       const output = execution.output || '';
-      const resultMatch = output.match(/\{"passed":\s*(true|false),\s*"reason":\s*"([^"]*)"\}/);
+      const resultMatch = output.match(/\{"score":\s*([\d.]+),\s*"feedback":\s*"([^"]*)"\}/);
       if (!resultMatch) {
         return {
           traceId: testCase.trace.id,
-          expected: testCase.expectedPass,
-          predicted: false,
-          reason: '',
+          expectedScore: testCase.expectedScore,
+          predictedScore: 0,
+          feedback: '',
           match: false,
           error: `Could not parse eval result. Output: ${output}`,
           executionTimeMs: execution.executionTimeMs
         };
       }
 
-      const predicted = resultMatch[1] === 'true';
-      const reason = resultMatch[2];
+      const predictedScore = parseFloat(resultMatch[1]);
+      const feedback = resultMatch[2];
+
+      // Match if both are on same side of threshold
+      const expectedPass = testCase.expectedScore >= PASS_THRESHOLD;
+      const predictedPass = predictedScore >= PASS_THRESHOLD;
 
       return {
         traceId: testCase.trace.id,
-        expected: testCase.expectedPass,
-        predicted,
-        reason,
-        match: predicted === testCase.expectedPass,
+        expectedScore: testCase.expectedScore,
+        predictedScore,
+        feedback,
+        match: expectedPass === predictedPass,
         executionTimeMs: execution.executionTimeMs
       };
     } catch (error: any) {
       return {
         traceId: testCase.trace.id,
-        expected: testCase.expectedPass,
-        predicted: false,
-        reason: '',
+        expectedScore: testCase.expectedScore,
+        predictedScore: 0,
+        feedback: '',
         match: false,
         error: error.message,
         executionTimeMs: 0
