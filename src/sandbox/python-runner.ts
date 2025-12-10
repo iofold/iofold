@@ -30,7 +30,7 @@ export interface PythonRunnerConfig {
   devExecutorUrl?: string;
 }
 
-const ALLOWED_IMPORTS = ['json', 're', 'typing'];
+const ALLOWED_IMPORTS = ['json', 're', 'typing', 'httpx', 'openai'];
 const BLOCKED_IMPORTS = [
   'os', 'sys', 'subprocess', 'socket', 'urllib',
   'requests', 'http', 'ftplib', 'smtplib',
@@ -159,7 +159,7 @@ export class PythonRunner {
     // Check for blocked imports
     for (const blockedImport of BLOCKED_IMPORTS) {
       const importPattern = new RegExp(
-        `import\\s+${blockedImport}|from\\s+${blockedImport}`,
+        `import\\s+${blockedImport}\\b|from\\s+${blockedImport}\\b`,
         'i'
       );
       if (importPattern.test(code)) {

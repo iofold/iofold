@@ -74,4 +74,37 @@ print(result)
     expect(result.success).toBe(true);
     expect(result.output).toContain('True');
   });
+
+  it('should allow httpx and openai imports for GEPA', () => {
+    const runner = new PythonRunner({ sandboxBinding: mockSandboxBinding });
+
+    // Test httpx import validation
+    const httpxCode = 'import httpx\nprint("test")';
+    const httpxValidation = runner.validateCode(httpxCode);
+    expect(httpxValidation).toBeNull(); // null means validation passed
+
+    // Test openai import validation
+    const openaiCode = 'import openai\nprint("test")';
+    const openaiValidation = runner.validateCode(openaiCode);
+    expect(openaiValidation).toBeNull(); // null means validation passed
+
+    // Test both imports together
+    const bothCode = 'import httpx\nimport openai\nprint("test")';
+    const bothValidation = runner.validateCode(bothCode);
+    expect(bothValidation).toBeNull(); // null means validation passed
+  });
+
+  it('should still block http module (not httpx)', () => {
+    const runner = new PythonRunner({ sandboxBinding: mockSandboxBinding });
+
+    // http should be blocked
+    const httpCode = 'import http\nprint("test")';
+    const httpValidation = runner.validateCode(httpCode);
+    expect(httpValidation).toContain('Blocked import detected: http');
+
+    // But httpx should be allowed
+    const httpxCode = 'import httpx\nprint("test")';
+    const httpxValidation = runner.validateCode(httpxCode);
+    expect(httpxValidation).toBeNull();
+  });
 });
