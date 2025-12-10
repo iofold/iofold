@@ -141,7 +141,8 @@ describe('PromptImprovementJob', () => {
         },
         {
           db: mockDb,
-          anthropicApiKey: 'test-key'
+          cfAccountId: 'test-account-id',
+          cfGatewayId: 'test-gateway-id'
         }
       );
 
@@ -206,7 +207,8 @@ describe('PromptImprovementJob', () => {
         },
         {
           db: mockDb,
-          anthropicApiKey: 'test-key'
+          cfAccountId: 'test-account-id',
+          cfGatewayId: 'test-gateway-id'
         }
       );
 
@@ -259,7 +261,8 @@ describe('PromptImprovementJob', () => {
         },
         {
           db: mockDb,
-          anthropicApiKey: 'test-key'
+          cfAccountId: 'test-account-id',
+          cfGatewayId: 'test-gateway-id'
         }
       );
 
@@ -291,7 +294,8 @@ describe('PromptImprovementJob', () => {
         },
         {
           db: mockDb,
-          anthropicApiKey: 'test-key'
+          cfAccountId: 'test-account-id',
+          cfGatewayId: 'test-gateway-id'
         }
       );
 
@@ -331,7 +335,8 @@ describe('PromptImprovementJob', () => {
         },
         {
           db: mockDb,
-          anthropicApiKey: 'test-key'
+          cfAccountId: 'test-account-id',
+          cfGatewayId: 'test-gateway-id'
         }
       );
 
@@ -371,7 +376,8 @@ describe('PromptImprovementJob', () => {
         },
         {
           db: mockDb,
-          anthropicApiKey: 'test-key'
+          cfAccountId: 'test-account-id',
+          cfGatewayId: 'test-gateway-id'
         }
       );
 
@@ -452,7 +458,8 @@ describe('PromptImprovementJob', () => {
         },
         {
           db: mockDb,
-          anthropicApiKey: 'test-key'
+          cfAccountId: 'test-account-id',
+          cfGatewayId: 'test-gateway-id'
         }
       );
 
@@ -500,7 +507,8 @@ describe('PromptImprovementJob', () => {
         },
         {
           db: mockDb,
-          anthropicApiKey: 'test-key'
+          cfAccountId: 'test-account-id',
+          cfGatewayId: 'test-gateway-id'
         }
       );
 
@@ -545,7 +553,8 @@ describe('PromptImprovementJob', () => {
         },
         {
           db: mockDb,
-          anthropicApiKey: 'test-key'
+          cfAccountId: 'test-account-id',
+          cfGatewayId: 'test-gateway-id'
         }
       );
 

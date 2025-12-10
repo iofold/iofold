@@ -5,7 +5,7 @@ describe('CostTracker', () => {
   describe('calculateCost', () => {
     it('should calculate cost for Claude Sonnet 4.5 correctly', () => {
       const result = CostTracker.calculateCost({
-        model: 'claude-sonnet-4-5-20250929',
+        model: 'anthropic/claude-sonnet-4-5',
         promptTokens: 1000,
         completionTokens: 500
       });
@@ -17,12 +17,12 @@ describe('CostTracker', () => {
       expect(result.promptTokens).toBe(1000);
       expect(result.completionTokens).toBe(500);
       expect(result.estimatedCostUSD).toBeCloseTo(0.0105, 4);
-      expect(result.model).toBe('claude-sonnet-4-5-20250929');
+      expect(result.model).toBe('anthropic/claude-sonnet-4-5');
     });
 
     it('should calculate cost for Claude Opus 4.5 correctly', () => {
       const result = CostTracker.calculateCost({
-        model: 'claude-opus-4-5-20251101',
+        model: 'anthropic/claude-opus-4-5',
         promptTokens: 1000,
         completionTokens: 500
       });
@@ -35,7 +35,7 @@ describe('CostTracker', () => {
 
     it('should calculate cost for Claude Haiku 4.5 correctly', () => {
       const result = CostTracker.calculateCost({
-        model: 'claude-haiku-4-5-20250929',
+        model: 'anthropic/claude-haiku-4-5',
         promptTokens: 1000,
         completionTokens: 500
       });

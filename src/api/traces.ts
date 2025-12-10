@@ -90,7 +90,7 @@ export async function importTraces(request: Request, env: Env): Promise<Response
     if (useQueue) {
       // Create job via queue producer (handles both DB insert and queue message)
       const producer = new QueueProducer({
-        queue: env.JOB_QUEUE,
+        queue: env.JOB_QUEUE!,
         db: env.DB
       });
 

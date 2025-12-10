@@ -27,7 +27,9 @@ import type { DataInst } from '../types/datainst';
 
 export interface Env {
   DB: D1Database;
-  ANTHROPIC_API_KEY?: string;
+  CF_ACCOUNT_ID?: string;
+  CF_AI_GATEWAY_ID?: string;
+  CF_AI_GATEWAY_TOKEN?: string;
   SANDBOX?: any;
 }
 
@@ -334,12 +336,14 @@ export async function generateEvals(
     });
 
     // Generate candidates
-    if (!env.ANTHROPIC_API_KEY) {
-      return createErrorResponse('CONFIGURATION_ERROR', 'ANTHROPIC_API_KEY not configured', 500);
+    if (!env.CF_ACCOUNT_ID || !env.CF_AI_GATEWAY_ID) {
+      return createErrorResponse('CONFIGURATION_ERROR', 'AI Gateway not configured', 500);
     }
 
     const generator = new AutoEvalGenerator({
-      anthropicApiKey: env.ANTHROPIC_API_KEY
+      cfAccountId: env.CF_ACCOUNT_ID,
+      cfGatewayId: env.CF_AI_GATEWAY_ID,
+      cfGatewayToken: env.CF_AI_GATEWAY_TOKEN
     });
 
     const candidates = await generator.generate(labeledTraces, targetCount);
@@ -484,8 +488,8 @@ export async function testEvalCandidates(
     });
 
     // Test candidates
-    if (!env.ANTHROPIC_API_KEY) {
-      return createErrorResponse('CONFIGURATION_ERROR', 'ANTHROPIC_API_KEY not configured', 500);
+    if (!env.CF_ACCOUNT_ID || !env.CF_AI_GATEWAY_ID) {
+      return createErrorResponse('CONFIGURATION_ERROR', 'AI Gateway not configured', 500);
     }
 
     const { EvalRunner } = await import('../services/eval/eval-runner');
@@ -496,7 +500,9 @@ export async function testEvalCandidates(
       timeout: 30000
     });
     const evalRunner = new EvalRunner({
-      anthropicApiKey: env.ANTHROPIC_API_KEY,
+      cfAccountId: env.CF_ACCOUNT_ID || '',
+      cfGatewayId: env.CF_AI_GATEWAY_ID || '',
+      cfGatewayToken: env.CF_AI_GATEWAY_TOKEN,
       sandboxBinding: env.SANDBOX,
       maxBudgetUsd: 0.05,
       timeoutMs: 30000

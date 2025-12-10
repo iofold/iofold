@@ -15,7 +15,6 @@ import {
   parseJsonBody,
 } from './utils';
 import { createPlaygroundDeepAgent, type StreamEvent } from '../playground/agent-deepagents';
-import type { Env } from '../playground/llm/streaming';
 import { D1TraceCollector } from '../playground/tracing/d1-collector';
 
 export type ModelProvider = 'anthropic' | 'openai' | 'google';
@@ -50,10 +49,9 @@ export interface PlaygroundSession {
 interface PlaygroundEnv {
   DB: D1Database;
   SANDBOX?: unknown;
-  ANTHROPIC_API_KEY?: string;
-  OPENAI_API_KEY?: string;
-  GOOGLE_API_KEY?: string;
-  GEMINI_API_KEY?: string;
+  CF_ACCOUNT_ID?: string;
+  CF_AI_GATEWAY_ID?: string;
+  CF_AI_GATEWAY_TOKEN?: string;
 }
 
 /**
@@ -181,7 +179,7 @@ export async function playgroundChat(
           variables: JSON.parse(existingSession.variables as string),
           files: JSON.parse(existingSession.files as string),
           modelProvider: (existingSession.model_provider as ModelProvider) || 'anthropic',
-          modelId: (existingSession.model_id as string) || 'claude-sonnet-4-5-20250929',
+          modelId: (existingSession.model_id as string) || 'anthropic/claude-sonnet-4-5',
           createdAt: existingSession.created_at as string,
           updatedAt: existingSession.updated_at as string,
         };
@@ -193,7 +191,7 @@ export async function playgroundChat(
       const sessionId = `sess_${crypto.randomUUID()}`;
       const now = new Date().toISOString();
       const modelProvider = body.modelProvider || 'anthropic';
-      const modelId = body.modelId || 'claude-sonnet-4-5-20250929';
+      const modelId = body.modelId || 'anthropic/claude-sonnet-4-5';
       const activeVersionId = agent.active_version_id as string;
 
       await env.DB.prepare(
@@ -267,18 +265,18 @@ export async function playgroundChat(
     (async () => {
       try {
         // Create the DeepAgents playground agent
-        const playgroundAgent = createPlaygroundDeepAgent({
+        const playgroundAgent = await createPlaygroundDeepAgent({
           db: env.DB,
           sandbox: env.SANDBOX,
           sessionId: currentSession.id,
           systemPrompt,
           modelProvider: currentSession.modelProvider,
           modelId: currentSession.modelId,
+          agentId, // Pass agent ID to enable tool registry lookup
           env: {
-            ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
-            OPENAI_API_KEY: env.OPENAI_API_KEY,
-            GOOGLE_API_KEY: env.GOOGLE_API_KEY,
-            GEMINI_API_KEY: env.GEMINI_API_KEY,
+            CF_ACCOUNT_ID: env.CF_ACCOUNT_ID || '',
+            CF_AI_GATEWAY_ID: env.CF_AI_GATEWAY_ID || '',
+            CF_AI_GATEWAY_TOKEN: env.CF_AI_GATEWAY_TOKEN,
           },
         });
 

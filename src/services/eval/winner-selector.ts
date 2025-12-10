@@ -335,7 +335,7 @@ export class WinnerSelector {
     }
 
     if (costIssue) {
-      suggestions.push('- Consider using a cheaper model (claude-haiku-4-5-20250929)');
+      suggestions.push('- Consider using a cheaper model (anthropic/claude-haiku-4-5)');
       suggestions.push('- Reduce LLM calls in eval function (use more heuristics)');
     }
 

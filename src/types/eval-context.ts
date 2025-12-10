@@ -29,8 +29,8 @@ export interface LLMCallOptions {
   /** The prompt to send */
   prompt: string;
 
-  /** Model to use (default: claude-sonnet-4-5-20250929) */
-  model?: "claude-sonnet-4-5-20250929" | "claude-haiku-4-5-20250929";
+  /** Model to use (default: anthropic/claude-sonnet-4-5) */
+  model?: "anthropic/claude-sonnet-4-5" | "anthropic/claude-haiku-4-5";
 
   /** Temperature (default: 0.0 for determinism) */
   temperature?: number;

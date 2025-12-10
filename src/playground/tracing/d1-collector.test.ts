@@ -22,6 +22,7 @@ const createMockPreparedStatement = () => ({
   all: vi.fn().mockResolvedValue(createMockD1Result([])),
   first: vi.fn().mockResolvedValue(null),
   run: vi.fn().mockResolvedValue({ success: true, meta: {} }),
+  raw: vi.fn().mockResolvedValue([]),
 });
 
 describe('D1TraceCollector', () => {
@@ -182,14 +183,14 @@ describe('D1TraceCollector', () => {
       await collector.endTrace('trace_1');
 
       // Verify traces table insert
-      const tracesInsertCall = prepareStub.mock.calls.find((call) =>
+      const tracesInsertCall = prepareStub.mock.calls.find((call: any[]) =>
         call[0].includes('INSERT INTO traces')
-      );
+      ) as any[];
 
       expect(tracesInsertCall).toBeDefined();
-      expect(tracesInsertCall![0]).toContain('workspace_id');
-      expect(tracesInsertCall![0]).toContain('integration_id');
-      expect(tracesInsertCall![0]).toContain('source');
+      expect(tracesInsertCall[0]).toContain('workspace_id');
+      expect(tracesInsertCall[0]).toContain('integration_id');
+      expect(tracesInsertCall[0]).toContain('source');
     });
 
     it('should convert spans to LangGraphExecutionStep format', async () => {
@@ -201,6 +202,7 @@ describe('D1TraceCollector', () => {
         all: vi.fn().mockResolvedValue(createMockD1Result([])),
         first: vi.fn().mockResolvedValue(null),
         run: runMock,
+        raw: vi.fn().mockResolvedValue([]),
       })) as any;
 
       collector.startTrace('trace_1', traceMetadata);
@@ -281,6 +283,7 @@ describe('D1TraceCollector', () => {
         all: vi.fn().mockResolvedValue(createMockD1Result([])),
         first: vi.fn().mockResolvedValue(null),
         run: runMock,
+        raw: vi.fn().mockResolvedValue([]),
       })) as any;
 
       collector.startTrace('trace_1', traceMetadata);
@@ -319,6 +322,7 @@ describe('D1TraceCollector', () => {
         all: vi.fn().mockResolvedValue(createMockD1Result([])),
         first: vi.fn().mockResolvedValue(null),
         run: runMock,
+        raw: vi.fn().mockResolvedValue([]),
       })) as any;
 
       collector.startTrace('trace_1', traceMetadata);
@@ -410,9 +414,9 @@ describe('D1TraceCollector', () => {
       await collector.endTrace('trace_1');
 
       // Verify playground_steps table insert was attempted
-      const playgroundStepsInsert = prepareStub.mock.calls.find((call) =>
+      const playgroundStepsInsert = prepareStub.mock.calls.find((call: any[]) =>
         call[0].includes('INSERT INTO playground_steps')
-      );
+      ) as any[] | undefined;
 
       // This may or may not exist depending on whether the table is created
       // The implementation handles this gracefully with a catch block

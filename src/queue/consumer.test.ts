@@ -28,6 +28,8 @@ describe('QueueConsumer retry logic', () => {
     vi.clearAllMocks();
     consumer = new QueueConsumer({
       db: mockDb as any,
+      cfAccountId: 'test-account',
+      cfGatewayId: 'test-gateway',
       encryptionKey: 'test-key',
       deadLetterQueue: mockDlq as any
     });

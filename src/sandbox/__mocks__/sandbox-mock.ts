@@ -15,6 +15,23 @@ interface ExecResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  command: string;
+  duration: number;
+  timestamp: string;
+}
+
+interface WriteFileResult {
+  success: boolean;
+  path: string;
+  timestamp: string;
+}
+
+interface ReadFileResult {
+  success: boolean;
+  path: string;
+  content: string;
+  encoding: 'utf-8' | 'base64';
+  timestamp: string;
 }
 
 interface ExecOptions {
@@ -35,7 +52,7 @@ class MockSandbox implements Partial<Sandbox> {
     }
   }
 
-  async writeFile(path: string, content: string): Promise<void> {
+  async writeFile(path: string, content: string, options?: { encoding?: string; sessionId?: string }): Promise<WriteFileResult> {
     // Store file content in memory
     this.files.set(path, content);
 
@@ -44,14 +61,26 @@ class MockSandbox implements Partial<Sandbox> {
     const dir = join(localPath, '..');
     mkdirSync(dir, { recursive: true });
     writeFileSync(localPath, content, 'utf-8');
+
+    return {
+      success: true,
+      path,
+      timestamp: new Date().toISOString()
+    };
   }
 
-  async readFile(path: string): Promise<{ content: string; encoding: string }> {
+  async readFile(path: string, options?: { encoding?: string; sessionId?: string }): Promise<ReadFileResult> {
     const content = this.files.get(path);
     if (content === undefined) {
       throw new Error(`File not found: ${path}`);
     }
-    return { content, encoding: 'utf-8' };
+    return {
+      success: true,
+      path,
+      content,
+      encoding: 'utf-8',
+      timestamp: new Date().toISOString()
+    };
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
@@ -68,13 +97,17 @@ class MockSandbox implements Partial<Sandbox> {
           success: false,
           stdout: '',
           stderr: 'Invalid command format',
-          exitCode: 1
+          exitCode: 1,
+          command,
+          duration: 0,
+          timestamp: new Date().toISOString()
         });
         return;
       }
 
       const scriptPath = scriptMatch[1];
       const localPath = join(this.tempDir, scriptPath.replace(/^\//, ''));
+      const execStartTime = Date.now();
 
       // Execute Python with the local file
       const child = spawn('python3', [localPath]);
@@ -96,20 +129,27 @@ class MockSandbox implements Partial<Sandbox> {
 
       child.on('close', (code) => {
         clearTimeout(timeoutId);
+        const duration = Date.now() - execStartTime;
 
         if (timedOut) {
           resolve({
             success: false,
             stdout,
             stderr: stderr || `Execution timeout exceeded ${timeout}ms`,
-            exitCode: -1
+            exitCode: -1,
+            command,
+            duration,
+            timestamp: new Date().toISOString()
           });
         } else {
           resolve({
             success: code === 0,
             stdout,
             stderr,
-            exitCode: code || 0
+            exitCode: code || 0,
+            command,
+            duration,
+            timestamp: new Date().toISOString()
           });
         }
       });
@@ -120,7 +160,10 @@ class MockSandbox implements Partial<Sandbox> {
           success: false,
           stdout,
           stderr: error.message,
-          exitCode: 1
+          exitCode: 1,
+          command,
+          duration: Date.now() - execStartTime,
+          timestamp: new Date().toISOString()
         });
       });
     });

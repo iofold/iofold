@@ -77,9 +77,9 @@ function createMockServices(options: {
 
       return Promise.resolve({ count: matches.length, matches });
     }),
-    updateMetadata: vi.fn((id: string, values: number[], metadata: SystemPromptVector['metadata']) => {
-      storedMetadata.set(id, metadata);
-      return Promise.resolve();
+    updateMetadata: vi.fn((id: string, values: number[], metadata: Record<string, string>) => {
+      storedMetadata.set(id, metadata as SystemPromptVector['metadata']);
+      return Promise.resolve({ count: 1 });
     })
   };
 

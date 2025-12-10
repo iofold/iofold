@@ -32,7 +32,10 @@ describe('EvalContextImpl', () => {
   let ctx: EvalContext;
 
   beforeEach(() => {
-    ctx = new EvalContextImpl('test-api-key', {
+    ctx = new EvalContextImpl({
+      CF_ACCOUNT_ID: 'test-account',
+      CF_AI_GATEWAY_ID: 'test-gateway'
+    }, {
       max_budget_usd: 0.05,
       timeout_ms: 30000
     });
@@ -102,7 +105,7 @@ describe('EvalContextImpl', () => {
 
     it('should throw error when budget exceeded', async () => {
       // Create context with very small budget
-      const smallBudgetCtx = new EvalContextImpl('test-api-key', {
+      const smallBudgetCtx = new EvalContextImpl({ CF_ACCOUNT_ID: 'test-account', CF_AI_GATEWAY_ID: 'test-gateway' }, {
         max_budget_usd: 0.00001, // Very small budget
         timeout_ms: 30000
       });
@@ -188,12 +191,12 @@ describe('EvalContextImpl', () => {
 
   describe('configuration', () => {
     it('should use default config when not provided', () => {
-      const defaultCtx = new EvalContextImpl('test-api-key');
+      const defaultCtx = new EvalContextImpl({ CF_ACCOUNT_ID: 'test-account', CF_AI_GATEWAY_ID: 'test-gateway' });
       expect(defaultCtx.get_remaining_budget()).toBe(0.05); // Default budget
     });
 
     it('should allow custom config', () => {
-      const customCtx = new EvalContextImpl('test-api-key', {
+      const customCtx = new EvalContextImpl({ CF_ACCOUNT_ID: 'test-account', CF_AI_GATEWAY_ID: 'test-gateway' }, {
         max_budget_usd: 0.10,
         timeout_ms: 60000
       });
@@ -201,7 +204,7 @@ describe('EvalContextImpl', () => {
     });
 
     it('should support additional imports', () => {
-      const customCtx = new EvalContextImpl('test-api-key', {
+      const customCtx = new EvalContextImpl({ CF_ACCOUNT_ID: 'test-account', CF_AI_GATEWAY_ID: 'test-gateway' }, {
         max_budget_usd: 0.05,
         timeout_ms: 30000,
         additional_imports: ['numpy', 'pandas']
@@ -228,7 +231,7 @@ describe('SAFE_EVAL_IMPORTS', () => {
 
 describe('serializeEvalContextForPython', () => {
   it('should serialize context for Python integration', () => {
-    const ctx = new EvalContextImpl('test-api-key');
+    const ctx = new EvalContextImpl({ CF_ACCOUNT_ID: 'test-account', CF_AI_GATEWAY_ID: 'test-gateway' });
     const serialized = serializeEvalContextForPython(ctx);
 
     expect(serialized).toHaveProperty('methods');

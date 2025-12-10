@@ -78,14 +78,26 @@ export class PythonRunner {
       console.log('[PythonRunner] Initializing sandbox:', this.config.sandboxId);
 
       // Initialize sandbox with keepAlive: false for automatic cleanup
-      this.sandbox = getSandbox(this.config.sandboxBinding, this.config.sandboxId, {
+      // Cast to any to avoid type incompatibility between @cloudflare/workers-types and @cloudflare/sandbox
+      this.sandbox = getSandbox(this.config.sandboxBinding as any, this.config.sandboxId!, {
         keepAlive: false
       });
 
       // Write Python code to a temporary file
       const scriptPath = '/tmp/eval_script.py';
       console.log('[PythonRunner] Writing script to:', scriptPath);
-      await this.sandbox.writeFile(scriptPath, code);
+
+      // Try to write file - if containers are disabled, this will fail
+      try {
+        await this.sandbox.writeFile(scriptPath, code);
+      } catch (sandboxError: any) {
+        // Containers not enabled - fall back to HTTP service
+        if (sandboxError.message?.includes('Containers have not been enabled')) {
+          console.log('[PythonRunner] Containers disabled - falling back to dev executor service');
+          return this.executeViaHttpService(code, startTime);
+        }
+        throw sandboxError;
+      }
       console.log('[PythonRunner] Script written successfully');
 
       // Execute the Python script with timeout

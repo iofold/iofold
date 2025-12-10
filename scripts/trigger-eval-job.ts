@@ -89,7 +89,7 @@ async function triggerEvalGeneration(agentId: string, name: string): Promise<str
     body: JSON.stringify({
       name,
       description: `Test eval generated at ${new Date().toISOString()}`,
-      model: 'claude-sonnet-4-5-20250929',
+      model: 'anthropic/claude-sonnet-4-5',
     }),
   });
 

@@ -16,6 +16,7 @@ import type {
   AgentDiscoveryJobPayload,
   PromptImprovementJobPayload,
   PromptEvaluationJobPayload,
+  RolloutTaskPayload,
   RetryAttempt
 } from '../types/queue';
 import { JobManager } from '../jobs/job-manager';
@@ -70,7 +71,6 @@ export interface MessageErrorResult {
  */
 export interface QueueConsumerDeps {
   db: D1Database;
-  anthropicApiKey?: string;
   sandboxBinding?: DurableObjectNamespace<Sandbox>;
   encryptionKey: string;
   deadLetterQueue?: DeadLetterQueue;
@@ -78,6 +78,12 @@ export interface QueueConsumerDeps {
   ai?: Ai;
   /** Vectorize binding for vector storage */
   vectorize?: VectorizeIndex;
+  /** Cloudflare Account ID for AI Gateway (required for LLM calls) */
+  cfAccountId: string;
+  /** Cloudflare AI Gateway ID (required for LLM calls) */
+  cfGatewayId: string;
+  /** Optional AI Gateway authentication token */
+  cfGatewayToken?: string;
 }
 
 /**
@@ -85,22 +91,26 @@ export interface QueueConsumerDeps {
  */
 export class QueueConsumer {
   private db: D1Database;
-  private anthropicApiKey?: string;
   private sandboxBinding?: DurableObjectNamespace<Sandbox>;
   private encryptionKey: string;
   private deadLetterQueue?: DeadLetterQueue;
   private ai?: Ai;
   private vectorize?: VectorizeIndex;
+  private cfAccountId: string;
+  private cfGatewayId: string;
+  private cfGatewayToken?: string;
   private jobManager: JobManager;
 
   constructor(deps: QueueConsumerDeps) {
     this.db = deps.db;
-    this.anthropicApiKey = deps.anthropicApiKey;
     this.sandboxBinding = deps.sandboxBinding;
     this.encryptionKey = deps.encryptionKey;
     this.deadLetterQueue = deps.deadLetterQueue;
     this.ai = deps.ai;
     this.vectorize = deps.vectorize;
+    this.cfAccountId = deps.cfAccountId;
+    this.cfGatewayId = deps.cfGatewayId;
+    this.cfGatewayToken = deps.cfGatewayToken;
     this.jobManager = new JobManager(deps.db);
   }
 
@@ -193,6 +203,9 @@ export class QueueConsumer {
         case 'prompt_evaluation':
           await this.processPromptEvaluationJob(job_id, workspace_id, payload as PromptEvaluationJobPayload);
           break;
+        case 'rollout_task':
+          await this.processRolloutTask(job_id, workspace_id, payload as RolloutTaskPayload);
+          break;
         default:
           throw new Error(`Unknown job type: ${type}`);
       }
@@ -239,10 +252,6 @@ export class QueueConsumer {
     workspaceId: string,
     payload: GenerateJobPayload
   ): Promise<void> {
-    if (!this.anthropicApiKey) {
-      throw new Error('ANTHROPIC_API_KEY not configured');
-    }
-
     const genJob = new EvalGenerationJob(
       {
         jobId,
@@ -257,7 +266,9 @@ export class QueueConsumer {
       },
       {
         db: this.db,
-        anthropicApiKey: this.anthropicApiKey,
+        cfAccountId: this.cfAccountId,
+        cfGatewayId: this.cfGatewayId,
+        cfGatewayToken: this.cfGatewayToken,
         sandboxBinding: this.sandboxBinding
       }
     );
@@ -319,10 +330,6 @@ export class QueueConsumer {
     workspaceId: string,
     payload: AutoRefineJobPayload
   ): Promise<void> {
-    if (!this.anthropicApiKey) {
-      throw new Error('ANTHROPIC_API_KEY not configured');
-    }
-
     // TODO: Implement AutoRefineManager in Phase 3
     // For now, log and complete
     console.log(
@@ -351,9 +358,6 @@ export class QueueConsumer {
     workspaceId: string,
     payload: AgentDiscoveryJobPayload
   ): Promise<void> {
-    if (!this.anthropicApiKey) {
-      throw new Error('ANTHROPIC_API_KEY not configured');
-    }
     if (!this.ai) {
       throw new Error('Workers AI binding not configured');
     }
@@ -373,7 +377,9 @@ export class QueueConsumer {
         db: this.db,
         ai: this.ai,
         vectorize: this.vectorize,
-        anthropicApiKey: this.anthropicApiKey
+        cfAccountId: this.cfAccountId,
+        cfGatewayId: this.cfGatewayId,
+        cfGatewayToken: this.cfGatewayToken,
       }
     );
 
@@ -388,10 +394,6 @@ export class QueueConsumer {
     workspaceId: string,
     payload: PromptImprovementJobPayload
   ): Promise<void> {
-    if (!this.anthropicApiKey) {
-      throw new Error('ANTHROPIC_API_KEY not configured');
-    }
-
     const improvementJob = new PromptImprovementJob(
       {
         jobId,
@@ -401,7 +403,9 @@ export class QueueConsumer {
       },
       {
         db: this.db,
-        anthropicApiKey: this.anthropicApiKey
+        cfAccountId: this.cfAccountId,
+        cfGatewayId: this.cfGatewayId,
+        cfGatewayToken: this.cfGatewayToken,
       }
     );
 
@@ -430,6 +434,124 @@ export class QueueConsumer {
     );
 
     await evaluationJob.execute();
+  }
+
+  /**
+   * Process rollout task (GEPA integration)
+   * Executes agent with candidate system prompt and collects trace
+   */
+  private async processRolloutTask(
+    jobId: string,
+    workspaceId: string,
+    payload: RolloutTaskPayload
+  ): Promise<void> {
+    const startTime = Date.now();
+    const sessionId = `rollout-${payload.batch_id}-${payload.task_id}`;
+    const timeoutMs = payload.config?.timeout_per_task_ms || 30000;
+
+    // Import createPlaygroundDeepAgent dynamically to avoid circular dependencies
+    const { createPlaygroundDeepAgent } = await import('../playground/agent-deepagents');
+    const { D1TraceCollector } = await import('../playground/tracing/d1-collector');
+
+    try {
+      // 1. Create trace collector for this session
+      const collector = new D1TraceCollector(this.db);
+      const traceId = `trace_${crypto.randomUUID()}`;
+      collector.startTrace(traceId, {
+        sessionId,
+        workspaceId,
+        integrationId: 'rollout',
+        agentId: payload.agent_id,
+      } as any);
+
+      // 2. Create agent with candidate system prompt
+      const agent = await createPlaygroundDeepAgent({
+        db: this.db,
+        sandbox: this.sandboxBinding,
+        sessionId,
+        systemPrompt: payload.system_prompt,
+        modelProvider: 'anthropic',
+        modelId: payload.config?.model_id || 'claude-sonnet-4-5',
+        env: {
+          DB: this.db,
+          CF_ACCOUNT_ID: this.cfAccountId,
+          CF_AI_GATEWAY_ID: this.cfGatewayId,
+          CF_AI_GATEWAY_TOKEN: this.cfGatewayToken,
+          SANDBOX: this.sandboxBinding,
+        } as any,
+        agentId: payload.agent_id,
+      });
+
+      // 3. Execute agent with timeout
+      const messages = [{ role: 'user' as const, content: payload.user_message }];
+
+      const result = await Promise.race([
+        agent.invoke(messages),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Task timeout')), timeoutMs)
+        ),
+      ]);
+
+      // 4. End trace and flush to database
+      await collector.endTrace(traceId, result);
+
+      // 5. Get trace from database
+      const traceRow = await this.db
+        .prepare('SELECT steps FROM traces WHERE id = ?')
+        .bind(traceId)
+        .first<{ steps: string }>();
+
+      const trace = traceRow ? JSON.parse(traceRow.steps) : [];
+
+      // 6. Store successful result in rollout_results
+      const resultId = this.generateResultId('rr');
+      await this.db
+        .prepare(
+          `INSERT INTO rollout_results (id, batch_id, task_id, status, trace, execution_time_ms)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          resultId,
+          payload.batch_id,
+          payload.task_id,
+          'completed',
+          JSON.stringify(trace),
+          Date.now() - startTime
+        )
+        .run();
+
+      console.log(`[RolloutTask] Completed task ${payload.task_id} in ${Date.now() - startTime}ms`);
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('Timeout');
+      const status = isTimeout ? 'timeout' : 'failed';
+
+      console.error(`[RolloutTask] Task ${payload.task_id} ${status}:`, errorMessage);
+
+      // Store failure result
+      const resultId = this.generateResultId('rr');
+      await this.db
+        .prepare(
+          `INSERT INTO rollout_results (id, batch_id, task_id, status, error, execution_time_ms)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          resultId,
+          payload.batch_id,
+          payload.task_id,
+          status,
+          errorMessage,
+          Date.now() - startTime
+        )
+        .run();
+    }
+  }
+
+  /**
+   * Generate ID with prefix for rollout results
+   */
+  private generateResultId(prefix: string): string {
+    return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
   }
 
   /**

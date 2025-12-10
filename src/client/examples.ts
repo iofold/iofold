@@ -120,7 +120,7 @@ async function generateEval(agentId: string) {
     const genJob = await client.evals.generate(agentId, {
       name: 'response_quality_check',
       description: 'Automated response quality evaluation',
-      model: 'claude-sonnet-4-5-20250929',
+      model: 'anthropic/claude-sonnet-4-5',
       custom_instructions: 'Focus on technical accuracy and completeness',
     });
     console.log('   Generation job started:', genJob.job_id);

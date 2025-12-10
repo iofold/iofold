@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getModel, isValidModelOption, MODEL_OPTIONS, type ModelProvider } from './index';
+import { isValidModelOption, MODEL_OPTIONS, type ModelProvider } from './index';
 
 // Mock the LangChain providers
 vi.mock('@langchain/anthropic', () => ({
@@ -65,94 +65,20 @@ describe('Model Configuration', () => {
 
   describe('isValidModelOption', () => {
     it('should return true for valid model options', () => {
-      expect(isValidModelOption('anthropic', 'claude-sonnet-4-5-20250929')).toBe(true);
-      expect(isValidModelOption('openai', 'gpt-5.1-mini')).toBe(true);
-      expect(isValidModelOption('google', 'gemini-2.5-flash')).toBe(true);
+      expect(isValidModelOption('anthropic/claude-sonnet-4-5')).toBe(true);
+      expect(isValidModelOption('openai/gpt-5.1-mini')).toBe(true);
+      expect(isValidModelOption('google-vertex-ai/google/gemini-2.5-flash')).toBe(true);
     });
 
     it('should return false for invalid model options', () => {
-      expect(isValidModelOption('anthropic', 'gpt-4')).toBe(false);
-      expect(isValidModelOption('openai', 'claude-3')).toBe(false);
-      expect(isValidModelOption('google', 'gpt-4o')).toBe(false);
+      expect(isValidModelOption('anthropic/gpt-4')).toBe(false);
+      expect(isValidModelOption('openai/claude-3')).toBe(false);
+      expect(isValidModelOption('google/gpt-4o')).toBe(false);
     });
 
     it('should return false for unknown providers', () => {
-      expect(isValidModelOption('unknown' as ModelProvider, 'some-model')).toBe(false);
+      expect(isValidModelOption('unknown/some-model')).toBe(false);
     });
   });
 
-  describe('getModel', () => {
-    describe('Anthropic', () => {
-      it('should create ChatAnthropic model with valid API key', async () => {
-        const env = { ANTHROPIC_API_KEY: 'test-key-anthropic' };
-        const model = await getModel('anthropic', 'claude-sonnet-4-5-20250929', env);
-
-        expect(model).toBeDefined();
-        expect((model as any).config.apiKey).toBe('test-key-anthropic');
-        expect((model as any).config.model).toBe('claude-sonnet-4-5-20250929');
-      });
-
-      it('should throw error when API key is missing', async () => {
-        const env = {};
-        await expect(
-          getModel('anthropic', 'claude-sonnet-4-5-20250929', env)
-        ).rejects.toThrow('ANTHROPIC_API_KEY not configured');
-      });
-    });
-
-    describe('OpenAI', () => {
-      it('should create ChatOpenAI model with valid API key', async () => {
-        const env = { OPENAI_API_KEY: 'test-key-openai' };
-        const model = await getModel('openai', 'gpt-4o', env);
-
-        expect(model).toBeDefined();
-        expect((model as any).config.apiKey).toBe('test-key-openai');
-        expect((model as any).config.model).toBe('gpt-4o');
-      });
-
-      it('should throw error when API key is missing', async () => {
-        const env = {};
-        await expect(
-          getModel('openai', 'gpt-4o', env)
-        ).rejects.toThrow('OPENAI_API_KEY not configured');
-      });
-    });
-
-    describe('Google', () => {
-      it('should create ChatGoogleGenerativeAI model with valid API key', async () => {
-        const env = { GOOGLE_API_KEY: 'test-key-google' };
-        const model = await getModel('google', 'gemini-2.5-pro', env);
-
-        expect(model).toBeDefined();
-        expect((model as any).config.apiKey).toBe('test-key-google');
-        expect((model as any).config.model).toBe('gemini-2.5-pro');
-      });
-
-      it('should throw error when API key is missing', async () => {
-        const env = {};
-        await expect(
-          getModel('google', 'gemini-2.5-flash', env)
-        ).rejects.toThrow('GOOGLE_API_KEY or GEMINI_API_KEY not configured');
-      });
-    });
-
-    describe('Error handling', () => {
-      it('should throw error for unsupported provider', async () => {
-        const env = { ANTHROPIC_API_KEY: 'test-key' };
-        await expect(
-          getModel('unsupported' as ModelProvider, 'some-model', env)
-        ).rejects.toThrow('Unsupported model provider: unsupported');
-      });
-    });
-
-    describe('Custom model IDs', () => {
-      it('should support custom model IDs for any provider', async () => {
-        const env = { ANTHROPIC_API_KEY: 'test-key' };
-        const model = await getModel('anthropic', 'claude-opus-4-5-20251101', env);
-
-        expect(model).toBeDefined();
-        expect((model as any).config.model).toBe('claude-opus-4-5-20251101');
-      });
-    });
-  });
 });

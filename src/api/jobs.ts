@@ -16,28 +16,39 @@ const ListJobsSchema = z.object({
 
 export interface JobsAPIDeps {
   db: D1Database;
-  anthropicApiKey?: string;
   sandboxBinding?: DurableObjectNamespace<Sandbox>;
   encryptionKey?: string;
+  /** Cloudflare Account ID for AI Gateway */
+  cfAccountId: string;
+  /** Cloudflare AI Gateway ID */
+  cfGatewayId: string;
+  /** Optional AI Gateway authentication token */
+  cfGatewayToken?: string;
 }
 
 export class JobsAPI {
   private jobManager: JobManager;
   private db: D1Database;
-  private anthropicApiKey?: string;
   private sandboxBinding?: DurableObjectNamespace<Sandbox>;
   private encryptionKey: string;
+  private cfAccountId: string;
+  private cfGatewayId: string;
+  private cfGatewayToken?: string;
 
   constructor(deps: JobsAPIDeps | D1Database) {
     // Support legacy constructor signature
     if ('prepare' in deps) {
       this.db = deps;
       this.encryptionKey = 'default-dev-key';
+      this.cfAccountId = '';
+      this.cfGatewayId = '';
     } else {
       this.db = deps.db;
-      this.anthropicApiKey = deps.anthropicApiKey;
       this.sandboxBinding = deps.sandboxBinding;
       this.encryptionKey = deps.encryptionKey || 'default-dev-key';
+      this.cfAccountId = deps.cfAccountId;
+      this.cfGatewayId = deps.cfGatewayId;
+      this.cfGatewayToken = deps.cfGatewayToken;
     }
     this.jobManager = new JobManager(this.db);
   }
@@ -373,7 +384,9 @@ export class JobsAPI {
       // Create job worker and process jobs
       const worker = new JobWorker({
         db: this.db,
-        anthropicApiKey: this.anthropicApiKey,
+        cfAccountId: this.cfAccountId,
+        cfGatewayId: this.cfGatewayId,
+        cfGatewayToken: this.cfGatewayToken,
         sandboxBinding: this.sandboxBinding,
         encryptionKey: this.encryptionKey
       });

@@ -57,12 +57,18 @@ const PlaygroundRunSchema = z.object({
   trace_ids: z.array(z.string()).min(1).max(50)
 });
 
+export interface EvalsAPIGatewayConfig {
+  cfAccountId: string;
+  cfGatewayId: string;
+  cfGatewayToken?: string;
+}
+
 export class EvalsAPI {
   private jobManager: JobManager;
 
   constructor(
     private db: D1Database,
-    private anthropicApiKey: string,
+    private gatewayConfig: EvalsAPIGatewayConfig,
     private sandboxBinding?: DurableObjectNamespace<Sandbox>,
     private ctx?: ExecutionContext
   ) {
@@ -112,7 +118,7 @@ export class EvalsAPI {
 
       // Create job with all required metadata for job worker
       const job = await this.jobManager.createJob('generate', workspaceId, {
-        agent_id: agentId,  // snake_case for job worker compatibility
+        agentId: agentId,
         name: validated.name,
         description: validated.description,
         model: validated.model,
@@ -133,7 +139,9 @@ export class EvalsAPI {
         },
         {
           db: this.db,
-          anthropicApiKey: this.anthropicApiKey,
+          cfAccountId: this.gatewayConfig.cfAccountId,
+          cfGatewayId: this.gatewayConfig.cfGatewayId,
+          cfGatewayToken: this.gatewayConfig.cfGatewayToken,
           sandboxBinding: this.sandboxBinding
         }
       );

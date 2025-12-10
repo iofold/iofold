@@ -12,7 +12,7 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
 import { EmbeddingService } from '../services/embedding-service';
@@ -20,6 +20,7 @@ import { VectorService } from '../services/vector-service';
 import { ClusteringService, type TracePrompt } from '../services/clustering-service';
 import type { PromptCluster } from '../types/vectorize';
 import type { AgentDiscoveryJobResult } from '../types/agent';
+import { createGatewayClient, DEFAULT_MODEL } from '../ai/gateway';
 
 export interface AgentDiscoveryJobConfig {
   jobId: string;
@@ -33,7 +34,12 @@ export interface AgentDiscoveryJobDeps {
   db: D1Database;
   ai: Ai;
   vectorize: VectorizeIndex;
-  anthropicApiKey: string;
+  /** Cloudflare Account ID for AI Gateway */
+  cfAccountId: string;
+  /** Cloudflare AI Gateway ID */
+  cfGatewayId: string;
+  /** Optional AI Gateway authentication token */
+  cfGatewayToken?: string;
 }
 
 interface ExtractedTemplate {
@@ -47,7 +53,7 @@ export class AgentDiscoveryJob {
   private embeddingService: EmbeddingService;
   private vectorService: VectorService;
   private clusteringService: ClusteringService;
-  private anthropic: Anthropic;
+  private client: OpenAI;
   private stream?: SSEStream;
 
   constructor(
@@ -63,8 +69,10 @@ export class AgentDiscoveryJob {
       similarityThreshold: config.similarityThreshold ?? 0.85,
       minClusterSize: config.minClusterSize ?? 5
     });
-    this.anthropic = new Anthropic({
-      apiKey: deps.anthropicApiKey
+    this.client = createGatewayClient({
+      CF_ACCOUNT_ID: deps.cfAccountId,
+      CF_AI_GATEWAY_ID: deps.cfGatewayId,
+      CF_AI_GATEWAY_TOKEN: deps.cfGatewayToken,
     });
   }
 
@@ -344,8 +352,8 @@ Rules:
 - Agent name should describe the agent's purpose
 - Output ONLY valid JSON, no other text`;
 
-    const response = await this.anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+    const response = await this.client.chat.completions.create({
+      model: DEFAULT_MODEL,
       max_tokens: 2048,
       messages: [{
         role: 'user',
@@ -353,13 +361,13 @@ Rules:
       }]
     });
 
-    // Extract JSON from response
-    const textContent = response.content.find(block => block.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      throw new Error('No text content in Claude response');
+    // Extract JSON from response (OpenAI format)
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('No content in LLM response');
     }
 
-    let jsonText = textContent.text.trim();
+    let jsonText = content.trim();
 
     // Remove markdown code blocks if present
     const jsonMatch = jsonText.match(/```json\n([\s\S]*?)\n```/);

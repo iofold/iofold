@@ -19,7 +19,7 @@ describe('JobManager retry tracking', () => {
 
   it('should create job with retry configuration', async () => {
     const job = await jobManager.createJob('import', 'ws_test', {
-      integrationId: 'int_123',
+      evalId: 'eval_123',
       maxRetries: 3,
       priority: 10
     });
@@ -45,7 +45,7 @@ describe('JobManager retry tracking', () => {
 
   it('should create job with default retry configuration', async () => {
     const job = await jobManager.createJob('import', 'ws_test', {
-      integrationId: 'int_123'
+      evalId: 'eval_123'
     });
 
     expect(mockDb.bind).toHaveBeenCalledWith(

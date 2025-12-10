@@ -7,19 +7,19 @@ export interface CostMetrics {
 }
 
 export class CostTracker {
-  // Claude pricing (Dec 2025) - Only latest models supported
+  // Claude pricing (Dec 2025) - Using gateway model names (no date suffix)
   private static CLAUDE_PRICING = {
-    // Claude 4.5 series (current)
-    'claude-sonnet-4-5-20250929': {
+    // Claude 4.5 series (gateway format)
+    'anthropic/claude-sonnet-4-5': {
       input: 3.00 / 1_000_000,
       output: 15.00 / 1_000_000
     },
-    'claude-haiku-4-5-20250929': {
+    'anthropic/claude-haiku-4-5': {
       input: 1.00 / 1_000_000,
       output: 5.00 / 1_000_000
     },
     // Claude Opus 4.5
-    'claude-opus-4-5-20251101': {
+    'anthropic/claude-opus-4-5': {
       input: 15.00 / 1_000_000,
       output: 75.00 / 1_000_000
     }

@@ -352,7 +352,7 @@ class SSEConnection {
       console.log('[SSE] Connected to', this.url);
     };
 
-    this.eventSource.onerror = (error) => {
+    this.eventSource.onerror = (error: Event) => {
       console.error('[SSE] Connection error:', error);
       this.eventSource?.close();
       this.attemptReconnect();
@@ -360,10 +360,10 @@ class SSEConnection {
 
     // Register listeners
     this.listeners.forEach((callbacks, eventType) => {
-      this.eventSource!.addEventListener(eventType, (e: MessageEvent) => {
+      this.eventSource!.addEventListener(eventType, ((e: MessageEvent) => {
         const data = JSON.parse(e.data);
         callbacks.forEach(cb => cb(data));
-      });
+      }) as EventListener);
     });
   }
 
@@ -378,9 +378,9 @@ class SSEConnection {
 
     // If already connected, add listener to existing connection
     if (this.eventSource) {
-      this.eventSource.addEventListener(event, (e: MessageEvent) => {
+      this.eventSource.addEventListener(event, ((e: MessageEvent) => {
         callback(JSON.parse(e.data));
-      });
+      }) as EventListener);
     }
   }
 
@@ -1215,7 +1215,6 @@ class JobsAPI {
 // ============================================================================
 
 export {
-  IofoldClient,
   // Types
   type Trace,
   type TraceSummary,

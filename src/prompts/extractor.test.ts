@@ -539,8 +539,9 @@ describe('PromptExtractor', () => {
       const results = await extractor.extractBatch(traces);
 
       const firstResult = results.values().next().value;
-      expect(firstResult).toHaveProperty('hash');
-      expect(firstResult.hash).toHaveLength(64);
+      expect(firstResult).toBeDefined();
+      expect(firstResult!).toHaveProperty('hash');
+      expect(firstResult!.hash).toHaveLength(64);
     });
   });
 

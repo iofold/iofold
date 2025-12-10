@@ -87,7 +87,7 @@ export class LangfuseAdapter {
   private async fetchObservations(traceId: string): Promise<any[]> {
     try {
       // Langfuse API: GET /api/public/observations?traceId=xxx
-      const response = await this.client.api.observationList({
+      const response = await this.client.api.observationsGetMany({
         traceId,
         limit: 100 // Get all observations for this trace
       });

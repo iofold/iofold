@@ -23,11 +23,19 @@ routes = [
 [env.staging.vars]
 ENVIRONMENT = "staging"
 LANGFUSE_BASE_URL = "https://cloud.langfuse.com"
+# Cloudflare AI Gateway configuration
+# Create gateway at: https://dash.cloudflare.com/?to=/:account/ai/ai-gateway
+CF_AI_GATEWAY_ID = "iofold-ai-gw"
 
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "iofold-staging-db"
 database_id = "9eaff631-3152-432f-9d07-20de2ed8857f"
+
+[[env.staging.d1_databases]]
+binding = "ENRON_DB"
+database_name = "enron-emails"
+database_id = "TO_BE_CREATED"  # Create with: npx wrangler d1 create enron-emails
 
 [[env.staging.queues.producers]]
 binding = "JOB_QUEUE"
@@ -68,14 +76,31 @@ class_name = "PythonSandbox"
 # ============================================================================
 # Local Development (default)
 # ============================================================================
+
+# Disable containers in local dev (Docker not required)
+[dev]
+enable_containers = false
+ip = "0.0.0.0"
+port = 8787
+local_protocol = "http"
+
 [vars]
 ENVIRONMENT = "development"
 LANGFUSE_BASE_URL = "https://cloud.langfuse.com"
+# Cloudflare AI Gateway configuration (optional for local dev)
+# Set CF_ACCOUNT_ID in .dev.vars or environment
+# Create gateway at: https://dash.cloudflare.com/?to=/:account/ai/ai-gateway
+CF_AI_GATEWAY_ID = "iofold-ai-gw"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "iofold-staging-db"
 database_id = "9eaff631-3152-432f-9d07-20de2ed8857f"
+
+[[d1_databases]]
+binding = "ENRON_DB"
+database_name = "enron-emails"
+database_id = "local"  # Local D1 uses "local" as ID
 
 [[queues.producers]]
 binding = "JOB_QUEUE"

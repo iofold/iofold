@@ -43,7 +43,7 @@ def eval_test(trace):
         trace: {
           id: '1',
           trace_id: '1',
-          source: 'langfuse',
+          source: 'langfuse' as const,
           raw_data: {},
           steps: [{
             step_id: '1',
@@ -62,7 +62,7 @@ def eval_test(trace):
         trace: {
           id: '2',
           trace_id: '2',
-          source: 'langfuse',
+          source: 'langfuse' as const,
           raw_data: {},
           steps: [{
             step_id: '2',

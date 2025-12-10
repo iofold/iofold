@@ -10,7 +10,7 @@ export {
   hasApiKey,
   getAvailableProviders,
   DEFAULT_MODELS,
-  type ModelConfig,
+  type ChatModelConfig,
   type Env,
 } from './streaming';
 

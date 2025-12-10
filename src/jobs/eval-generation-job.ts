@@ -1,7 +1,7 @@
 import type { D1Database, DurableObjectNamespace } from '@cloudflare/workers-types';
 import type { Sandbox } from '@cloudflare/sandbox';
 import { EvalGenerator } from '../eval-generator/generator';
-import { EvalTester } from '../eval-generator/tester';
+import { EvalTester, type TestCaseResult } from '../eval-generator/tester';
 import type { Trace } from '../types/trace';
 import type { GenerateEvalJobResult } from '../types/api';
 import { JobManager } from './job-manager';
@@ -23,7 +23,12 @@ export interface EvalGenerationJobConfig {
 
 export interface EvalGenerationJobDeps {
   db: D1Database;
-  anthropicApiKey: string;
+  /** Cloudflare Account ID for AI Gateway */
+  cfAccountId: string;
+  /** Cloudflare AI Gateway ID */
+  cfGatewayId: string;
+  /** Optional AI Gateway authentication token */
+  cfGatewayToken?: string;
   sandboxBinding?: DurableObjectNamespace<Sandbox>;
 }
 
@@ -39,8 +44,10 @@ export class EvalGenerationJob {
   ) {
     this.jobManager = new JobManager(deps.db);
     this.generator = new EvalGenerator({
-      anthropicApiKey: deps.anthropicApiKey,
-      model: config.model || 'claude-sonnet-4-5-20250929'
+      cfAccountId: deps.cfAccountId,
+      cfGatewayId: deps.cfGatewayId,
+      cfGatewayToken: deps.cfGatewayToken,
+      model: config.model || 'anthropic/claude-sonnet-4-5'
     });
     this.tester = new EvalTester({
       sandboxBinding: deps.sandboxBinding
@@ -73,9 +80,10 @@ export class EvalGenerationJob {
       this.emitProgress('validating_code', 60);
 
       // Step 3: Test against training set
+      // expectedScore: 1.0 = high quality (positive), 0.0 = low quality (negative)
       const testCases = [
-        ...feedback.positive.map(trace => ({ trace, expectedPass: true })),
-        ...feedback.negative.map(trace => ({ trace, expectedPass: false }))
+        ...feedback.positive.map(trace => ({ trace, expectedScore: 1.0 })),
+        ...feedback.negative.map(trace => ({ trace, expectedScore: 0.0 }))
       ];
 
       this.emitProgress('testing_accuracy', 70, {
@@ -122,8 +130,9 @@ export class EvalGenerationJob {
         )
         .run();
 
-      // Step 5: Store test execution results
-      await this.storeTestExecutions(evalId, testResult.details);
+      // Step 5: Test execution results are stored in evals.test_results JSON
+      // Note: eval_executions table is for GEPA eval_candidates flow, not simple evals
+      // Results are already persisted via the INSERT INTO evals above
 
       const result: GenerateEvalJobResult = {
         eval_id: evalId,
@@ -135,10 +144,10 @@ export class EvalGenerationJob {
           total: testResult.total,
           details: testResult.details.map(d => ({
             trace_id: d.traceId,
-            expected: d.expected,
-            predicted: d.predicted,
+            expected: d.expectedScore,
+            predicted: d.predictedScore,
             match: d.match,
-            reason: d.reason,
+            reason: d.feedback,
             execution_time_ms: d.executionTimeMs,
             error: d.error
           }))
@@ -223,27 +232,24 @@ export class EvalGenerationJob {
 
   private async storeTestExecutions(
     evalId: string,
-    results: Array<{
-      traceId: string;
-      predicted: boolean;
-      reason: string;
-      executionTimeMs: number;
-      error?: string;
-    }>
+    results: TestCaseResult[]
   ): Promise<void> {
+    // Note: eval_executions table uses eval_candidate_id (legacy schema from GEPA phase)
+    // Maps: eval_id -> eval_candidate_id, predictedScore -> score, feedback -> feedback
     const statements = results.map(result =>
       this.deps.db
         .prepare(
           `INSERT OR REPLACE INTO eval_executions (
-            id, eval_id, trace_id, predicted_result, predicted_reason, execution_time_ms, executed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+            id, eval_candidate_id, trace_id, score, feedback, success, duration_ms, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           crypto.randomUUID(),
           evalId,
           result.traceId,
-          result.predicted ? 1 : 0,
-          result.reason,
+          result.predictedScore,
+          result.feedback,
+          result.error ? 0 : 1,
           result.executionTimeMs,
           new Date().toISOString()
         )

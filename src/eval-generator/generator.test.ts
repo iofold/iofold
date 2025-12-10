@@ -5,7 +5,9 @@ import type { Trace } from '../types/trace';
 describe('EvalGenerator', () => {
   it('should generate eval function from labeled traces', async () => {
     const generator = new EvalGenerator({
-      anthropicApiKey: process.env.ANTHROPIC_API_KEY!
+      cfAccountId: process.env.CF_ACCOUNT_ID!,
+      cfGatewayId: process.env.CF_AI_GATEWAY_ID!,
+      cfGatewayToken: process.env.CF_AI_GATEWAY_TOKEN
     });
 
     const positiveTraces: Trace[] = [
@@ -57,6 +59,6 @@ describe('EvalGenerator', () => {
     expect(result.metadata.tokensUsed).toBeGreaterThan(0);
     expect(result.metadata.cost).toBeDefined();
     expect(result.metadata.cost.estimatedCostUSD).toBeGreaterThan(0);
-    expect(result.metadata.cost.model).toBe('claude-sonnet-4-5-20250929');
+    expect(result.metadata.cost.model).toBe('anthropic/claude-sonnet-4-5');
   }, 30000); // 30s timeout for LLM call
 });

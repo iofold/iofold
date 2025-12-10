@@ -10,12 +10,13 @@
 
 /// <reference types="@cloudflare/workers-types" />
 
-import { createDeepAgent } from 'deepagents';
+import { createAgentNoCache } from './create-agent-no-cache';
 import { GraphRecursionError } from '@langchain/langgraph';
 import { AIMessage, ToolMessage } from '@langchain/core/messages';
 import { D1Backend } from './backend/d1-backend';
 import { getChatModel, type Env } from './llm/streaming';
 import { createCloudflareExecuteTool, createDirectExecuteTool } from './tools/cloudflare-execute';
+import { buildToolsForAgent, buildToolsByIds, type ToolContext } from './tools/loader';
 import type { ModelProvider } from './types';
 
 /**
@@ -32,6 +33,8 @@ export interface DeepAgentConfig {
   modelProvider: ModelProvider;
   modelId: string;
   env: Env;
+  availableTools?: string[]; // Tool IDs to load from registry (if omitted, uses default tools)
+  agentId?: string; // Agent ID for loading tools from agent_tools table
 }
 
 /**
@@ -173,31 +176,10 @@ function classifyError(error: unknown): {
 }
 
 /**
- * Create a playground agent using DeepAgents
- *
- * This uses the deepagents library which provides:
- * - Built-in filesystem tools via BackendProtocol (ls, read_file, write_file, edit_file, glob, grep)
- * - Todo list management
- * - Subagent delegation support
- * - Automatic tool call handling
- *
- * Only custom tools (like execute_python) need to be explicitly added.
+ * Add default tools to customTools array (for backward compatibility)
+ * Used when no tools are configured via registry
  */
-export function createPlaygroundDeepAgent(config: DeepAgentConfig) {
-  // Create D1Backend for filesystem operations
-  const backend = new D1Backend(config.db, config.sessionId);
-
-  // Get the LangChain model
-  const model = getChatModel({
-    provider: config.modelProvider,
-    modelId: config.modelId,
-    env: config.env,
-    temperature: 0.7,
-  });
-
-  // Build custom tools array (only non-filesystem tools)
-  const customTools = [];
-
+function addDefaultTools(customTools: any[], config: DeepAgentConfig) {
   // Add execute tool if sandbox is available
   if (config.sandbox) {
     // Cast sandbox to expected type - the actual type is DurableObjectNamespace<Sandbox>
@@ -218,10 +200,79 @@ export function createPlaygroundDeepAgent(config: DeepAgentConfig) {
       })
     );
   }
+}
 
-  // Create the DeepAgent with D1Backend
-  // The backend factory pattern allows deepagents to create backend instances as needed
-  const agent = createDeepAgent({
+/**
+ * Create a playground agent using DeepAgents
+ *
+ * This uses the deepagents library which provides:
+ * - Built-in filesystem tools via BackendProtocol (ls, read_file, write_file, edit_file, glob, grep)
+ * - Todo list management
+ * - Subagent delegation support
+ * - Automatic tool call handling
+ *
+ * Tool Loading Strategy:
+ * 1. If availableTools is provided: Load those specific tools from registry
+ * 2. If agentId is provided: Load tools from agent_tools table
+ * 3. Otherwise: Use default tools (execute_python for backward compatibility)
+ */
+export async function createPlaygroundDeepAgent(config: DeepAgentConfig) {
+  // Create D1Backend for filesystem operations
+  const backend = new D1Backend(config.db, config.sessionId);
+
+  // Get the LangChain model
+  const model = getChatModel({
+    provider: config.modelProvider,
+    modelId: config.modelId,
+    env: config.env,
+    temperature: 0.7,
+  });
+
+  // Build custom tools array (only non-filesystem tools)
+  const customTools: any[] = [];
+
+  // Prepare tool context for registry-based tools
+  const toolContext: ToolContext = {
+    db: config.db,
+    sessionId: config.sessionId,
+    sandbox: config.sandbox as any,
+    env: config.env as any, // Env type is compatible but not strictly Record<string, string>
+  };
+
+  // Load tools from registry if configured
+  if (config.availableTools && config.availableTools.length > 0) {
+    // Explicit list of tool IDs provided
+    try {
+      const registryTools = await buildToolsByIds(config.db, config.availableTools, toolContext);
+      customTools.push(...registryTools);
+      console.log(`Loaded ${registryTools.length} tools from registry:`, config.availableTools);
+    } catch (error) {
+      console.error('Failed to load tools from registry:', error);
+    }
+  } else if (config.agentId) {
+    // Load tools configured for this agent
+    try {
+      const agentTools = await buildToolsForAgent(config.db, config.agentId, toolContext);
+      if (agentTools.length > 0) {
+        customTools.push(...agentTools);
+        console.log(`Loaded ${agentTools.length} tools for agent ${config.agentId}`);
+      } else {
+        // No tools configured for agent, fall back to defaults
+        console.log(`No tools configured for agent ${config.agentId}, using defaults`);
+        addDefaultTools(customTools, config);
+      }
+    } catch (error) {
+      console.error('Failed to load agent tools:', error);
+      addDefaultTools(customTools, config);
+    }
+  } else {
+    // No tool configuration, use defaults for backward compatibility
+    addDefaultTools(customTools, config);
+  }
+
+  // Create the agent with D1Backend using our custom wrapper
+  // This excludes anthropicPromptCachingMiddleware which requires OPENAI_API_KEY
+  const agent = createAgentNoCache({
     model,
     backend: () => backend, // Factory returns our D1Backend
     systemPrompt: config.systemPrompt,
@@ -269,7 +320,7 @@ export function createPlaygroundDeepAgent(config: DeepAgentConfig) {
         const toolArgsAccumulator: Record<string, string> = {};
         // Track pending tool calls that haven't received results yet
         const pendingToolCalls = new Set<string>();
-        let currentToolCallId: string | null = null;
+        let currentToolCallId: string | undefined = undefined;
         // Map ToolNode execution IDs to original tool call IDs
         const toolExecutionIdMap: Record<string, string> = {};
         // Track which tool calls have had their args emitted
@@ -280,7 +331,7 @@ export function createPlaygroundDeepAgent(config: DeepAgentConfig) {
         // Map toolCallId to tool name for reverse lookup
         const toolCallIdToName: Record<string, string> = {};
 
-        for await (const { event, data, name: nodeName } of eventStream) {
+        for await (const { event, data, name: nodeName, run_id } of eventStream) {
           if (DEBUG && !event.includes('stream')) {
             console.log('[STREAM] Event:', event, 'node:', nodeName, 'data keys:', Object.keys(data || {}));
           }
@@ -368,31 +419,34 @@ export function createPlaygroundDeepAgent(config: DeepAgentConfig) {
               yield { type: 'tool-call-end', toolCallId: currentToolCallId };
             }
             // Reset for next LLM turn (after tool results come back)
-            currentToolCallId = null;
+            currentToolCallId = undefined;
           }
 
           // Handle tool start from ToolNode
           if (event === 'on_tool_start') {
-            const toolCallId = data.input?.tool_call_id || data.run_id || currentToolCallId;
-            if (DEBUG) console.log('[STREAM] on_tool_start, run_id:', data.run_id, 'toolCallId:', toolCallId);
-            if (data.run_id && toolCallId) {
-              toolExecutionIdMap[data.run_id] = toolCallId;
+            const toolCallId = data.input?.tool_call_id || run_id || currentToolCallId;
+            if (DEBUG) console.log('[STREAM] on_tool_start, run_id:', run_id, 'toolCallId:', toolCallId);
+            if (run_id && toolCallId) {
+              toolExecutionIdMap[run_id] = toolCallId;
             }
           }
 
           // Handle tool execution results from ToolNode
           if (event === 'on_tool_end') {
             // Try to get tool call ID from our map, or fall back to looking up by tool name
-            let toolCallId = toolExecutionIdMap[data.run_id] || data.run_id;
+            let toolCallId = toolExecutionIdMap[run_id] || run_id;
 
             // If we don't have a valid toolCallId, try to match by tool name (nodeName)
             if (!toolCallId && nodeName && pendingToolCallsByName[nodeName]?.length > 0) {
               // Get the first pending tool call for this tool name (FIFO order)
-              toolCallId = pendingToolCallsByName[nodeName].shift();
+              const matchedId = pendingToolCallsByName[nodeName].shift();
+              if (matchedId) {
+                toolCallId = matchedId;
+              }
               if (DEBUG) console.log('[STREAM] Matched tool result by name:', nodeName, '-> toolCallId:', toolCallId);
             }
 
-            if (DEBUG) console.log('[STREAM] on_tool_end, run_id:', data.run_id, 'nodeName:', nodeName, 'resolved toolCallId:', toolCallId);
+            if (DEBUG) console.log('[STREAM] on_tool_end, run_id:', run_id, 'nodeName:', nodeName, 'resolved toolCallId:', toolCallId);
 
             // Get the output - ToolNode returns a ToolMessage
             let result: string;

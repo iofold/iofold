@@ -1,39 +1,33 @@
 /**
  * LLM Streaming Module
  *
- * Provides a unified interface to stream responses from Claude, GPT-4o, and Gemini
- * using LangChain providers. Handles provider-specific model initialization.
+ * Provides a unified interface to stream responses from all providers
+ * via Cloudflare AI Gateway /compat endpoint using OpenAI SDK.
+ *
+ * Also provides LangChain model integration for deepagents compatibility.
  */
 
-import { ChatAnthropic } from '@langchain/anthropic';
+import OpenAI from 'openai';
 import { ChatOpenAI } from '@langchain/openai';
-import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
-import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { createGatewayClient, DEFAULT_MODEL, MODELS, type GatewayEnv, type AIProvider } from '../../ai/gateway';
 import type { ModelProvider } from '../types';
 
 /**
- * Environment interface with API keys for different providers
+ * Environment interface with AI Gateway configuration
  */
-export interface Env {
-  ANTHROPIC_API_KEY?: string;
-  OPENAI_API_KEY?: string;
-  GOOGLE_API_KEY?: string;
-  GEMINI_API_KEY?: string; // Alternative name for Google API key
+export interface StreamingEnv extends GatewayEnv {
   [key: string]: unknown;
 }
 
 /**
- * Configuration for creating an LLM model
+ * Configuration for creating an LLM streaming client
  */
-export interface ModelConfig {
-  /** Model provider (anthropic, openai, google) */
-  provider: ModelProvider;
-
-  /** Specific model ID (e.g., 'claude-sonnet-4-5-20250929', 'gpt-5.1-mini', 'gemini-2.5-flash') */
+export interface StreamingModelConfig {
+  /** Provider-prefixed model ID (e.g., 'anthropic/claude-sonnet-4-5-20250929') */
   modelId: string;
 
-  /** Environment with API keys */
-  env: Env;
+  /** Environment with gateway configuration */
+  env: StreamingEnv;
 
   /** Maximum output tokens to generate */
   maxOutputTokens?: number;
@@ -43,116 +37,171 @@ export interface ModelConfig {
 }
 
 /**
- * Gets the appropriate LangChain chat model based on provider
+ * Streaming completion result
+ */
+export interface StreamingCompletion {
+  client: OpenAI;
+  model: string;
+  maxTokens: number;
+  temperature: number;
+}
+
+/**
+ * Creates a streaming-capable OpenAI client configured for the AI Gateway
  *
  * @param config - Model configuration
- * @returns LangChain chat model instance
- * @throws Error if API key is missing
+ * @returns Configured client and settings
+ * @throws Error if gateway not configured
  */
-export function getChatModel(config: ModelConfig): BaseChatModel {
-  const { provider, modelId, env, maxOutputTokens, temperature } = config;
+export function getStreamingClient(config: StreamingModelConfig): StreamingCompletion {
+  const { modelId, env, maxOutputTokens = 4096, temperature = 0.7 } = config;
 
-  switch (provider) {
-    case 'anthropic': {
-      if (!env.ANTHROPIC_API_KEY) {
-        throw new Error(
-          'ANTHROPIC_API_KEY is not configured. Please add your Anthropic API key to your environment variables.'
-        );
-      }
-      return new ChatAnthropic({
-        apiKey: env.ANTHROPIC_API_KEY,
-        model: modelId,
-        maxTokens: maxOutputTokens,
-        temperature,
-      });
-    }
+  // Validate model exists
+  if (!MODELS[modelId]) {
+    throw new Error(
+      `Unknown model: ${modelId}. Available models: ${Object.keys(MODELS).join(', ')}`
+    );
+  }
 
-    case 'openai': {
-      if (!env.OPENAI_API_KEY) {
-        throw new Error(
-          'OPENAI_API_KEY is not configured. Please add your OpenAI API key to your environment variables.'
-        );
-      }
-      return new ChatOpenAI({
-        apiKey: env.OPENAI_API_KEY,
-        model: modelId,
-        maxTokens: maxOutputTokens,
-        temperature,
-      });
-    }
+  const client = createGatewayClient(env);
 
-    case 'google': {
-      const googleApiKey = env.GOOGLE_API_KEY || env.GEMINI_API_KEY;
-      if (!googleApiKey) {
-        throw new Error(
-          'GOOGLE_API_KEY or GEMINI_API_KEY is not configured. Please add your Google API key to your environment variables.'
-        );
-      }
-      return new ChatGoogleGenerativeAI({
-        apiKey: googleApiKey,
-        model: modelId,
-        maxOutputTokens,
-        temperature,
-      });
-    }
+  return {
+    client,
+    model: modelId,
+    maxTokens: maxOutputTokens,
+    temperature,
+  };
+}
 
-    default: {
-      // TypeScript exhaustiveness check
-      const _exhaustive: never = provider;
-      throw new Error(`Unsupported provider: ${provider}`);
+/**
+ * Stream a chat completion
+ *
+ * @param completion - Streaming completion config
+ * @param messages - Chat messages
+ * @returns AsyncIterable of content chunks
+ */
+export async function* streamCompletion(
+  completion: StreamingCompletion,
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
+): AsyncGenerator<string, void, unknown> {
+  const stream = await completion.client.chat.completions.create({
+    model: completion.model,
+    messages,
+    max_tokens: completion.maxTokens,
+    temperature: completion.temperature,
+    stream: true,
+  });
+
+  for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content;
+    if (content) {
+      yield content;
     }
   }
 }
 
 /**
- * Default model IDs for each provider (verified available models)
- * Note: Gemini 2.5 models have streaming issues with current SDK, using 1.5 for now
+ * Default models for each provider (provider-prefixed)
  */
-export const DEFAULT_MODELS: Record<ModelProvider, string> = {
-  anthropic: 'claude-sonnet-4-5-20250929',
-  openai: 'gpt-5.1',
-  google: 'gemini-1.5-pro',
+export const DEFAULT_MODELS: Record<AIProvider, string> = {
+  anthropic: 'anthropic/claude-sonnet-4-5',
+  openai: 'openai/gpt-5.1-mini',
+  google: 'google-vertex-ai/google/gemini-2.5-flash',
+  'workers-ai': 'workers-ai/@cf/meta/llama-3.1-8b-instruct',
 };
 
 /**
  * Gets the default model ID for a provider
  */
-export function getDefaultModel(provider: ModelProvider): string {
+export function getDefaultModel(provider: AIProvider): string {
   return DEFAULT_MODELS[provider];
 }
 
 /**
- * Validates that the required API key is present for a provider
- *
- * @param provider - Model provider
- * @param env - Environment with API keys
- * @returns true if API key is present
+ * Check if gateway is properly configured
  */
-export function hasApiKey(provider: ModelProvider, env: Env): boolean {
-  switch (provider) {
-    case 'anthropic':
-      return !!env.ANTHROPIC_API_KEY;
-    case 'openai':
-      return !!env.OPENAI_API_KEY;
-    case 'google':
-      return !!(env.GOOGLE_API_KEY || env.GEMINI_API_KEY);
-    default:
-      return false;
-  }
+export function isGatewayConfigured(env: Partial<StreamingEnv>): boolean {
+  return !!(env.CF_ACCOUNT_ID && env.CF_AI_GATEWAY_ID);
 }
 
 /**
- * Gets a list of available providers based on configured API keys
- *
- * @param env - Environment with API keys
- * @returns Array of available provider names
+ * Gets a list of available providers (all providers available via gateway)
  */
-export function getAvailableProviders(env: Env): ModelProvider[] {
-  const providers: ModelProvider[] = [];
+export function getAvailableProviders(): AIProvider[] {
+  return ['anthropic', 'openai', 'google', 'workers-ai'];
+}
 
-  if (env.ANTHROPIC_API_KEY) providers.push('anthropic');
-  if (env.OPENAI_API_KEY) providers.push('openai');
-  if (env.GOOGLE_API_KEY || env.GEMINI_API_KEY) providers.push('google');
+// ============================================================================
+// LangChain Model Integration for deepagents (via Cloudflare AI Gateway)
+// ============================================================================
 
-  return providers;
+/**
+ * Environment interface for LangChain models
+ * Uses Cloudflare AI Gateway - no direct provider API keys needed
+ */
+export interface Env extends GatewayEnv {
+  [key: string]: unknown;
+}
+
+/**
+ * Configuration for creating a LangChain chat model
+ */
+export interface ChatModelConfig {
+  provider: ModelProvider;
+  modelId: string;
+  env: Env;
+  temperature?: number;
+  maxTokens?: number;
+}
+
+/**
+ * Check if gateway is configured for a provider
+ * All providers are available via the gateway
+ */
+export function hasApiKey(provider: ModelProvider, env: Env): boolean {
+  // All providers are available through the gateway
+  return !!(env.CF_ACCOUNT_ID && env.CF_AI_GATEWAY_ID);
+}
+
+/**
+ * Create a LangChain chat model for use with deepagents
+ *
+ * Routes all requests through Cloudflare AI Gateway using ChatOpenAI
+ * with custom baseURL. The gateway handles routing to the correct provider
+ * based on the model prefix (anthropic/, openai/, google/).
+ */
+export function getChatModel(config: ChatModelConfig) {
+  const { provider, modelId, env, temperature = 0.7, maxTokens = 4096 } = config;
+
+  // Validate gateway is configured
+  if (!env.CF_ACCOUNT_ID || !env.CF_AI_GATEWAY_ID) {
+    throw new Error('Cloudflare AI Gateway not configured (CF_ACCOUNT_ID and CF_AI_GATEWAY_ID required)');
+  }
+
+  // Build gateway URL
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${env.CF_ACCOUNT_ID}/${env.CF_AI_GATEWAY_ID}`;
+
+  // Construct provider-prefixed model name if not already prefixed
+  let fullModelId = modelId;
+  if (!modelId.includes('/')) {
+    fullModelId = `${provider}/${modelId}`;
+  }
+
+  // Validate gateway token is configured
+  if (!env.CF_AI_GATEWAY_TOKEN) {
+    throw new Error('Cloudflare AI Gateway token required (CF_AI_GATEWAY_TOKEN)');
+  }
+
+  // Use ChatOpenAI for all providers - the gateway routes based on model prefix
+  // The gateway's /compat endpoint accepts OpenAI-compatible requests and routes
+  // to the correct provider based on the model name prefix
+  return new ChatOpenAI({
+    model: fullModelId,
+    openAIApiKey: env.CF_AI_GATEWAY_TOKEN,
+    temperature,
+    maxTokens,
+    configuration: {
+      baseURL: `${gatewayUrl}/compat`,
+    },
+  });
 }

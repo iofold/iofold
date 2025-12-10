@@ -112,9 +112,10 @@ export class PromptEvaluationJob {
         });
 
         // Test this eval against all traces
+        // expectedScore: 1.0 = expect high quality (MVP: we don't have expected results, just check execution)
         const testCases: TestCase[] = traces.map(trace => ({
           trace,
-          expectedPass: true // MVP: We don't have expected results, just check execution
+          expectedScore: 1.0
         }));
 
         const testResult = await this.tester.test(evalRecord.code, testCases);

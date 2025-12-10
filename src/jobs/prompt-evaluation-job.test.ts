@@ -25,7 +25,8 @@ function createMockStatement(results: any[]) {
     bind: vi.fn().mockReturnThis(),
     all: vi.fn().mockResolvedValue({ results }),
     first: vi.fn().mockResolvedValue(results[0] || null),
-    run: vi.fn().mockResolvedValue({ success: true })
+    run: vi.fn().mockResolvedValue({ success: true }),
+    raw: vi.fn().mockResolvedValue([])
   };
 }
 

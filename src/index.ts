@@ -26,11 +26,6 @@ export interface Env {
   LANGFUSE_PUBLIC_KEY: string;
   LANGFUSE_SECRET_KEY: string;
   LANGFUSE_BASE_URL?: string;
-  ANTHROPIC_API_KEY: string;
-  /** OpenAI API key for playground */
-  OPENAI_API_KEY?: string;
-  /** Google AI API key for playground */
-  GOOGLE_API_KEY?: string;
   SANDBOX?: DurableObjectNamespace<SandboxType>;
   /** Cloudflare Queue binding for job processing */
   JOB_QUEUE?: Queue;
@@ -38,6 +33,12 @@ export interface Env {
   DEAD_LETTER_QUEUE?: Queue;
   /** Encryption key for sensitive data */
   ENCRYPTION_KEY?: string;
+  /** Cloudflare Account ID for AI Gateway (required for LLM calls) */
+  CF_ACCOUNT_ID: string;
+  /** Cloudflare AI Gateway ID (required for LLM calls) */
+  CF_AI_GATEWAY_ID: string;
+  /** Optional AI Gateway authentication token */
+  CF_AI_GATEWAY_TOKEN?: string;
 }
 
 const FetchTracesRequestSchema = z.object({
@@ -53,7 +54,7 @@ const GenerateEvalRequestSchema = z.object({
 const TestEvalRequestSchema = z.object({
   traceIds: z.array(z.object({
     traceId: z.string(),
-    expectedPass: z.boolean()
+    expectedScore: z.number().min(0).max(1) // 0.0 = low quality, 1.0 = high quality
   })).min(1)
 });
 
@@ -78,6 +79,17 @@ function addCorsHeaders(response: Response): Response {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // Polyfill process.env for LangChain SDK compatibility in Cloudflare Workers
+    // The @langchain/openai package checks process.env.OPENAI_API_KEY internally
+    // even when apiKey is passed in the constructor
+    if (typeof globalThis.process === 'undefined') {
+      (globalThis as unknown as { process: { env: Record<string, string> } }).process = { env: {} };
+    }
+    // Set the gateway token as OPENAI_API_KEY for ChatOpenAI compatibility
+    if (env.CF_AI_GATEWAY_TOKEN) {
+      globalThis.process.env.OPENAI_API_KEY = env.CF_AI_GATEWAY_TOKEN;
+    }
+
     const url = new URL(request.url);
 
     // Handle OPTIONS requests (CORS preflight)
@@ -104,7 +116,15 @@ export default {
     const workspaceId = 'workspace_default';
 
     // Initialize API classes
-    const evalsAPI = new EvalsAPI(env.DB, env.ANTHROPIC_API_KEY, env.SANDBOX);
+    const evalsAPI = new EvalsAPI(
+      env.DB,
+      {
+        cfAccountId: env.CF_ACCOUNT_ID,
+        cfGatewayId: env.CF_AI_GATEWAY_ID,
+        cfGatewayToken: env.CF_AI_GATEWAY_TOKEN,
+      },
+      env.SANDBOX
+    );
     const jobsAPI = new JobsAPI(env.DB);
 
     // Health check
@@ -250,10 +270,10 @@ export default {
     if (url.pathname === '/api/evals/generate' && request.method === 'POST') {
       try {
         // Validate environment variables
-        if (!env.ANTHROPIC_API_KEY) {
+        if (!env.CF_ACCOUNT_ID || !env.CF_AI_GATEWAY_ID) {
           return new Response(JSON.stringify({
             success: false,
-            error: 'ANTHROPIC_API_KEY environment variable is not configured'
+            error: 'CF_ACCOUNT_ID and CF_AI_GATEWAY_ID environment variables are required'
           }), {
             status: 500,
             headers: { 'Content-Type': 'application/json' }
@@ -292,7 +312,9 @@ export default {
 
         // Generate eval
         const generator = new EvalGenerator({
-          anthropicApiKey: env.ANTHROPIC_API_KEY
+          cfAccountId: env.CF_ACCOUNT_ID,
+          cfGatewayId: env.CF_AI_GATEWAY_ID,
+          cfGatewayToken: env.CF_AI_GATEWAY_TOKEN,
         });
 
         const result = await generator.generate({
@@ -369,7 +391,7 @@ export default {
         const { traceIds } = validatedBody;
 
         const testCases = await Promise.all(
-          traceIds.map(async (item: { traceId: string; expectedPass: boolean }) => {
+          traceIds.map(async (item: { traceId: string; expectedScore: number }) => {
             const traceRecord = await env.DB.prepare(
               'SELECT * FROM traces WHERE id = ?'
             ).bind(item.traceId).first();
@@ -382,11 +404,11 @@ export default {
               trace: {
                 id: traceRecord.id as string,
                 trace_id: traceRecord.trace_id as string,
-                source: traceRecord.source as 'langfuse' | 'langsmith' | 'openai',
+                source: traceRecord.source as 'langfuse' | 'langsmith' | 'openai' | 'playground',
                 steps: JSON.parse(traceRecord.normalized_data as string),
                 raw_data: JSON.parse(traceRecord.raw_data as string)
               },
-              expectedPass: item.expectedPass
+              expectedScore: item.expectedScore
             };
           })
         );
@@ -410,8 +432,8 @@ export default {
               executionId,
               evalId,
               detail.traceId,
-              detail.predicted ? 1 : 0,
-              detail.reason,
+              detail.predictedScore,
+              detail.feedback,
               detail.executionTimeMs,
               detail.error || null,
               new Date().toISOString()
@@ -447,10 +469,12 @@ export default {
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
     const consumer = new QueueConsumer({
       db: env.DB,
-      anthropicApiKey: env.ANTHROPIC_API_KEY,
       sandboxBinding: env.SANDBOX,
       encryptionKey: env.ENCRYPTION_KEY || 'default-dev-key',
-      deadLetterQueue: env.DEAD_LETTER_QUEUE
+      deadLetterQueue: env.DEAD_LETTER_QUEUE,
+      cfAccountId: env.CF_ACCOUNT_ID,
+      cfGatewayId: env.CF_AI_GATEWAY_ID,
+      cfGatewayToken: env.CF_AI_GATEWAY_TOKEN,
     });
 
     await consumer.processBatch(batch);

@@ -3,7 +3,8 @@
  * Uses LLM meta-prompting to analyze patterns and generate eval variations
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
+import { createGatewayClient, DEFAULT_MODEL, type GatewayEnv } from '../../ai/gateway';
 
 /**
  * Labeled trace with human judgment
@@ -47,9 +48,16 @@ export interface PatternAnalysis {
  * Configuration for AutoEvalGenerator
  */
 export interface AutoEvalGeneratorConfig {
-  anthropicApiKey: string;
-  model?: string;  // Default: claude-sonnet-4-5-20250929
-  temperature?: number;  // Default: 0.3 for creativity with variation
+  /** Cloudflare Account ID for AI Gateway */
+  cfAccountId: string;
+  /** Cloudflare AI Gateway ID */
+  cfGatewayId: string;
+  /** Optional AI Gateway authentication token */
+  cfGatewayToken?: string;
+  /** Model to use (provider-prefixed, default: anthropic/claude-sonnet-4-5) */
+  model?: string;
+  /** Temperature for generation (default: 0.3 for creativity with variation) */
+  temperature?: number;
 }
 
 /**
@@ -66,19 +74,22 @@ export interface AutoEvalGeneratorConfig {
  * - Validates no forbidden imports (os, subprocess, sys, socket, requests, urllib)
  */
 export class AutoEvalGenerator {
-  private anthropic: Anthropic;
+  private client: OpenAI;
   private model: string;
   private temperature: number;
 
   /**
    * Create a new AutoEvalGenerator
-   * @param config - Configuration with Anthropic API key
+   * @param config - Configuration with gateway credentials
    */
   constructor(config: AutoEvalGeneratorConfig) {
-    this.anthropic = new Anthropic({
-      apiKey: config.anthropicApiKey
+    // Use AI Gateway /compat endpoint
+    this.client = createGatewayClient({
+      CF_ACCOUNT_ID: config.cfAccountId,
+      CF_AI_GATEWAY_ID: config.cfGatewayId,
+      CF_AI_GATEWAY_TOKEN: config.cfGatewayToken,
     });
-    this.model = config.model || 'claude-sonnet-4-5-20250929';
+    this.model = config.model || DEFAULT_MODEL;
     this.temperature = config.temperature !== undefined ? config.temperature : 0.3;
   }
 
@@ -190,16 +201,16 @@ export class AutoEvalGenerator {
     // Build analysis prompt
     const analysisPrompt = this.buildPatternAnalysisPrompt(highScored, lowScored);
 
-    // Call LLM
-    const response = await this.anthropic.messages.create({
+    // Call LLM using OpenAI SDK format (AI Gateway /compat endpoint)
+    const response = await this.client.chat.completions.create({
       model: this.model,
       max_tokens: 2000,
       temperature: 0,  // Deterministic for analysis
       messages: [{ role: 'user', content: analysisPrompt }]
     });
 
-    // Extract text response
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    // Extract text response (OpenAI format)
+    const text = response.choices[0]?.message?.content || '';
 
     // Parse JSON from response
     const patterns = this.parsePatternAnalysis(text);
@@ -336,16 +347,16 @@ Focus on concrete, observable patterns that can be checked programmatically or w
     // Build generation prompt
     const genPrompt = this.buildGenerationPrompt(patterns, variation, labeledTraces);
 
-    // Call LLM with some creativity for variation
-    const response = await this.anthropic.messages.create({
+    // Call LLM with some creativity for variation (OpenAI SDK format)
+    const response = await this.client.chat.completions.create({
       model: this.model,
       max_tokens: 3000,
       temperature: this.temperature,
       messages: [{ role: 'user', content: genPrompt }]
     });
 
-    // Extract text response
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    // Extract text response (OpenAI format)
+    const text = response.choices[0]?.message?.content || '';
 
     // Extract Python code from response
     const code = this.extractPythonCode(text);

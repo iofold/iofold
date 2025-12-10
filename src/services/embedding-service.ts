@@ -27,7 +27,8 @@ export class EmbeddingService {
    * Generate embedding for a single text
    */
   async embed(text: string): Promise<number[]> {
-    const response = await this.ai.run(this.model, {
+    // Cast model to any since the Ai.run() expects keyof AiModels but we use a string
+    const response = await this.ai.run(this.model as any, {
       text: [text]
     }) as EmbeddingResponse;
 
@@ -52,7 +53,8 @@ export class EmbeddingService {
 
     for (let i = 0; i < texts.length; i += batchSize) {
       const batch = texts.slice(i, i + batchSize);
-      const response = await this.ai.run(this.model, {
+      // Cast model to any since the Ai.run() expects keyof AiModels but we use a string
+      const response = await this.ai.run(this.model as any, {
         text: batch
       }) as EmbeddingResponse;
 

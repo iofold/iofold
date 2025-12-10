@@ -45,7 +45,7 @@ describe('Matrix API', () => {
       });
 
       const response = await getComparisonMatrix(db, 'set_123', queryParams);
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(data.rows).toEqual([]);
@@ -56,7 +56,7 @@ describe('Matrix API', () => {
       const queryParams = new URLSearchParams({});
 
       const response = await getComparisonMatrix(db, 'set_123', queryParams);
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(400);
       expect(data.error.code).toBe('VALIDATION_ERROR');
@@ -94,7 +94,7 @@ describe('Matrix API', () => {
         'trace_123',
         'eval_456'
       );
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(404);
       expect(data.error.code).toBe('NOT_FOUND');
@@ -104,7 +104,7 @@ describe('Matrix API', () => {
   describe('GET /api/traces/:trace_id/executions', () => {
     it('should return empty array when no executions exist', async () => {
       const response = await getTraceExecutions(db, 'trace_123');
-      const data = await response.json();
+      const data = await response.json() as any;
 
       expect(response.status).toBe(200);
       expect(data.executions).toEqual([]);

@@ -22,18 +22,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-// Model configuration with actual API model IDs - synced with backend models/index.ts
-// Note: Gemini 2.5 models have streaming issues with current SDK, using 1.5 for now
+// Model configuration - synced with backend gateway.ts MODELS registry
+// All models use provider-prefixed IDs for Cloudflare AI Gateway routing
 const MODEL_OPTIONS = [
-  // Anthropic - Latest Claude models
-  { provider: 'anthropic', modelId: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
-  { provider: 'anthropic', modelId: 'claude-haiku-4-5-20250929', label: 'Claude Haiku 4.5' },
-  // OpenAI - GPT-5.1 series (verified available models)
-  { provider: 'openai', modelId: 'gpt-5.1', label: 'GPT-5.1' },
-  { provider: 'openai', modelId: 'gpt-5.1-chat-latest', label: 'GPT-5.1 Chat' },
-  // Google - Gemini 1.5 series (stable with current SDK)
-  { provider: 'google', modelId: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
-  { provider: 'google', modelId: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+  // Anthropic - Claude 4.5 series
+  { provider: 'anthropic', modelId: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+  { provider: 'anthropic', modelId: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+  { provider: 'anthropic', modelId: 'anthropic/claude-opus-4-5', label: 'Claude Opus 4.5' },
+  // OpenAI - GPT-5.1 series
+  { provider: 'openai', modelId: 'openai/gpt-5.1-mini', label: 'GPT-5.1 Mini' },
+  { provider: 'openai', modelId: 'openai/gpt-5.1-nano', label: 'GPT-5.1 Nano' },
+  // Google Vertex AI - Gemini 2.5 series
+  { provider: 'google', modelId: 'google-vertex-ai/google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { provider: 'google', modelId: 'google-vertex-ai/google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
 ] as const
 
 type ModelProvider = 'anthropic' | 'openai' | 'google'
@@ -48,7 +49,7 @@ export default function AgentPlaygroundPage() {
   const [copied, setCopied] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
   const [modelProvider, setModelProvider] = useState<ModelProvider>('anthropic')
-  const [modelId, setModelId] = useState('claude-sonnet-4-5-20250929')
+  const [modelId, setModelId] = useState('anthropic/claude-sonnet-4-5')
   const [input, setInput] = useState('')
   const [isEditingPrompt, setIsEditingPrompt] = useState(false)
   const [editedPrompt, setEditedPrompt] = useState('')

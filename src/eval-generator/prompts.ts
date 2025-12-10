@@ -78,7 +78,7 @@ ${negativeJson}
        # Call an LLM for semantic evaluation
        response = ctx.call_llm(
            prompt="Evaluate the quality of this response: ...",
-           model="claude-haiku-4-5-20250929",  # Optional: cheaper/faster model
+           model="anthropic/claude-haiku-4-5",  # Optional: cheaper/faster model
            temperature=0.0,  # Optional: default 0.0 for determinism
            max_tokens=500,   # Optional: default 500
            cache_key="my_key"  # Optional: cache results for same key
@@ -98,7 +98,7 @@ ${negativeJson}
    - **Prefer heuristics** for clear, deterministic checks (errors, lengths, patterns)
    - **Use LLM-as-judge** only when semantic understanding is needed (tone, relevance, accuracy)
    - **Combine both** for comprehensive scoring when appropriate
-   - **Cost-conscious**: Use \`claude-haiku-4-5-20250929\` for LLM checks when possible
+   - **Cost-conscious**: Use \`anthropic/claude-haiku-4-5\` for LLM checks when possible
 
 4. **Allowed imports ONLY:** json, re, typing, math, datetime, difflib
    - Do not import any other modules

@@ -8,7 +8,9 @@ import { EvalExecutionJob } from './eval-execution-job';
 
 export interface JobWorkerDeps {
   db: D1Database;
-  anthropicApiKey?: string;
+  cfAccountId?: string;
+  cfGatewayId?: string;
+  cfGatewayToken?: string;
   sandboxBinding?: DurableObjectNamespace<Sandbox>;
   encryptionKey: string;
 }
@@ -16,13 +18,17 @@ export interface JobWorkerDeps {
 export class JobWorker {
   private manager: JobManager;
   private db: D1Database;
-  private anthropicApiKey?: string;
+  private cfAccountId?: string;
+  private cfGatewayId?: string;
+  private cfGatewayToken?: string;
   private sandboxBinding?: DurableObjectNamespace<Sandbox>;
   private encryptionKey: string;
 
   constructor(deps: JobWorkerDeps) {
     this.db = deps.db;
-    this.anthropicApiKey = deps.anthropicApiKey;
+    this.cfAccountId = deps.cfAccountId;
+    this.cfGatewayId = deps.cfGatewayId;
+    this.cfGatewayToken = deps.cfGatewayToken;
     this.sandboxBinding = deps.sandboxBinding;
     this.encryptionKey = deps.encryptionKey;
     this.manager = new JobManager(deps.db);
@@ -146,8 +152,8 @@ export class JobWorker {
    * Process eval generation job
    */
   private async processGenerateJob(job: Job): Promise<void> {
-    if (!this.anthropicApiKey) {
-      throw new Error('ANTHROPIC_API_KEY not configured');
+    if (!this.cfAccountId || !this.cfGatewayId) {
+      throw new Error('AI Gateway not configured');
     }
 
     // Get job metadata
@@ -180,7 +186,9 @@ export class JobWorker {
       },
       {
         db: this.db,
-        anthropicApiKey: this.anthropicApiKey,
+        cfAccountId: this.cfAccountId,
+        cfGatewayId: this.cfGatewayId,
+        cfGatewayToken: this.cfGatewayToken,
         sandboxBinding: this.sandboxBinding
       }
     );

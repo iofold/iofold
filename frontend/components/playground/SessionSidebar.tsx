@@ -61,13 +61,19 @@ function formatRelativeTime(dateString: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-// Get model display name - synced with backend models/index.ts
+// Get model display name - synced with backend gateway.ts MODELS registry
 function getModelLabel(provider: string, modelId: string): string {
   const modelMap: Record<string, string> = {
-    // Claude 4.5 series (primary)
-    'claude-sonnet-4-5-20250929': 'Claude Sonnet 4.5',
-    'claude-haiku-4-5-20250929': 'Claude Haiku 4.5',
-    'claude-opus-4-5-20251101': 'Claude Opus 4.5',
+    // Anthropic - Claude 4.5 series
+    'anthropic/claude-sonnet-4-5': 'Claude Sonnet 4.5',
+    'anthropic/claude-haiku-4-5': 'Claude Haiku 4.5',
+    'anthropic/claude-opus-4-5': 'Claude Opus 4.5',
+    // OpenAI - GPT-5.1 series
+    'openai/gpt-5.1-mini': 'GPT-5.1 Mini',
+    'openai/gpt-5.1-nano': 'GPT-5.1 Nano',
+    // Google Vertex AI - Gemini 2.5 series
+    'google-vertex-ai/google/gemini-2.5-flash': 'Gemini 2.5 Flash',
+    'google-vertex-ai/google/gemini-2.5-pro': 'Gemini 2.5 Pro',
   }
   return modelMap[modelId] || modelId
 }

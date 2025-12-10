@@ -1,21 +1,28 @@
 /**
  * EvalRunner - Service for executing eval functions with GEPA interface
- * Bridges TypeScript EvalContext to Python eval execution
+ * Bridges TypeScript EvalContext to Python eval execution with LLM support
  */
 
 import { EvalContextImpl, SAFE_EVAL_IMPORTS } from './eval-context';
 import type { Task, TaskMetadata } from '../../types/datainst';
-import type { EvalResult, EvalContextConfig } from '../../types/eval-context';
+import type { EvalResult, EvalContextConfig, LLMCallOptions } from '../../types/eval-context';
 import { PythonRunner, type PythonRunnerConfig } from '../../sandbox/python-runner';
 import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 import type { Sandbox } from '@cloudflare/sandbox';
+import { getSandbox } from '@cloudflare/sandbox';
 
 /**
  * Configuration for EvalRunner
  */
 export interface EvalRunnerConfig {
-  /** Anthropic API key for LLM calls */
-  anthropicApiKey: string;
+  /** Cloudflare Account ID for AI Gateway */
+  cfAccountId: string;
+
+  /** Cloudflare AI Gateway ID */
+  cfGatewayId: string;
+
+  /** Optional AI Gateway authentication token */
+  cfGatewayToken?: string;
 
   /** Maximum budget in USD (default: 0.05) */
   maxBudgetUsd?: number;
@@ -62,7 +69,9 @@ export class EvalRunner {
     this.config = {
       maxBudgetUsd: config.maxBudgetUsd || 0.05,
       timeoutMs: config.timeoutMs || 30000,
-      anthropicApiKey: config.anthropicApiKey,
+      cfAccountId: config.cfAccountId,
+      cfGatewayId: config.cfGatewayId,
+      cfGatewayToken: config.cfGatewayToken,
       sandboxBinding: config.sandboxBinding,
       devExecutorUrl: config.devExecutorUrl
     };
@@ -103,23 +112,19 @@ export class EvalRunner {
       additional_imports: []
     };
 
-    const ctx = new EvalContextImpl(this.config.anthropicApiKey, evalContextConfig);
+    const ctx = new EvalContextImpl(
+      {
+        CF_ACCOUNT_ID: this.config.cfAccountId,
+        CF_AI_GATEWAY_ID: this.config.cfGatewayId,
+        CF_AI_GATEWAY_TOKEN: this.config.cfGatewayToken
+      },
+      evalContextConfig
+    );
 
     try {
-      // Build Python wrapper that exposes EvalContext methods
-      const wrappedCode = this.buildPythonWrapper(evalCode, task, taskMetadata, trace);
-
-      // Execute the eval function
-      const execution = await this.pythonRunner.execute(wrappedCode);
-
+      // Execute with LLM bridge support (iterative execution pattern)
+      const result = await this.executeWithLLMBridge(evalCode, task, taskMetadata, trace, ctx);
       const durationMs = Date.now() - startTime;
-
-      if (!execution.success) {
-        throw new Error(`Eval execution failed: ${execution.error}`);
-      }
-
-      // Parse result from Python output
-      const result = this.parseEvalOutput(execution.output || '');
 
       // Get stats from context
       const stats = ctx.getStats();
@@ -153,11 +158,101 @@ export class EvalRunner {
   }
 
   /**
-   * Build Python wrapper code that exposes EvalContext methods
+   * Execute eval with LLM bridge support using iterative execution pattern.
+   *
+   * The pattern works as follows:
+   * 1. Python runs until it needs an LLM call, then halts with a special marker
+   * 2. TypeScript processes the LLM request via AI Gateway
+   * 3. Python re-runs with the LLM response pre-cached
+   * 4. Repeat until eval completes or max iterations reached
+   *
+   * @param evalCode - User's eval function code
+   * @param task - Task object
+   * @param taskMetadata - Task metadata object
+   * @param trace - Trace execution object
+   * @param ctx - EvalContext for LLM calls
+   * @returns Parsed score and feedback
+   */
+  private async executeWithLLMBridge(
+    evalCode: string,
+    task: Task,
+    taskMetadata: TaskMetadata,
+    trace: Record<string, unknown>,
+    ctx: EvalContextImpl
+  ): Promise<{ score: number; feedback: string }> {
+    const MAX_LLM_ITERATIONS = 10; // Prevent infinite loops
+    const llmResponses: Record<string, string> = {};
+    let iteration = 0;
+
+    while (iteration < MAX_LLM_ITERATIONS) {
+      iteration++;
+
+      // Build Python wrapper with cached LLM responses
+      const wrappedCode = this.buildPythonWrapper(evalCode, task, taskMetadata, trace, llmResponses);
+
+      // Execute the eval function
+      const execution = await this.pythonRunner.execute(wrappedCode);
+
+      if (!execution.success) {
+        throw new Error(`Eval execution failed: ${execution.error}`);
+      }
+
+      const output = execution.output || '';
+
+      // Check if Python needs an LLM call (special marker in output)
+      const llmRequestMatch = output.match(/\[LLM_REQUEST\](.*?)\[\/LLM_REQUEST\]/s);
+
+      if (llmRequestMatch) {
+        // Parse LLM request from Python
+        const requestJson = llmRequestMatch[1];
+        const request = JSON.parse(requestJson) as {
+          id: string;
+          prompt: string;
+          model?: string;
+          temperature?: number;
+          max_tokens?: number;
+        };
+
+        console.log(`[EvalRunner] Processing LLM request ${request.id} (iteration ${iteration})`);
+
+        // Execute LLM call via AI Gateway using EvalContext
+        try {
+          const response = await ctx.call_llm({
+            prompt: request.prompt,
+            model: (request.model as LLMCallOptions['model']) || 'anthropic/claude-sonnet-4-5',
+            temperature: request.temperature ?? 0.0,
+            max_tokens: request.max_tokens || 500,
+            cache_key: request.id
+          });
+
+          // Store response for next iteration
+          llmResponses[request.id] = response;
+        } catch (error: any) {
+          // LLM call failed - return error as eval result
+          console.error(`[EvalRunner] LLM call failed:`, error.message);
+          return {
+            score: 0,
+            feedback: `LLM call failed: ${error.message}`
+          };
+        }
+
+        // Continue to next iteration
+        continue;
+      }
+
+      // No LLM request - parse final result
+      return this.parseEvalOutput(output);
+    }
+
+    throw new Error(`Eval exceeded maximum LLM iterations (${MAX_LLM_ITERATIONS})`);
+  }
+
+  /**
+   * Build Python wrapper code that exposes EvalContext methods with LLM bridge support.
    *
    * This creates a Python environment where:
    * - task, task_metadata, trace are available as JSON objects
-   * - ctx.call_llm() is available (stubbed - will be enhanced in Phase 1C-3)
+   * - ctx.call_llm() is available and bridges to TypeScript via special markers
    * - ctx.get_cost_so_far(), get_remaining_budget(), etc. are available
    * - eval_function(task, task_metadata, trace, ctx) is called
    * - Result is serialized as JSON: {"score": float, "feedback": str}
@@ -166,13 +261,15 @@ export class EvalRunner {
    * @param task - Task object
    * @param taskMetadata - Task metadata object
    * @param trace - Trace execution object
+   * @param llmResponses - Pre-cached LLM responses from previous iterations
    * @returns Complete Python script ready for execution
    */
   private buildPythonWrapper(
     evalCode: string,
     task: Task,
     taskMetadata: TaskMetadata,
-    trace: Record<string, unknown>
+    trace: Record<string, unknown>,
+    llmResponses: Record<string, string> = {}
   ): string {
     // Escape JSON for embedding in Python string
     const taskJson = JSON.stringify(task)
@@ -184,17 +281,33 @@ export class EvalRunner {
     const traceJson = JSON.stringify(trace)
       .replace(/\\/g, '\\\\')
       .replace(/"/g, '\\"');
+    const llmResponsesJson = JSON.stringify(llmResponses)
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"');
 
     return `import json
 import re
+import sys
 from typing import Any, Dict, Optional, Tuple
 
-# EvalContext stub for Python
-# In Phase 1C-3, this will be enhanced with proper bridge to TypeScript
+# LLM Request Exception - used to signal TypeScript to process LLM call
+class LLMRequestNeeded(Exception):
+    def __init__(self, request_id: str, prompt: str, model: str, temperature: float, max_tokens: int):
+        self.request_id = request_id
+        self.prompt = prompt
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        super().__init__(f"LLM call needed: {request_id}")
+
+# Pre-loaded LLM responses from previous iterations
+_llm_responses: Dict[str, str] = json.loads("${llmResponsesJson}")
+_llm_call_counter = 0
+
 class EvalContext:
     """
     Sandboxed context for eval function execution.
-    Provides controlled access to LLM and utilities.
+    Provides controlled access to LLM via TypeScript bridge and utilities.
     """
 
     def __init__(self):
@@ -205,7 +318,7 @@ class EvalContext:
     def call_llm(
         self,
         prompt: str,
-        model: str = "claude-sonnet-4-5-20250929",
+        model: str = "anthropic/claude-sonnet-4-5",
         temperature: float = 0.0,
         max_tokens: int = 500,
         cache_key: Optional[str] = None
@@ -213,16 +326,31 @@ class EvalContext:
         """
         Call an LLM for semantic evaluation.
 
-        NOTE: This is a stub implementation for Phase 1C-2.
-        In Phase 1C-3, this will bridge to TypeScript EvalContextImpl.
-
-        For now, it raises NotImplementedError to signal that LLM calls
-        are not yet supported in this phase.
+        This method bridges to TypeScript EvalContextImpl via AI Gateway.
+        If the result is already cached (from previous iteration), returns immediately.
+        Otherwise, halts execution with a special marker for TypeScript to process.
         """
-        raise NotImplementedError(
-            "ctx.call_llm() is not yet implemented in Phase 1C-2. "
-            "This will be added in Phase 1C-3 with proper Python<->TypeScript bridging."
-        )
+        global _llm_call_counter
+        _llm_call_counter += 1
+
+        # Generate request ID (use cache_key if provided, otherwise generate)
+        request_id = cache_key or f"llm_call_{_llm_call_counter}"
+
+        # Check if response is already available from previous iteration
+        if request_id in _llm_responses:
+            return _llm_responses[request_id]
+
+        # Signal TypeScript to process this LLM call
+        # Raise exception with request details encoded as special marker
+        request = {
+            "id": request_id,
+            "prompt": prompt,
+            "model": model,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        print(f"[LLM_REQUEST]{json.dumps(request)}[/LLM_REQUEST]")
+        sys.exit(0)  # Clean exit - TypeScript will rerun with response
 
     def get_cost_so_far(self) -> float:
         """Get total cost incurred so far in USD"""

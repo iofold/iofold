@@ -1,14 +1,17 @@
 /**
  * EvalContextImpl - Sandboxed context for eval function execution
  * Provides controlled access to LLM calls with cost tracking and caching
+ *
+ * Uses OpenAI SDK format for all providers via Cloudflare AI Gateway.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import type {
   EvalContext,
   LLMCallOptions,
   EvalContextConfig
 } from '../../types/eval-context';
+import { createGatewayClient, getModelConfig, DEFAULT_MODEL, type GatewayEnv } from '../../ai/gateway';
 
 /**
  * Safe imports allowed in eval execution
@@ -16,23 +19,7 @@ import type {
  */
 export const SAFE_EVAL_IMPORTS = ['json', 're', 'typing', 'math', 'datetime', 'difflib'];
 
-/**
- * Model pricing per million tokens (USD)
- */
-const MODEL_PRICING = {
-  'claude-sonnet-4-5-20250929': {
-    input: 3.00,
-    output: 15.00
-  },
-  'claude-haiku-4-5-20250929': {
-    input: 1.00,
-    output: 5.00
-  },
-  'claude-opus-4-5-20251101': {
-    input: 15.00,
-    output: 75.00
-  }
-} as const;
+// Model pricing is now managed in src/ai/gateway.ts via MODELS registry
 
 /**
  * Default configuration values
@@ -58,7 +45,7 @@ export interface EvalContextStats {
  * Provides sandboxed execution environment with LLM access, cost tracking, and caching
  */
 export class EvalContextImpl implements EvalContext {
-  private anthropicClient: Anthropic;
+  private client: OpenAI;
   private config: EvalContextConfig;
   private costSoFar: number = 0;
   private cache: Map<string, string> = new Map();
@@ -71,13 +58,14 @@ export class EvalContextImpl implements EvalContext {
 
   /**
    * Create a new eval context
-   * @param anthropicApiKey - Anthropic API key for LLM calls
+   * @param gatewayConfig - AI Gateway configuration (required)
    * @param config - Optional configuration overrides
    */
-  constructor(anthropicApiKey: string, config?: Partial<EvalContextConfig>) {
-    this.anthropicClient = new Anthropic({
-      apiKey: anthropicApiKey
-    });
+  constructor(
+    gatewayConfig: GatewayEnv,
+    config?: Partial<EvalContextConfig>
+  ) {
+    this.client = createGatewayClient(gatewayConfig);
     this.config = {
       ...DEFAULT_CONFIG,
       ...config
@@ -99,55 +87,42 @@ export class EvalContextImpl implements EvalContext {
 
     this.stats.cache_misses++;
 
-    // Default options
-    const model = options.model || 'claude-sonnet-4-5-20250929';
+    // Default options - models are already provider-prefixed
+    const model = options.model || DEFAULT_MODEL;
     const temperature = options.temperature !== undefined ? options.temperature : 0.0;
     const max_tokens = options.max_tokens || 500;
 
     // Check if we support this model
-    if (!MODEL_PRICING[model]) {
-      throw new Error(`Unsupported model: ${model}. Supported models: ${Object.keys(MODEL_PRICING).join(', ')}`);
+    const modelConfig = getModelConfig(model);
+    if (!modelConfig) {
+      throw new Error(`Unsupported model: ${model}. Use provider-prefixed model names like 'anthropic/claude-sonnet-4-5-20250929'.`);
     }
 
     try {
-      // Make LLM call based on model provider
-      let responseText: string;
-      let inputTokens: number;
-      let outputTokens: number;
+      // Make LLM call using OpenAI SDK format (AI Gateway translates to provider format)
+      const response = await this.client.chat.completions.create({
+        model,
+        max_tokens,
+        temperature,
+        messages: [{
+          role: 'user',
+          content: options.prompt
+        }]
+      });
 
-      if (model.startsWith('claude-')) {
-        // Anthropic models
-        const response = await this.anthropicClient.messages.create({
-          model,
-          max_tokens,
-          temperature,
-          messages: [{
-            role: 'user',
-            content: options.prompt
-          }]
-        });
-
-        // Extract text from response
-        const textContent = response.content.find(block => block.type === 'text');
-        if (!textContent || textContent.type !== 'text') {
-          throw new Error('No text content in Anthropic response');
-        }
-        responseText = textContent.text;
-
-        inputTokens = response.usage.input_tokens;
-        outputTokens = response.usage.output_tokens;
-      } else if (model.startsWith('gpt-')) {
-        // OpenAI models - would need OpenAI SDK
-        // For now, throw error as we don't have OpenAI SDK initialized
-        throw new Error('OpenAI models not yet supported in EvalContext. Please use Claude models.');
-      } else {
-        throw new Error(`Unsupported model: ${model}`);
+      // Extract text from response (OpenAI format)
+      const choice = response.choices[0];
+      if (!choice?.message?.content) {
+        throw new Error('No content in LLM response');
       }
+      const responseText = choice.message.content;
 
-      // Calculate cost
-      const pricing = MODEL_PRICING[model];
-      const inputCost = (inputTokens / 1_000_000) * pricing.input;
-      const outputCost = (outputTokens / 1_000_000) * pricing.output;
+      const inputTokens = response.usage?.prompt_tokens || 0;
+      const outputTokens = response.usage?.completion_tokens || 0;
+
+      // Calculate cost using model config from gateway
+      const inputCost = (inputTokens / 1_000_000) * modelConfig.inputCostPer1M;
+      const outputCost = (outputTokens / 1_000_000) * modelConfig.outputCostPer1M;
       const callCost = inputCost + outputCost;
 
       // Check budget

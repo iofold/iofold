@@ -1,124 +1,68 @@
 /**
  * Model configuration for Agents Playground
- * Provides unified interface for different LLM providers
+ * All models route through Cloudflare AI Gateway /compat endpoint
  */
 
-import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import OpenAI from 'openai';
+import { createGatewayClient, MODELS, getAvailableModels, type GatewayEnv, type ModelConfig } from '../../ai/gateway';
 
-export type ModelProvider = 'anthropic' | 'openai' | 'google';
+export type ModelProvider = 'anthropic' | 'openai' | 'google' | 'workers-ai';
 
 export interface ModelOption {
   provider: ModelProvider;
-  modelId: string;
+  modelId: string;  // Provider-prefixed model ID
   label: string;
 }
 
 /**
  * Available model options for the playground
- * These use platform-managed API keys
+ * All models use provider-prefixed IDs for gateway routing
  */
-export const MODEL_OPTIONS: readonly ModelOption[] = [
-  // Anthropic - Latest Claude models
-  {
-    provider: 'anthropic',
-    modelId: 'claude-sonnet-4-5-20250929',
-    label: 'Claude Sonnet 4.5'
-  },
-  {
-    provider: 'anthropic',
-    modelId: 'claude-haiku-4-5-20250929',
-    label: 'Claude Haiku 4.5'
-  },
-  // OpenAI - GPT-5.1 series
-  {
-    provider: 'openai',
-    modelId: 'gpt-5.1-mini',
-    label: 'GPT-5.1 Mini'
-  },
-  {
-    provider: 'openai',
-    modelId: 'gpt-5.1-nano',
-    label: 'GPT-5.1 Nano'
-  },
-  // Google - Gemini 2.5 series
-  {
-    provider: 'google',
-    modelId: 'gemini-2.5-flash',
-    label: 'Gemini 2.5 Flash'
-  },
-  {
-    provider: 'google',
-    modelId: 'gemini-2.5-pro',
-    label: 'Gemini 2.5 Pro'
-  }
-] as const;
+export const MODEL_OPTIONS: readonly ModelOption[] = getAvailableModels().map(m => ({
+  provider: m.provider,
+  modelId: m.id,
+  label: m.label,
+}));
 
-export interface Env {
-  ANTHROPIC_API_KEY?: string;
-  OPENAI_API_KEY?: string;
-  GOOGLE_API_KEY?: string;
-  GEMINI_API_KEY?: string; // Alternative name for Google API key
+export interface PlaygroundEnv {
+  /** Cloudflare Account ID for AI Gateway (required) */
+  CF_ACCOUNT_ID: string;
+  /** Cloudflare AI Gateway ID (required) */
+  CF_AI_GATEWAY_ID: string;
+  /** Optional AI Gateway authentication token */
+  CF_AI_GATEWAY_TOKEN?: string;
 }
 
 /**
- * Create a chat model instance based on provider and model ID
- * @param provider - The model provider (anthropic, openai, google)
- * @param modelId - The specific model identifier
- * @param env - Environment variables containing API keys
- * @returns Configured BaseChatModel instance
- * @throws Error if API key is missing for the provider
+ * Create a gateway client for playground use
+ * @param env - Environment with gateway configuration
+ * @returns Configured OpenAI client pointing to AI Gateway
  */
-export async function getModel(
-  provider: ModelProvider,
-  modelId: string,
-  env: Env
-): Promise<BaseChatModel> {
-  switch (provider) {
-    case 'anthropic': {
-      if (!env.ANTHROPIC_API_KEY) {
-        throw new Error('ANTHROPIC_API_KEY not configured');
-      }
-      // Dynamic import to avoid loading all providers
-      const { ChatAnthropic } = await import('@langchain/anthropic');
-      return new ChatAnthropic({
-        apiKey: env.ANTHROPIC_API_KEY,
-        model: modelId
-      });
-    }
-
-    case 'openai': {
-      if (!env.OPENAI_API_KEY) {
-        throw new Error('OPENAI_API_KEY not configured');
-      }
-      const { ChatOpenAI } = await import('@langchain/openai');
-      return new ChatOpenAI({
-        apiKey: env.OPENAI_API_KEY,
-        model: modelId
-      });
-    }
-
-    case 'google': {
-      const googleApiKey = env.GOOGLE_API_KEY || env.GEMINI_API_KEY;
-      if (!googleApiKey) {
-        throw new Error('GOOGLE_API_KEY or GEMINI_API_KEY not configured');
-      }
-      const { ChatGoogleGenerativeAI } = await import('@langchain/google-genai');
-      return new ChatGoogleGenerativeAI({
-        apiKey: googleApiKey,
-        model: modelId
-      });
-    }
-
-    default:
-      throw new Error(`Unsupported model provider: ${provider}`);
-  }
+export function createPlaygroundClient(env: PlaygroundEnv): OpenAI {
+  return createGatewayClient({
+    CF_ACCOUNT_ID: env.CF_ACCOUNT_ID,
+    CF_AI_GATEWAY_ID: env.CF_AI_GATEWAY_ID,
+    CF_AI_GATEWAY_TOKEN: env.CF_AI_GATEWAY_TOKEN,
+  });
 }
 
 /**
- * Validate if a model option exists in the available options
+ * Validate if a model ID exists in the available options
  */
-export function isValidModelOption(provider: ModelProvider, modelId: string): boolean {
-  return MODEL_OPTIONS.some(
-    option => option.provider === provider && option.modelId === modelId
-  );
+export function isValidModelOption(modelId: string): boolean {
+  return !!MODELS[modelId];
+}
+
+/**
+ * Get model configuration by ID
+ */
+export function getModelOption(modelId: string): ModelConfig | undefined {
+  return MODELS[modelId];
+}
+
+/**
+ * Get models for a specific provider
+ */
+export function getModelsForProvider(provider: ModelProvider): ModelOption[] {
+  return MODEL_OPTIONS.filter(m => m.provider === provider);
 }

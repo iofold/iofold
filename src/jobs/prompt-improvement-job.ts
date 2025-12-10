@@ -11,10 +11,11 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
 import type { PromptImprovementJobResult } from '../types/agent';
+import { createGatewayClient, DEFAULT_MODEL } from '../ai/gateway';
 
 export interface PromptImprovementJobConfig {
   jobId: string;
@@ -25,7 +26,12 @@ export interface PromptImprovementJobConfig {
 
 export interface PromptImprovementJobDeps {
   db: D1Database;
-  anthropicApiKey: string;
+  /** Cloudflare Account ID for AI Gateway */
+  cfAccountId: string;
+  /** Cloudflare AI Gateway ID */
+  cfGatewayId: string;
+  /** Optional AI Gateway authentication token */
+  cfGatewayToken?: string;
 }
 
 interface Contradiction {
@@ -55,7 +61,7 @@ interface PromptImprovementResult {
 
 export class PromptImprovementJob {
   private jobManager: JobManager;
-  private anthropicClient: Anthropic;
+  private client: OpenAI;
   private stream?: SSEStream;
 
   constructor(
@@ -63,8 +69,10 @@ export class PromptImprovementJob {
     private deps: PromptImprovementJobDeps
   ) {
     this.jobManager = new JobManager(deps.db);
-    this.anthropicClient = new Anthropic({
-      apiKey: deps.anthropicApiKey
+    this.client = createGatewayClient({
+      CF_ACCOUNT_ID: deps.cfAccountId,
+      CF_AI_GATEWAY_ID: deps.cfGatewayId,
+      CF_AI_GATEWAY_TOKEN: deps.cfGatewayToken,
     });
   }
 
@@ -273,8 +281,8 @@ export class PromptImprovementJob {
   ): Promise<FailureAnalysisResult> {
     const prompt = this.buildFailureAnalysisPrompt(contradictions);
 
-    const response = await this.anthropicClient.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await this.client.chat.completions.create({
+      model: DEFAULT_MODEL,
       max_tokens: 2048,
       messages: [{
         role: 'user',
@@ -282,13 +290,13 @@ export class PromptImprovementJob {
       }]
     });
 
-    const textContent = response.content.find(block => block.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      throw new Error('No text content in Claude response');
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('No content in LLM response');
     }
 
     try {
-      const parsed = JSON.parse(textContent.text);
+      const parsed = JSON.parse(content);
       return {
         failure_patterns: parsed.failure_patterns || [],
         summary: parsed.summary || ''
@@ -296,8 +304,8 @@ export class PromptImprovementJob {
     } catch {
       // If not JSON, treat as plain text summary
       return {
-        failure_patterns: [textContent.text],
-        summary: textContent.text
+        failure_patterns: [content],
+        summary: content
       };
     }
   }
@@ -364,8 +372,8 @@ Focus on actionable insights that can improve the agent's prompt.`;
       bestPractices
     );
 
-    const response = await this.anthropicClient.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await this.client.chat.completions.create({
+      model: DEFAULT_MODEL,
       max_tokens: 4096,
       messages: [{
         role: 'user',
@@ -373,29 +381,29 @@ Focus on actionable insights that can improve the agent's prompt.`;
       }]
     });
 
-    const textContent = response.content.find(block => block.type === 'text');
-    if (!textContent || textContent.type !== 'text') {
-      throw new Error('No text content in Claude response');
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('No content in LLM response');
     }
 
     // Try to extract JSON from markdown code blocks or plain text
     let parsed: PromptImprovementResult;
     try {
       // Try direct JSON parse
-      parsed = JSON.parse(textContent.text);
+      parsed = JSON.parse(content);
     } catch {
       // Try to extract JSON from markdown
-      const jsonMatch = textContent.text.match(/```json\n([\s\S]*?)\n```/);
+      const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
       if (jsonMatch) {
         parsed = JSON.parse(jsonMatch[1]);
       } else {
-        throw new Error('Could not parse improved prompt JSON from Claude response');
+        throw new Error('Could not parse improved prompt JSON from LLM response');
       }
     }
 
     // Validate that required fields exist
     if (!parsed.improved_prompt || !parsed.changes || !parsed.reasoning) {
-      throw new Error('Invalid improved prompt format from Claude');
+      throw new Error('Invalid improved prompt format from LLM');
     }
 
     return parsed;

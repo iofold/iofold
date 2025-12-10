@@ -4,7 +4,7 @@
  * Mocks all external dependencies:
  * - Workers AI (embedding generation)
  * - Vectorize (vector storage and similarity search)
- * - Claude (template extraction)
+ * - OpenAI SDK via Cloudflare AI Gateway (template extraction using Claude models)
  * - D1 Database
  */
 
@@ -12,8 +12,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentDiscoveryJob } from './agent-discovery-job';
 import type { D1Database } from '@cloudflare/workers-types';
 
-// Mock Anthropic SDK at the module level
-vi.mock('@anthropic-ai/sdk', () => {
+// Mock OpenAI SDK at the module level
+vi.mock('openai', () => {
   return {
     default: vi.fn()
   };
@@ -38,13 +38,15 @@ describe('AgentDiscoveryJob', () => {
   let mockDb: D1Database;
   let mockAi: Ai;
   let mockVectorize: VectorizeIndex;
-  let mockAnthropicApiKey: string;
+  let mockCfAccountId: string;
+  let mockCfGatewayId: string;
 
   beforeEach(() => {
     // Reset all mocks before each test
     vi.clearAllMocks();
 
-    mockAnthropicApiKey = 'test-anthropic-key';
+    mockCfAccountId = 'test-account-id';
+    mockCfGatewayId = 'test-gateway-id';
   });
 
   describe('Happy path - 20 traces → 2 agents discovered', () => {
@@ -151,38 +153,56 @@ describe('AgentDiscoveryJob', () => {
         deleteByIds: vi.fn()
       } as any;
 
-      // Mock Anthropic (Claude)
-      const mockAnthropicCreate = vi.fn()
+      // Mock OpenAI (via Gateway)
+      const mockOpenAICreate = vi.fn()
         .mockResolvedValueOnce({
           // First call: Customer support template
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              template: 'You are a helpful customer support agent for Acme Corp. Today\'s date is {{date}}.',
-              variables: ['date'],
-              agent_name: 'Customer Support Agent'
-            })
+          id: 'chatcmpl-cs1',
+          object: 'chat.completion',
+          created: Date.now(),
+          model: 'anthropic/claude-sonnet-4-5-20250929',
+          choices: [{
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: JSON.stringify({
+                template: 'You are a helpful customer support agent for Acme Corp. Today\'s date is {{date}}.',
+                variables: ['date'],
+                agent_name: 'Customer Support Agent'
+              })
+            },
+            finish_reason: 'stop'
           }],
-          usage: { input_tokens: 100, output_tokens: 50 }
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
         })
         .mockResolvedValueOnce({
           // Second call: Code reviewer template
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              template: 'You are an expert code reviewer. Review the following {{language}} code for best practices.',
-              variables: ['language'],
-              agent_name: 'Code Reviewer Agent'
-            })
+          id: 'chatcmpl-cr1',
+          object: 'chat.completion',
+          created: Date.now(),
+          model: 'anthropic/claude-sonnet-4-5-20250929',
+          choices: [{
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: JSON.stringify({
+                template: 'You are an expert code reviewer. Review the following {{language}} code for best practices.',
+                variables: ['language'],
+                agent_name: 'Code Reviewer Agent'
+              })
+            },
+            finish_reason: 'stop'
           }],
-          usage: { input_tokens: 100, output_tokens: 50 }
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
         });
 
-      // Setup Anthropic mock
-      const Anthropic = (await import('@anthropic-ai/sdk')).default;
-      (Anthropic as any).mockImplementation(() => ({
-        messages: {
-          create: mockAnthropicCreate
+      // Setup OpenAI mock
+      const OpenAI = (await import('openai')).default;
+      (OpenAI as any).mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: mockOpenAICreate
+          }
         }
       }));
 
@@ -199,7 +219,8 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
@@ -218,7 +239,7 @@ describe('AgentDiscoveryJob', () => {
       // Verify AI interactions
       expect(mockAi.run).toHaveBeenCalled();
       expect(mockVectorize.upsert).toHaveBeenCalled();
-      expect(mockAnthropicCreate).toHaveBeenCalledTimes(2);
+      expect(mockOpenAICreate).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -276,7 +297,8 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
@@ -339,22 +361,32 @@ describe('AgentDiscoveryJob', () => {
         deleteByIds: vi.fn()
       } as any;
 
-      const mockAnthropicCreate = vi.fn().mockResolvedValue({
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            template: 'You are a helpful assistant. User name is {{user_name}}.',
-            variables: ['user_name'],
-            agent_name: 'General Assistant'
-          })
+      const mockOpenAICreate = vi.fn().mockResolvedValue({
+        id: 'chatcmpl-ga1',
+        object: 'chat.completion',
+        created: Date.now(),
+        model: 'anthropic/claude-sonnet-4-5-20250929',
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: JSON.stringify({
+              template: 'You are a helpful assistant. User name is {{user_name}}.',
+              variables: ['user_name'],
+              agent_name: 'General Assistant'
+            })
+          },
+          finish_reason: 'stop'
         }],
-        usage: { input_tokens: 100, output_tokens: 50 }
+        usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
       });
 
-      const Anthropic = (await import('@anthropic-ai/sdk')).default;
-      (Anthropic as any).mockImplementation(() => ({
-        messages: {
-          create: mockAnthropicCreate
+      const OpenAI = (await import('openai')).default;
+      (OpenAI as any).mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: mockOpenAICreate
+          }
         }
       }));
 
@@ -368,7 +400,8 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
@@ -378,7 +411,7 @@ describe('AgentDiscoveryJob', () => {
       expect(result.assigned_traces).toBe(15);
       expect(result.orphaned_traces).toBe(0);
 
-      expect(mockAnthropicCreate).toHaveBeenCalledTimes(1);
+      expect(mockOpenAICreate).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -429,7 +462,8 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
@@ -483,19 +517,29 @@ describe('AgentDiscoveryJob', () => {
         deleteByIds: vi.fn()
       } as any;
 
-      // Mock Anthropic to return invalid JSON
-      const mockAnthropicCreate = vi.fn().mockResolvedValue({
-        content: [{
-          type: 'text',
-          text: 'Invalid response, not JSON'
+      // Mock OpenAI to return invalid JSON
+      const mockOpenAICreate = vi.fn().mockResolvedValue({
+        id: 'chatcmpl-invalid1',
+        object: 'chat.completion',
+        created: Date.now(),
+        model: 'anthropic/claude-sonnet-4-5-20250929',
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: 'Invalid response, not JSON'
+          },
+          finish_reason: 'stop'
         }],
-        usage: { input_tokens: 100, output_tokens: 50 }
+        usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
       });
 
-      const Anthropic = (await import('@anthropic-ai/sdk')).default;
-      (Anthropic as any).mockImplementation(() => ({
-        messages: {
-          create: mockAnthropicCreate
+      const OpenAI = (await import('openai')).default;
+      (OpenAI as any).mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: mockOpenAICreate
+          }
         }
       }));
 
@@ -509,7 +553,8 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
@@ -549,7 +594,8 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
@@ -609,7 +655,8 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
@@ -665,7 +712,8 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
@@ -712,7 +760,8 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
@@ -774,22 +823,32 @@ describe('AgentDiscoveryJob', () => {
         deleteByIds: vi.fn()
       } as any;
 
-      const mockAnthropicCreate = vi.fn().mockResolvedValue({
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            template: 'You are a helpful assistant.',
-            variables: [],
-            agent_name: 'General Assistant'
-          })
+      const mockOpenAICreate = vi.fn().mockResolvedValue({
+        id: 'chatcmpl-ga2',
+        object: 'chat.completion',
+        created: Date.now(),
+        model: 'anthropic/claude-sonnet-4-5-20250929',
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: JSON.stringify({
+              template: 'You are a helpful assistant.',
+              variables: [],
+              agent_name: 'General Assistant'
+            })
+          },
+          finish_reason: 'stop'
         }],
-        usage: { input_tokens: 100, output_tokens: 50 }
+        usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
       });
 
-      const Anthropic = (await import('@anthropic-ai/sdk')).default;
-      (Anthropic as any).mockImplementation(() => ({
-        messages: {
-          create: mockAnthropicCreate
+      const OpenAI = (await import('openai')).default;
+      (OpenAI as any).mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: mockOpenAICreate
+          }
         }
       }));
 
@@ -803,7 +862,8 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
@@ -881,22 +941,32 @@ describe('AgentDiscoveryJob', () => {
         deleteByIds: vi.fn()
       } as any;
 
-      const mockAnthropicCreate = vi.fn().mockResolvedValue({
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            template: 'You are a helpful assistant.',
-            variables: [],
-            agent_name: 'Assistant'
-          })
+      const mockOpenAICreate = vi.fn().mockResolvedValue({
+        id: 'chatcmpl-mixed1',
+        object: 'chat.completion',
+        created: Date.now(),
+        model: 'anthropic/claude-sonnet-4-5-20250929',
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: JSON.stringify({
+              template: 'You are a helpful assistant.',
+              variables: [],
+              agent_name: 'Assistant'
+            })
+          },
+          finish_reason: 'stop'
         }],
-        usage: { input_tokens: 100, output_tokens: 50 }
+        usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
       });
 
-      const Anthropic = (await import('@anthropic-ai/sdk')).default;
-      (Anthropic as any).mockImplementation(() => ({
-        messages: {
-          create: mockAnthropicCreate
+      const OpenAI = (await import('openai')).default;
+      (OpenAI as any).mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: mockOpenAICreate
+          }
         }
       }));
 
@@ -910,7 +980,8 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
@@ -972,22 +1043,32 @@ describe('AgentDiscoveryJob', () => {
         deleteByIds: vi.fn()
       } as any;
 
-      const mockAnthropicCreate = vi.fn().mockResolvedValue({
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            template: 'First system prompt - should use this one',
-            variables: [],
-            agent_name: 'First Prompt Agent'
-          })
+      const mockOpenAICreate = vi.fn().mockResolvedValue({
+        id: 'chatcmpl-first1',
+        object: 'chat.completion',
+        created: Date.now(),
+        model: 'anthropic/claude-sonnet-4-5-20250929',
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: JSON.stringify({
+              template: 'First system prompt - should use this one',
+              variables: [],
+              agent_name: 'First Prompt Agent'
+            })
+          },
+          finish_reason: 'stop'
         }],
-        usage: { input_tokens: 100, output_tokens: 50 }
+        usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
       });
 
-      const Anthropic = (await import('@anthropic-ai/sdk')).default;
-      (Anthropic as any).mockImplementation(() => ({
-        messages: {
-          create: mockAnthropicCreate
+      const OpenAI = (await import('openai')).default;
+      (OpenAI as any).mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: mockOpenAICreate
+          }
         }
       }));
 
@@ -1001,18 +1082,19 @@ describe('AgentDiscoveryJob', () => {
           db: mockDb,
           ai: mockAi,
           vectorize: mockVectorize,
-          anthropicApiKey: mockAnthropicApiKey
+          cfAccountId: mockCfAccountId,
+          cfGatewayId: mockCfGatewayId
         }
       );
 
       const result = await job.execute();
 
       expect(result.discovered_agents).toHaveLength(1);
-      // Verify Claude was called with the first prompt
-      expect(mockAnthropicCreate).toHaveBeenCalled();
-      const claudeInput = mockAnthropicCreate.mock.calls[0][0].messages[0].content;
-      expect(claudeInput).toContain('First system prompt');
-      expect(claudeInput).not.toContain('Second system prompt');
+      // Verify OpenAI was called with the first prompt
+      expect(mockOpenAICreate).toHaveBeenCalled();
+      const openAIInput = mockOpenAICreate.mock.calls[0][0].messages[0].content;
+      expect(openAIInput).toContain('First system prompt');
+      expect(openAIInput).not.toContain('Second system prompt');
     });
   });
 });
