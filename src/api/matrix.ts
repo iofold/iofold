@@ -316,18 +316,18 @@ export async function getComparisonMatrix(
     const executionsQuery = `
       SELECT
         ee.trace_id,
-        ee.eval_id,
-        ee.predicted_result as result,
-        ee.predicted_reason as reason,
-        ee.execution_time_ms,
+        ee.eval_candidate_id as eval_id,
+        ee.success as result,
+        ee.feedback as reason,
+        ee.duration_ms as execution_time_ms,
         ee.error,
-        ee.executed_at,
-        e.name as eval_name
+        ee.created_at as executed_at,
+        ec.code as eval_name
       FROM eval_executions ee
-      INNER JOIN evals e ON ee.eval_id = e.id
-      WHERE ee.eval_id IN (${placeholders})
+      INNER JOIN eval_candidates ec ON ee.eval_candidate_id = ec.id
+      WHERE ee.eval_candidate_id IN (${placeholders})
         AND ee.trace_id IN (${tracePlaceholders})
-      ORDER BY ee.executed_at DESC
+      ORDER BY ee.created_at DESC
     `;
 
     const executions = await db.prepare(executionsQuery).bind(
@@ -554,18 +554,18 @@ export async function getEvalExecutionDetail(
     const query = `
       SELECT
         ee.trace_id,
-        ee.eval_id,
-        ee.predicted_result as result,
-        ee.predicted_reason as reason,
-        ee.execution_time_ms,
+        ee.eval_candidate_id as eval_id,
+        ee.success as result,
+        ee.feedback as reason,
+        ee.duration_ms as execution_time_ms,
         ee.error,
-        ee.executed_at,
+        ee.created_at as executed_at,
         f.rating as human_rating,
         f.rating_detail as human_notes
       FROM eval_executions ee
       LEFT JOIN feedback f ON ee.trace_id = f.trace_id
-      WHERE ee.trace_id = ? AND ee.eval_id = ?
-      ORDER BY ee.executed_at DESC
+      WHERE ee.trace_id = ? AND ee.eval_candidate_id = ?
+      ORDER BY ee.created_at DESC
       LIMIT 1
     `;
 
@@ -636,17 +636,17 @@ export async function getTraceExecutions(
   try {
     const query = `
       SELECT
-        ee.eval_id,
-        e.name as eval_name,
-        ee.predicted_result as result,
-        ee.predicted_reason as reason,
-        ee.execution_time_ms,
+        ee.eval_candidate_id as eval_id,
+        ec.code as eval_name,
+        ee.success as result,
+        ee.feedback as reason,
+        ee.duration_ms as execution_time_ms,
         ee.error,
-        ee.executed_at
+        ee.created_at as executed_at
       FROM eval_executions ee
-      INNER JOIN evals e ON ee.eval_id = e.id
+      INNER JOIN eval_candidates ec ON ee.eval_candidate_id = ec.id
       WHERE ee.trace_id = ?
-      ORDER BY ee.executed_at DESC
+      ORDER BY ee.created_at DESC
     `;
 
     const result = await db.prepare(query).bind(traceId).all();
@@ -704,18 +704,18 @@ export async function getEvalExecutions(
     if (params.cursor) {
       const decoded = decodeCursor(params.cursor);
       if (decoded) {
-        cursorCondition = 'AND (ee.executed_at, ee.trace_id) > (?, ?)';
+        cursorCondition = 'AND (ee.created_at, ee.trace_id) > (?, ?)';
         cursorParams = [decoded.timestamp, decoded.id];
       }
     }
 
     // Build filter conditions
-    const conditions: string[] = ['ee.eval_id = ?'];
+    const conditions: string[] = ['ee.eval_candidate_id = ?'];
     const filterParams: any[] = [evalId];
 
     if (params.result !== undefined) {
       const resultValue = params.result === 'true' ? 1 : 0;
-      conditions.push('ee.predicted_result = ?');
+      conditions.push('ee.success = ?');
       filterParams.push(resultValue);
     }
 
@@ -727,18 +727,18 @@ export async function getEvalExecutions(
       SELECT
         ee.id,
         ee.trace_id,
-        ee.predicted_result as result,
-        ee.predicted_reason as reason,
-        ee.execution_time_ms,
+        ee.success as result,
+        ee.feedback as reason,
+        ee.duration_ms as execution_time_ms,
         ee.error,
-        ee.executed_at,
+        ee.created_at as executed_at,
         t.imported_at as trace_timestamp,
         t.steps
       FROM eval_executions ee
       INNER JOIN traces t ON ee.trace_id = t.id
       WHERE ${conditions.join(' AND ')}
       ${cursorCondition}
-      ORDER BY ee.executed_at ASC, ee.trace_id ASC
+      ORDER BY ee.created_at ASC, ee.trace_id ASC
       LIMIT ?
     `;
 
