@@ -31,6 +31,7 @@ import type {
   AgentPromptResponse,
   Tool,
 } from '@/types/agent'
+import type { Taskset, TasksetWithTasks, CreateTasksetRequest, CreateTasksetFromTracesRequest, CreateTasksetFromTracesResponse, AddTasksRequest, AddTasksResponse } from '@/types/taskset'
 
 class APIClient {
   private baseURL: string
@@ -579,6 +580,7 @@ class APIClient {
     agentId: string,
     data: {
       eval_id?: string
+      taskset_id?: string
       tasks?: Array<{
         user_message: string
         expected_output?: string
@@ -640,6 +642,60 @@ class APIClient {
     }>
   }> {
     return this.request(`/api/agents/${agentId}/gepa/runs`)
+  }
+
+  // ============================================================================
+  // Tasksets
+  // ============================================================================
+
+  async listTasksets(
+    agentId: string,
+    params?: { include_archived?: boolean }
+  ): Promise<{ tasksets: Taskset[] }> {
+    const query = new URLSearchParams();
+    if (params?.include_archived) {
+      query.append('include_archived', 'true');
+    }
+    const queryStr = query.toString();
+    return this.request(`/api/agents/${agentId}/tasksets${queryStr ? '?' + queryStr : ''}`);
+  }
+
+  async getTaskset(agentId: string, tasksetId: string): Promise<TasksetWithTasks> {
+    return this.request(`/api/agents/${agentId}/tasksets/${tasksetId}`);
+  }
+
+  async createTaskset(agentId: string, data: CreateTasksetRequest): Promise<Taskset> {
+    return this.request(`/api/agents/${agentId}/tasksets`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createTasksetFromTraces(
+    agentId: string,
+    data: CreateTasksetFromTracesRequest
+  ): Promise<CreateTasksetFromTracesResponse> {
+    return this.request(`/api/agents/${agentId}/tasksets/from-traces`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async addTasksToTaskset(
+    agentId: string,
+    tasksetId: string,
+    data: AddTasksRequest
+  ): Promise<AddTasksResponse> {
+    return this.request(`/api/agents/${agentId}/tasksets/${tasksetId}/tasks`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async archiveTaskset(agentId: string, tasksetId: string): Promise<{ message: string }> {
+    return this.request(`/api/agents/${agentId}/tasksets/${tasksetId}`, {
+      method: 'DELETE',
+    });
   }
 
   // ============================================================================

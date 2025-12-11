@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { Loader2, Sparkles, CheckCircle2, XCircle, AlertCircle, TrendingUp } from 'lucide-react'
+import { Loader2, Sparkles, CheckCircle2, XCircle, AlertCircle, TrendingUp, Check } from 'lucide-react'
 import { formatPercentage } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -47,6 +47,7 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
   const [runStatus, setRunStatus] = useState<GEPARunStatus | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedTasksetId, setSelectedTasksetId] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
   const queryClient = useQueryClient()
@@ -58,18 +59,27 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
     enabled: open,
   })
 
+  // Fetch tasksets
+  const { data: tasksetsData, isLoading: loadingTasksets } = useQuery({
+    queryKey: ['agent-tasksets', agentId],
+    queryFn: () => apiClient.listTasksets(agentId),
+    enabled: open && !runId,
+  })
+
   // Start optimization mutation
   const startOptimizationMutation = useMutation({
     mutationFn: async () => {
-      if (!activeEval?.id) {
-        throw new Error('No active eval found for this agent')
+      const payload = selectedTasksetId
+        ? { taskset_id: selectedTasksetId, max_metric_calls: 50, parallelism: 5 }
+        : activeEval?.id
+        ? { eval_id: activeEval.id, max_metric_calls: 50, parallelism: 5 }
+        : null;
+
+      if (!payload) {
+        throw new Error('No taskset selected or active eval found for this agent')
       }
 
-      return apiClient.startGEPAOptimization(agentId, {
-        eval_id: activeEval.id,
-        max_metric_calls: 50,
-        parallelism: 5,
-      })
+      return apiClient.startGEPAOptimization(agentId, payload)
     },
     onSuccess: (data) => {
       setRunId(data.run_id)
@@ -185,6 +195,7 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
       setRunStatus(null)
       setIsStreaming(false)
       setError(null)
+      setSelectedTasksetId(null)
       if (eventSourceRef.current) {
         eventSourceRef.current.close()
       }
@@ -222,33 +233,80 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
           {/* Pre-flight checks */}
           {!runId && !isStreaming && (
             <div className="space-y-4">
-              {loadingEval ? (
+              {loadingEval || loadingTasksets ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : !activeEval ? (
-                <div className="p-4 bg-warning/10 border border-warning/20 rounded-lg">
-                  <div className="flex gap-2">
-                    <AlertCircle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-medium text-warning">No Active Eval</div>
-                      <div className="text-sm text-muted-foreground mt-1">
-                        You need to generate and activate an eval before running GEPA optimization.
-                      </div>
-                    </div>
-                  </div>
-                </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="p-4 bg-muted rounded-lg">
-                    <div className="text-sm font-medium mb-2">Active Eval</div>
-                    <div className="text-sm text-muted-foreground">{activeEval.name}</div>
-                    {activeEval.accuracy !== null && (
-                      <div className="text-sm text-muted-foreground mt-1">
-                        Current Accuracy: {formatPercentage(activeEval.accuracy)}
+                  {/* Taskset Selection */}
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">Select Taskset</div>
+                    {tasksetsData && tasksetsData.tasksets.length > 0 ? (
+                      <div className="grid gap-2">
+                        {tasksetsData.tasksets.map((taskset) => (
+                          <button
+                            key={taskset.id}
+                            onClick={() => setSelectedTasksetId(taskset.id)}
+                            className={`p-3 rounded-lg border-2 text-left transition-colors ${
+                              selectedTasksetId === taskset.id
+                                ? 'border-primary bg-primary/5'
+                                : 'border-muted hover:border-muted-foreground/20'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="font-medium text-sm">{taskset.name}</div>
+                                {taskset.description && (
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    {taskset.description}
+                                  </div>
+                                )}
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {taskset.task_count} {taskset.task_count === 1 ? 'task' : 'tasks'}
+                                </div>
+                              </div>
+                              {selectedTasksetId === taskset.id && (
+                                <Check className="w-5 h-5 text-primary flex-shrink-0" />
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-muted rounded-lg text-sm text-muted-foreground">
+                        No tasksets available. Create one first.
                       </div>
                     )}
                   </div>
+
+                  {/* Active Eval (Fallback) */}
+                  {!selectedTasksetId && activeEval && (
+                    <div className="p-4 bg-muted rounded-lg">
+                      <div className="text-sm font-medium mb-2">Active Eval (Fallback)</div>
+                      <div className="text-sm text-muted-foreground">{activeEval.name}</div>
+                      {activeEval.accuracy !== null && (
+                        <div className="text-sm text-muted-foreground mt-1">
+                          Current Accuracy: {formatPercentage(activeEval.accuracy)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* No Active Eval Warning */}
+                  {!selectedTasksetId && !activeEval && (
+                    <div className="p-4 bg-warning/10 border border-warning/20 rounded-lg">
+                      <div className="flex gap-2">
+                        <AlertCircle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+                        <div>
+                          <div className="font-medium text-warning">No Active Eval</div>
+                          <div className="text-sm text-muted-foreground mt-1">
+                            You need to select a taskset or have an active eval to run GEPA optimization.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="p-4 bg-muted rounded-lg">
                     <div className="text-sm font-medium mb-2">Optimization Settings</div>
@@ -364,7 +422,7 @@ export function GEPAOptimizationModal({ open, onOpenChange, agentId }: GEPAOptim
               </Button>
               <Button
                 onClick={() => startOptimizationMutation.mutate()}
-                disabled={!activeEval || startOptimizationMutation.isPending}
+                disabled={(!selectedTasksetId && !activeEval) || startOptimizationMutation.isPending}
               >
                 {startOptimizationMutation.isPending ? (
                   <>

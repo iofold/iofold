@@ -13,6 +13,7 @@ import { formatRelativeTime, formatPercentage } from '@/lib/utils'
 import { CreateAgentVersionModal } from '@/components/modals/create-agent-version-modal'
 import { GEPAOptimizationModal } from '@/components/modals/gepa-optimization-modal'
 import { AttachToolModal } from '@/components/modals/attach-tool-modal'
+import { TasksetsSection } from '@/components/tasksets/tasksets-section'
 import { toast } from 'sonner'
 import type { AgentVersionStatus, AgentVersionSource, Tool } from '@/types/agent'
 
@@ -289,6 +290,11 @@ export default function AgentDetailPage() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Tasksets Section */}
+      <div className="mb-8">
+        <TasksetsSection agentId={agentId} />
       </div>
 
       {/* Versions List */}
