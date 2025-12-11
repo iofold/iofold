@@ -590,6 +590,73 @@ class APIClient {
     const url = `${this.baseURL}/api/agents/${agentId}/gepa/runs/${runId}/stream`
     return new EventSource(url)
   }
+
+  async listGEPARuns(agentId: string): Promise<{
+    runs: Array<{
+      id: string
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+      progress: {
+        metric_calls: number
+        max_metric_calls: number
+        best_score: number | null
+        total_candidates: number
+      }
+      test_case_count: number
+      error: string | null
+      created_at: string
+      started_at: string | null
+      completed_at: string | null
+    }>
+  }> {
+    return this.request(`/api/agents/${agentId}/gepa/runs`)
+  }
+
+  // ============================================================================
+  // Rollout Batches (Internal APIs)
+  // ============================================================================
+
+  async listRolloutBatches(agentId?: string): Promise<{
+    batches: Array<{
+      id: string
+      agent_id: string
+      agent_name: string | null
+      system_prompt: string
+      task_count: number
+      status: 'queued' | 'running' | 'completed' | 'partial' | 'failed'
+      progress: {
+        total: number
+        completed: number
+        failed: number
+      }
+      created_at: string
+      completed_at: string | null
+    }>
+  }> {
+    const params = agentId ? `?agent_id=${agentId}` : ''
+    return this.request(`/api/internal/rollouts/batches${params}`)
+  }
+
+  async getRolloutBatch(batchId: string): Promise<{
+    batch_id: string
+    status: 'queued' | 'running' | 'completed' | 'partial' | 'failed'
+    progress: {
+      total: number
+      completed: number
+      failed: number
+      pending: number
+    }
+    results: Array<{
+      task_id: string
+      status: 'completed' | 'failed' | 'timeout' | 'pending'
+      trace?: any
+      execution_time_ms?: number
+      error?: string
+    }>
+    created_at: string
+    completed_at?: string
+  }> {
+    return this.request(`/api/internal/rollouts/batch/${batchId}`)
+  }
 }
 
 export class APIError extends Error {

@@ -103,10 +103,12 @@ import {
 import {
   createBatchRollout,
   getBatchStatus,
+  listRolloutBatches,
 } from './internal/rollouts';
 
 import {
   startGEPAOptimization,
+  listGEPARuns,
   getGEPARunStatus,
   streamGEPAProgress,
 } from './gepa';
@@ -647,6 +649,12 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
     return startGEPAOptimization(request, env, gepaStartMatch[1]);
   }
 
+  // GET /api/agents/:id/gepa/runs - List GEPA runs for agent
+  const gepaRunsListMatch = path.match(/^\/api\/agents\/([^\/]+)\/gepa\/runs$/);
+  if (gepaRunsListMatch && method === 'GET') {
+    return listGEPARuns(request, env, gepaRunsListMatch[1]);
+  }
+
   // GET /api/agents/:id/gepa/runs/:runId/stream - Stream GEPA run progress
   const gepaRunStreamMatch = path.match(/^\/api\/agents\/([^\/]+)\/gepa\/runs\/([^\/]+)\/stream$/);
   if (gepaRunStreamMatch && method === 'GET') {
@@ -662,6 +670,11 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   // ============================================================================
   // Internal APIs (GEPA Integration)
   // ============================================================================
+
+  // GET /api/internal/rollouts/batches - List rollout batches
+  if (path === '/api/internal/rollouts/batches' && method === 'GET') {
+    return listRolloutBatches(request, env);
+  }
 
   // POST /api/internal/rollouts/batch - Create batch rollout request
   if (path === '/api/internal/rollouts/batch' && method === 'POST') {

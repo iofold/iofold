@@ -276,6 +276,84 @@ export async function startGEPAOptimization(
 }
 
 // ============================================================================
+// GET /api/agents/:agentId/gepa/runs
+// ============================================================================
+
+/**
+ * GET /api/agents/:agentId/gepa/runs
+ *
+ * List all GEPA optimization runs for an agent.
+ *
+ * @param request - HTTP request
+ * @param env - Cloudflare environment with D1 database
+ * @param agentId - Agent ID from URL
+ * @returns 200 OK with list of runs
+ */
+export async function listGEPARuns(
+  request: Request,
+  env: Env,
+  agentId: string
+): Promise<Response> {
+  try {
+    const workspaceId = getWorkspaceId(request);
+    validateWorkspaceAccess(workspaceId);
+
+    // 1. Validate agent exists and user has access
+    const agent = await env.DB.prepare(
+      `SELECT id FROM agents WHERE id = ? AND workspace_id = ?`
+    ).bind(agentId, workspaceId).first();
+
+    if (!agent) {
+      return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
+    }
+
+    // 2. Get all runs for this agent
+    const runsResult = await env.DB.prepare(`
+      SELECT
+        id,
+        status,
+        progress_metric_calls,
+        max_metric_calls,
+        test_case_count,
+        best_score,
+        total_candidates,
+        error,
+        created_at,
+        started_at,
+        completed_at
+      FROM gepa_runs
+      WHERE agent_id = ? AND workspace_id = ?
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).bind(agentId, workspaceId).all();
+
+    const runs = (runsResult.results || []).map((run: any) => ({
+      id: run.id,
+      status: run.status,
+      progress: {
+        metric_calls: run.progress_metric_calls || 0,
+        max_metric_calls: run.max_metric_calls,
+        best_score: run.best_score || null,
+        total_candidates: run.total_candidates || 0,
+      },
+      test_case_count: run.test_case_count,
+      error: run.error || null,
+      created_at: run.created_at,
+      started_at: run.started_at || null,
+      completed_at: run.completed_at || null,
+    }));
+
+    return createSuccessResponse({ runs });
+
+  } catch (error: any) {
+    if (error.message === 'Missing X-Workspace-Id header') {
+      return createErrorResponse('VALIDATION_ERROR', error.message, 400);
+    }
+    return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
+  }
+}
+
+// ============================================================================
 // GET /api/agents/:agentId/gepa/runs/:runId
 // ============================================================================
 

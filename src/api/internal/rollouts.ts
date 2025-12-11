@@ -147,6 +147,94 @@ export async function createBatchRollout(
 }
 
 /**
+ * GET /api/internal/rollouts/batches
+ *
+ * List all rollout batches for the workspace.
+ *
+ * @param request - HTTP request
+ * @param env - Cloudflare environment with D1 database
+ * @returns 200 OK with list of batches
+ */
+export async function listRolloutBatches(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  try {
+    const workspaceId = getWorkspaceId(request);
+    validateWorkspaceAccess(workspaceId);
+
+    const url = new URL(request.url);
+    const agentId = url.searchParams.get('agent_id');
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
+
+    // Build query based on filters
+    let query = `
+      SELECT
+        rb.id,
+        rb.agent_id,
+        rb.system_prompt,
+        rb.task_count,
+        rb.status,
+        rb.config,
+        rb.created_at,
+        rb.completed_at,
+        a.name as agent_name
+      FROM rollout_batches rb
+      LEFT JOIN agents a ON rb.agent_id = a.id
+      WHERE rb.workspace_id = ?
+    `;
+    const params: any[] = [workspaceId];
+
+    if (agentId) {
+      query += ' AND rb.agent_id = ?';
+      params.push(agentId);
+    }
+
+    query += ' ORDER BY rb.created_at DESC LIMIT ?';
+    params.push(limit);
+
+    const batchesResult = await env.DB.prepare(query).bind(...params).all();
+
+    // For each batch, get summary of results
+    const batches = await Promise.all((batchesResult.results || []).map(async (batch: any) => {
+      // Get completion stats
+      const statsResult = await env.DB.prepare(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+          SUM(CASE WHEN status = 'failed' OR status = 'timeout' THEN 1 ELSE 0 END) as failed
+        FROM rollout_results
+        WHERE batch_id = ?
+      `).bind(batch.id).first();
+
+      return {
+        id: batch.id,
+        agent_id: batch.agent_id,
+        agent_name: batch.agent_name || null,
+        system_prompt: batch.system_prompt?.substring(0, 100) + (batch.system_prompt?.length > 100 ? '...' : ''),
+        task_count: batch.task_count,
+        status: batch.status,
+        progress: {
+          total: batch.task_count,
+          completed: (statsResult?.completed as number) || 0,
+          failed: (statsResult?.failed as number) || 0,
+        },
+        created_at: batch.created_at,
+        completed_at: batch.completed_at || null,
+      };
+    }));
+
+    return createSuccessResponse({ batches });
+
+  } catch (error: any) {
+    if (error.message === 'Missing X-Workspace-Id header') {
+      return createErrorResponse('VALIDATION_ERROR', error.message, 400);
+    }
+    return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
+  }
+}
+
+/**
  * GET /api/internal/rollouts/batch/:batchId
  *
  * Poll for batch completion status and results.

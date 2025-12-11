@@ -7,7 +7,7 @@ import { apiClient } from '@/lib/api-client'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ErrorState } from '@/components/ui/error-state'
-import { ArrowLeft, Plus, ChevronDown, ChevronUp, CheckCircle, XCircle, Play, Sparkles, Zap } from 'lucide-react'
+import { ArrowLeft, Plus, ChevronDown, ChevronUp, CheckCircle, XCircle, Play, Sparkles, Zap, History } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime, formatPercentage } from '@/lib/utils'
 import { CreateAgentVersionModal } from '@/components/modals/create-agent-version-modal'
@@ -159,6 +159,12 @@ export default function AgentDetailPage() {
               <Button variant="outline">
                 <Sparkles className="w-4 h-4 mr-2" />
                 Generate Eval
+              </Button>
+            </Link>
+            <Link href={`/agents/${agentId}/gepa`}>
+              <Button variant="outline">
+                <History className="w-4 h-4 mr-2" />
+                GEPA Dashboard
               </Button>
             </Link>
             <Button variant="outline" onClick={() => setGepaOptimizationModalOpen(true)}>
