@@ -113,6 +113,15 @@ import {
   streamGEPAProgress,
 } from './gepa';
 
+import {
+  createTaskset,
+  createTasksetFromTraces,
+  listTasksets,
+  getTaskset,
+  addTasksToTaskset,
+  archiveTaskset,
+} from './tasksets';
+
 export interface Env {
   DB: D1Database;
   CF_ACCOUNT_ID?: string;
@@ -637,6 +646,44 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   const agentToolDetachMatch = path.match(/^\/api\/agents\/([^\/]+)\/tools\/([^\/]+)$/);
   if (agentToolDetachMatch && method === 'DELETE') {
     return detachToolFromAgent(request, env, agentToolDetachMatch[1], agentToolDetachMatch[2]);
+  }
+
+  // ============================================================================
+  // Tasksets Endpoints
+  // ============================================================================
+
+  // POST /api/agents/:agentId/tasksets/from-traces - Create taskset from labeled traces
+  const tasksetFromTracesMatch = path.match(/^\/api\/agents\/([^\/]+)\/tasksets\/from-traces$/);
+  if (tasksetFromTracesMatch && method === 'POST') {
+    return createTasksetFromTraces(request, env, tasksetFromTracesMatch[1]);
+  }
+
+  // GET /api/agents/:agentId/tasksets - List tasksets for agent
+  const tasksetsListMatch = path.match(/^\/api\/agents\/([^\/]+)\/tasksets$/);
+  if (tasksetsListMatch && method === 'GET') {
+    return listTasksets(request, env, tasksetsListMatch[1]);
+  }
+
+  // POST /api/agents/:agentId/tasksets - Create new taskset
+  if (tasksetsListMatch && method === 'POST') {
+    return createTaskset(request, env, tasksetsListMatch[1]);
+  }
+
+  // POST /api/agents/:agentId/tasksets/:tasksetId/tasks - Add tasks to taskset
+  const tasksetTasksMatch = path.match(/^\/api\/agents\/([^\/]+)\/tasksets\/([^\/]+)\/tasks$/);
+  if (tasksetTasksMatch && method === 'POST') {
+    return addTasksToTaskset(request, env, tasksetTasksMatch[1], tasksetTasksMatch[2]);
+  }
+
+  // GET /api/agents/:agentId/tasksets/:tasksetId - Get taskset with tasks
+  const tasksetDetailMatch = path.match(/^\/api\/agents\/([^\/]+)\/tasksets\/([^\/]+)$/);
+  if (tasksetDetailMatch && method === 'GET') {
+    return getTaskset(request, env, tasksetDetailMatch[1], tasksetDetailMatch[2]);
+  }
+
+  // DELETE /api/agents/:agentId/tasksets/:tasksetId - Archive taskset
+  if (tasksetDetailMatch && method === 'DELETE') {
+    return archiveTaskset(request, env, tasksetDetailMatch[1], tasksetDetailMatch[2]);
   }
 
   // ============================================================================

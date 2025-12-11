@@ -36,12 +36,15 @@ function generateId(prefix: string): string {
 // ============================================================================
 
 interface StartGEPARequest {
-  eval_id?: string;              // Use tasks from this eval's traces
-  tasks?: Array<{                // OR provide tasks directly
+  taskset_id?: string;           // PREFERRED: Use tasks from this taskset
+  eval_id?: string;              // DEPRECATED: Use tasks from this eval's traces
+  tasks?: Array<{                // OR provide tasks directly (ad-hoc)
     user_message: string;
     expected_output?: string;
   }>;
   seed_prompt?: string;          // Optional, defaults to agent's current prompt
+  train_split?: number;          // Default: 0.7
+  random_seed?: number;          // For reproducible splits
   max_metric_calls?: number;     // Default: 50
   parallelism?: number;          // Default: 5
 }
@@ -105,18 +108,53 @@ export async function startGEPAOptimization(
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
-    // 2. Validate that either eval_id or tasks are provided
-    if (!body.eval_id && (!body.tasks || body.tasks.length === 0)) {
+    // 2. Validate that taskset_id, eval_id, or tasks are provided
+    if (!body.taskset_id && !body.eval_id && (!body.tasks || body.tasks.length === 0)) {
       return createErrorResponse(
         'VALIDATION_ERROR',
-        'Either eval_id or tasks (non-empty) must be provided',
+        'Either taskset_id, eval_id, or tasks (non-empty) must be provided',
         400
       );
     }
 
-    // 3. If eval_id provided, validate it exists
+    // 3. Extract test cases based on source
+    let testCases: Array<{ id?: string; user_message: string; expected_output?: string }> = [];
+    let tasksetId: string | null = null;
     let evalRecord: any = null;
-    if (body.eval_id) {
+
+    // Priority: taskset_id > eval_id > inline tasks
+    if (body.taskset_id) {
+      // Load tasks from taskset
+      const taskset = await env.DB.prepare(
+        `SELECT id, agent_id, task_count FROM tasksets WHERE id = ? AND agent_id = ?`
+      ).bind(body.taskset_id, agentId).first();
+
+      if (!taskset) {
+        return createErrorResponse('NOT_FOUND', 'Taskset not found', 404);
+      }
+
+      tasksetId = body.taskset_id;
+
+      const tasksResult = await env.DB.prepare(
+        `SELECT id, user_message, expected_output FROM taskset_tasks WHERE taskset_id = ? ORDER BY created_at`
+      ).bind(body.taskset_id).all();
+
+      if (!tasksResult.results || tasksResult.results.length === 0) {
+        return createErrorResponse(
+          'VALIDATION_ERROR',
+          'Taskset has no tasks. Add tasks before starting GEPA.',
+          400
+        );
+      }
+
+      testCases = tasksResult.results.map((t: any) => ({
+        id: t.id,
+        user_message: t.user_message,
+        expected_output: t.expected_output || undefined,
+      }));
+
+    } else if (body.eval_id) {
+      // DEPRECATED: Extract tasks from traces (legacy behavior)
       evalRecord = await env.DB.prepare(
         `SELECT id, agent_id, code FROM evals WHERE id = ? AND agent_id = ?`
       ).bind(body.eval_id, agentId).first();
@@ -124,14 +162,8 @@ export async function startGEPAOptimization(
       if (!evalRecord) {
         return createErrorResponse('NOT_FOUND', 'Eval not found', 404);
       }
-    }
 
-    // 4. Extract test cases (tasks)
-    let testCases: Array<{ user_message: string; expected_output?: string }> = [];
-
-    if (body.eval_id && evalRecord) {
       // Extract tasks from traces associated with this eval
-      // Get traces that have feedback (labeled data)
       const tracesResult = await env.DB.prepare(`
         SELECT DISTINCT
           t.id,
@@ -158,7 +190,6 @@ export async function startGEPAOptimization(
       for (const row of tracesResult.results) {
         const steps = row.steps ? JSON.parse(row.steps as string) : [];
 
-        // Find first user message in steps
         for (const step of steps) {
           const messages = step.messages_added || [];
           for (const msg of messages) {
@@ -171,7 +202,7 @@ export async function startGEPAOptimization(
             }
           }
           if (testCases.length > 0 && testCases[testCases.length - 1].user_message) {
-            break; // Found user message for this trace, move to next
+            break;
           }
         }
       }
@@ -206,26 +237,60 @@ export async function startGEPAOptimization(
     const now = new Date().toISOString();
     const maxMetricCalls = body.max_metric_calls || 50;
     const parallelism = body.parallelism || 5;
+    const trainSplit = body.train_split || 0.7;
+    const randomSeed = body.random_seed || Math.floor(Math.random() * 2147483647);
 
     await env.DB.prepare(`
       INSERT INTO gepa_runs (
-        id, workspace_id, agent_id, eval_id,
+        id, workspace_id, agent_id, eval_id, taskset_id,
         seed_prompt, test_case_count, max_metric_calls, parallelism,
+        train_split, val_split, random_seed,
         status, progress_metric_calls,
         created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)
     `).bind(
       runId,
       workspaceId,
       agentId,
       body.eval_id || null,
+      tasksetId,
       seedPrompt,
       testCases.length,
       maxMetricCalls,
       parallelism,
+      trainSplit,
+      1 - trainSplit, // val_split
+      randomSeed,
       now
     ).run();
+
+    // 6a. If using taskset, create gepa_run_tasks entries with split assignments
+    if (tasksetId && testCases.length > 0) {
+      // Shuffle tasks using seeded random
+      const shuffled = [...testCases];
+      const seededRandom = (seed: number) => {
+        const x = Math.sin(seed++) * 10000;
+        return x - Math.floor(x);
+      };
+      let currentSeed = randomSeed;
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(seededRandom(currentSeed++) * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+
+      // Assign splits
+      const trainCount = Math.floor(shuffled.length * trainSplit);
+      const insertPromises = shuffled.map((task, idx) => {
+        const split = idx < trainCount ? 'train' : 'val';
+        const taskEntryId = generateId('grt');
+        return env.DB.prepare(
+          `INSERT INTO gepa_run_tasks (id, run_id, task_id, split) VALUES (?, ?, ?, ?)`
+        ).bind(taskEntryId, runId, task.id, split).run();
+      });
+
+      await Promise.all(insertPromises);
+    }
 
     // 7. Queue GEPA optimization job
     if (!env.JOB_QUEUE) {
@@ -246,8 +311,11 @@ export async function startGEPAOptimization(
       run_id: runId,
       agent_id: agentId,
       eval_id: body.eval_id || null,
+      taskset_id: tasksetId,
       seed_prompt: seedPrompt,
-      test_cases: testCases,
+      test_cases: testCases,  // Still include for backward compat
+      train_split: trainSplit,
+      random_seed: randomSeed,
       max_metric_calls: maxMetricCalls,
       parallelism: parallelism,
       api_base_url: apiBaseUrl,
