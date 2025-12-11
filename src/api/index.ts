@@ -328,7 +328,7 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
 
   // GET /api/evals - List evals
   if (path === '/api/evals' && method === 'GET') {
-    const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
+    const workspaceId = request.headers.get('X-Workspace-Id') || undefined;
     return evalsAPI.listEvals(url.searchParams, workspaceId);
   }
 
