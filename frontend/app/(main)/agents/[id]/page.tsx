@@ -7,13 +7,14 @@ import { apiClient } from '@/lib/api-client'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ErrorState } from '@/components/ui/error-state'
-import { ArrowLeft, Plus, ChevronDown, ChevronUp, CheckCircle, XCircle, Play, Sparkles, Zap, History } from 'lucide-react'
+import { ArrowLeft, Plus, ChevronDown, ChevronUp, CheckCircle, XCircle, Play, Sparkles, Zap, History, X } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime, formatPercentage } from '@/lib/utils'
 import { CreateAgentVersionModal } from '@/components/modals/create-agent-version-modal'
 import { GEPAOptimizationModal } from '@/components/modals/gepa-optimization-modal'
+import { AttachToolModal } from '@/components/modals/attach-tool-modal'
 import { toast } from 'sonner'
-import type { AgentVersionStatus, AgentVersionSource } from '@/types/agent'
+import type { AgentVersionStatus, AgentVersionSource, Tool } from '@/types/agent'
 
 function getVersionStatusColor(status: AgentVersionStatus): string {
   switch (status) {
@@ -43,11 +44,27 @@ function getVersionSourceBadge(source: AgentVersionSource): string {
   }
 }
 
+function getCategoryBadgeColor(category: Tool['category']): string {
+  switch (category) {
+    case 'email':
+      return 'bg-blue-100 text-blue-800'
+    case 'code':
+      return 'bg-purple-100 text-purple-800'
+    case 'filesystem':
+      return 'bg-green-100 text-green-800'
+    case 'general':
+      return 'bg-gray-100 text-gray-800'
+    default:
+      return 'bg-gray-100 text-gray-800'
+  }
+}
+
 export default function AgentDetailPage() {
   const params = useParams()
   const agentId = params.id as string
   const [createVersionModalOpen, setCreateVersionModalOpen] = useState(false)
   const [gepaOptimizationModalOpen, setGepaOptimizationModalOpen] = useState(false)
+  const [attachToolModalOpen, setAttachToolModalOpen] = useState(false)
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set())
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -55,6 +72,12 @@ export default function AgentDetailPage() {
   const { data: agent, isLoading, error, refetch } = useQuery({
     queryKey: ['agent', agentId],
     queryFn: () => apiClient.getAgent(agentId),
+  })
+
+  const { data: toolsData, refetch: refetchTools } = useQuery({
+    queryKey: ['agent-tools', agentId],
+    queryFn: () => apiClient.getAgentTools(agentId),
+    enabled: !!agentId,
   })
 
   const promoteMutation = useMutation({
@@ -78,6 +101,17 @@ export default function AgentDetailPage() {
     },
     onError: () => {
       toast.error('Failed to reject version')
+    },
+  })
+
+  const detachToolMutation = useMutation({
+    mutationFn: (toolId: string) => apiClient.detachToolFromAgent(agentId, toolId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-tools', agentId] })
+      toast.success('Tool detached')
+    },
+    onError: () => {
+      toast.error('Failed to detach tool')
     },
   })
 
@@ -209,6 +243,54 @@ export default function AgentDetailPage() {
         </Card>
       </div>
 
+      {/* Tools Section */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">Tools</h2>
+          <Button onClick={() => setAttachToolModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Attach Tool
+          </Button>
+        </div>
+
+        {!toolsData || toolsData.tools.length === 0 ? (
+          <Card className="p-8">
+            <div className="text-center">
+              <p className="text-muted-foreground mb-4">No tools attached yet</p>
+              <Button onClick={() => setAttachToolModalOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Attach your first tool
+              </Button>
+            </div>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {toolsData.tools.map((tool) => (
+              <Card key={tool.id} className="p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-sm mb-1">{tool.name}</h3>
+                    <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${getCategoryBadgeColor(tool.category)}`}>
+                      {tool.category}
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => detachToolMutation.mutate(tool.id)}
+                    disabled={detachToolMutation.isPending}
+                    className="h-6 w-6 p-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">{tool.description}</p>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Versions List */}
       <div>
         <h2 className="text-xl font-semibold mb-4">Versions</h2>
@@ -333,6 +415,13 @@ export default function AgentDetailPage() {
         open={gepaOptimizationModalOpen}
         onOpenChange={setGepaOptimizationModalOpen}
         agentId={agentId}
+      />
+
+      <AttachToolModal
+        open={attachToolModalOpen}
+        onOpenChange={setAttachToolModalOpen}
+        agentId={agentId}
+        attachedToolIds={toolsData?.tools.map(t => t.id) || []}
       />
     </div>
   )

@@ -29,6 +29,7 @@ import type {
   CreateAgentVersionRequest,
   ConfirmAgentRequest,
   AgentPromptResponse,
+  Tool,
 } from '@/types/agent'
 
 class APIClient {
@@ -425,6 +426,36 @@ class APIClient {
 
   async getAgentPrompt(id: string): Promise<AgentPromptResponse> {
     return this.request(`/api/agents/${id}/prompt`)
+  }
+
+  // ============================================================================
+  // Tools
+  // ============================================================================
+
+  async listTools(category?: string): Promise<{ tools: Tool[] }> {
+    const params = category ? `?category=${category}` : ''
+    return this.request(`/api/tools${params}`)
+  }
+
+  async getAgentTools(agentId: string): Promise<{ tools: Tool[] }> {
+    return this.request(`/api/agents/${agentId}/tools`)
+  }
+
+  async attachToolToAgent(
+    agentId: string,
+    toolId: string,
+    config?: Record<string, unknown>
+  ): Promise<Tool> {
+    return this.request(`/api/agents/${agentId}/tools`, {
+      method: 'POST',
+      body: JSON.stringify({ tool_id: toolId, config }),
+    })
+  }
+
+  async detachToolFromAgent(agentId: string, toolId: string): Promise<void> {
+    return this.request(`/api/agents/${agentId}/tools/${toolId}`, {
+      method: 'DELETE',
+    })
   }
 
   // ============================================================================

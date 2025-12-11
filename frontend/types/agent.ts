@@ -29,12 +29,24 @@ export interface AgentVersion {
   created_at: string;
 }
 
+export interface Tool {
+  id: string;
+  name: string;
+  description: string;
+  parameters_schema: string; // JSON Schema as string
+  handler_key: string;
+  category: 'general' | 'code' | 'filesystem' | 'email';
+  created_at: string;
+  config?: Record<string, unknown> | null; // Agent-specific config
+}
+
 export interface AgentWithVersion extends Agent {
   active_version: AgentVersion | null;
 }
 
 export interface AgentWithDetails extends AgentWithVersion {
   versions: AgentVersion[];
+  tools?: Tool[];
   metrics: {
     trace_count: number;
     feedback_count: number;
