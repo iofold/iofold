@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter } from '@/hooks/use-router-with-progress'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient, APIError } from '@/lib/api-client'
 import { useJobMonitor } from '@/hooks/use-job-monitor'

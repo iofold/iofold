@@ -2,7 +2,7 @@
 
 import { AlertCircle, RefreshCw, Home } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useRouter } from 'next/navigation'
+import { useRouter } from '@/hooks/use-router-with-progress'
 
 interface ErrorStateProps {
   title?: string

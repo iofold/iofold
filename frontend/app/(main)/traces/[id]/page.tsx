@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from '@/hooks/use-router-with-progress'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'

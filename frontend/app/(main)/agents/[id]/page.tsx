@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter } from '@/hooks/use-router-with-progress'
+import { useParams } from 'next/navigation'
 import { apiClient } from '@/lib/api-client'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'

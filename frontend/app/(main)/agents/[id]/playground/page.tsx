@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useRouter, useParams, useSearchParams } from 'next/navigation'
+import { useRouter } from '@/hooks/use-router-with-progress'
+import { useParams, useSearchParams } from 'next/navigation'
 import { apiClient } from '@/lib/api-client'
 import { usePlaygroundChat, type Message, type ToolCall } from '@/hooks/use-playground-chat'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -29,9 +30,9 @@ const MODEL_OPTIONS = [
   { provider: 'anthropic', modelId: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
   { provider: 'anthropic', modelId: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
   { provider: 'anthropic', modelId: 'anthropic/claude-opus-4-5', label: 'Claude Opus 4.5' },
-  // OpenAI - GPT-5.1 series
-  { provider: 'openai', modelId: 'openai/gpt-5.1-mini', label: 'GPT-5.1 Mini' },
-  { provider: 'openai', modelId: 'openai/gpt-5.1-nano', label: 'GPT-5.1 Nano' },
+  // OpenAI - GPT-5 series
+  { provider: 'openai', modelId: 'openai/gpt-5-mini', label: 'GPT-5 Mini' },
+  { provider: 'openai', modelId: 'openai/gpt-5-nano', label: 'GPT-5 Nano' },
   // Google Vertex AI - Gemini 2.5 series
   { provider: 'google', modelId: 'google-vertex-ai/google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
   { provider: 'google', modelId: 'google-vertex-ai/google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
@@ -70,12 +71,13 @@ export default function AgentPlaygroundPage() {
     isLoading,
     error: chatError,
     sessionId,
+    sessionVariables,
     retry,
     stop,
     clearMessages,
     submitFeedback,
     loadSession
-  } = usePlaygroundChat(agentId, 'workspace_default', initialSessionFromUrl || undefined) // TODO: Use actual workspace from context
+  } = usePlaygroundChat(agentId, apiClient.getWorkspaceId(), initialSessionFromUrl || undefined)
 
   const { data: agent, isLoading: agentLoading, error, refetch } = useQuery({
     queryKey: ['agent', agentId],
@@ -109,6 +111,13 @@ export default function AgentPlaygroundPage() {
   }, [agent, selectedVersionId])
 
   const selectedVersion = agent?.versions.find(v => v.id === selectedVersionId)
+
+  // Sync variableValues when sessionVariables changes (e.g., when loading a session from URL)
+  useEffect(() => {
+    if (sessionVariables) {
+      setVariableValues(sessionVariables)
+    }
+  }, [sessionVariables])
 
   // Initialize editedPrompt when active version changes
   useEffect(() => {
@@ -164,7 +173,7 @@ export default function AgentPlaygroundPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Workspace-Id': 'ws_test'
+          'X-Workspace-Id': apiClient.getWorkspaceId()
         },
         body: JSON.stringify({
           prompt_template: editedPrompt,
@@ -231,7 +240,11 @@ export default function AgentPlaygroundPage() {
   const handleSelectSession = async (selectedSessionId: string) => {
     if (selectedSessionId === sessionId) return
     try {
-      await loadSession(selectedSessionId)
+      const sessionData = await loadSession(selectedSessionId)
+      // Restore variables from the loaded session
+      if (sessionData?.variables && typeof sessionData.variables === 'object') {
+        setVariableValues(sessionData.variables as Record<string, string>)
+      }
     } catch (err) {
       console.error('Failed to load session:', err)
     }

@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useRouter } from '@/hooks/use-router-with-progress'
+import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'

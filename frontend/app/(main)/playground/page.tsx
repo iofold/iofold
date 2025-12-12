@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { useRouter } from 'next/navigation'
+import { useRouter } from '@/hooks/use-router-with-progress'
 import { apiClient } from '@/lib/api-client'
 import { Card } from '@/components/ui/card'
 import { ErrorState } from '@/components/ui/error-state'

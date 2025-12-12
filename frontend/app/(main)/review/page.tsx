@@ -15,8 +15,9 @@
 
 'use client'
 
-import { useState, useEffect, Suspense, useCallback, useRef } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, useEffect, Suspense, useCallback, useRef, useMemo } from 'react'
+import { useRouter } from '@/hooks/use-router-with-progress'
+import { useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
@@ -31,7 +32,10 @@ import {
   Zap,
   Clock,
   TrendingUp,
-  Calendar
+  Calendar,
+  Wrench,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Trace } from '@/types/api'
@@ -107,6 +111,23 @@ interface TraceData {
   timestamp: string
   duration_ms: number
   metadata: Record<string, any>
+  toolCalls?: { name: string; args: string; result?: string }[]
+}
+
+// Helper to extract user input from JSON messages format
+function extractUserInput(inputPreview: string): string {
+  if (!inputPreview) return '';
+  // Try to parse JSON input and extract user message
+  try {
+    const parsed = JSON.parse(inputPreview);
+    if (parsed.messages && Array.isArray(parsed.messages)) {
+      const userMsg = parsed.messages.find((m: any) => m.role === 'user');
+      if (userMsg?.content) return userMsg.content;
+    }
+    return inputPreview;
+  } catch {
+    return inputPreview;
+  }
 }
 
 // ============================================================================
@@ -133,6 +154,7 @@ function ReviewPageContent() {
   const [useMockData, setUseMockData] = useState(false)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [displayedTrace, setDisplayedTrace] = useState<TraceData | null>(null)
+  const [showToolCalls, setShowToolCalls] = useState(false)
 
   const autoAdvanceTimerRef = useRef<NodeJS.Timeout | null>(null)
   const sessionStartTimeRef = useRef<Date | null>(null)
@@ -168,7 +190,7 @@ function ReviewPageContent() {
         id: trace.id,
         // Use trace's agent_id (from agent_version), or fallback to feedback's agent_id
         agent_id: trace.agent_id || trace.feedback?.agent_id || null,
-        input: trace.summary?.input_preview || '',
+        input: extractUserInput(trace.summary?.input_preview || ''),
         output: trace.summary?.output_preview || '',
         score: trace.feedback?.rating === 'positive' ? 1 : trace.feedback?.rating === 'negative' ? -1 : 0,
         timestamp: trace.timestamp,
@@ -176,7 +198,65 @@ function ReviewPageContent() {
         metadata: { step_count: trace.step_count, has_errors: trace.summary?.has_errors, source: trace.source }
       }))
 
-  const currentTrace = traces[currentIndex]
+  const currentTraceId = traces[currentIndex]?.id
+
+  // Fetch full trace details for current trace (to get output from observations)
+  const { data: traceDetails } = useQuery({
+    queryKey: ['trace-detail', currentTraceId],
+    queryFn: () => apiClient.getTrace(currentTraceId!),
+    enabled: !!currentTraceId && !useMockData,
+    staleTime: 60000, // Cache for 1 minute
+  })
+
+  // Helper to extract output and tool calls from trace observations
+  const extractFromObservations = useCallback((observations: any[]): { output: string; toolCalls: TraceData['toolCalls'] } => {
+    if (!observations?.length) return { output: '', toolCalls: [] };
+
+    let output = '';
+    const toolCalls: TraceData['toolCalls'] = [];
+
+    // Find output from GENERATION type observations
+    for (const obs of observations) {
+      if (obs.type === 'GENERATION' && obs.output) {
+        const content = typeof obs.output === 'object' && 'content' in obs.output
+          ? obs.output.content
+          : typeof obs.output === 'string' ? obs.output : '';
+        if (content && !output) {
+          output = content;
+        }
+      }
+      // Extract tool calls from SPAN type
+      if (obs.type === 'SPAN' && obs.input?.toolName) {
+        toolCalls.push({
+          name: obs.input.toolName,
+          args: JSON.stringify(obs.input, null, 2),
+          result: obs.output ? JSON.stringify(obs.output, null, 2) : undefined
+        });
+      }
+    }
+
+    return { output, toolCalls };
+  }, []);
+
+  // Enhance current trace with data from full trace details
+  const currentTrace = useMemo(() => {
+    const baseTrace = traces[currentIndex];
+    if (!baseTrace || useMockData) return baseTrace;
+
+    // If we have trace details, use the extracted output and tool calls
+    // Cast to any since API returns more fields than type defines
+    const details = traceDetails as any;
+    if (details?.observations) {
+      const { output, toolCalls } = extractFromObservations(details.observations);
+      return {
+        ...baseTrace,
+        output: output || baseTrace.output,
+        toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined
+      };
+    }
+
+    return baseTrace;
+  }, [traces, currentIndex, traceDetails, useMockData, extractFromObservations])
   const totalTraces = traces.length
   const reviewedCount = feedbackCounts.good + feedbackCounts.okay + feedbackCounts.bad
   const remainingCount = totalTraces - reviewedCount
@@ -596,6 +676,37 @@ function ReviewPageContent() {
                   </div>
                 </div>
               </div>
+
+              {/* Tool Calls Section - collapsible */}
+              {currentTrace.toolCalls && currentTrace.toolCalls.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-border">
+                  <button
+                    onClick={() => setShowToolCalls(!showToolCalls)}
+                    className="flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors w-full"
+                  >
+                    <Wrench className="w-3.5 h-3.5" />
+                    <span>Tool Calls ({currentTrace.toolCalls.length})</span>
+                    {showToolCalls ? <ChevronUp className="w-3.5 h-3.5 ml-auto" /> : <ChevronDown className="w-3.5 h-3.5 ml-auto" />}
+                  </button>
+                  {showToolCalls && (
+                    <div className="mt-2 space-y-2 max-h-48 overflow-auto">
+                      {currentTrace.toolCalls.map((tc, i) => (
+                        <div key={i} className="bg-muted/50 rounded-md p-2 text-xs">
+                          <div className="font-semibold text-foreground flex items-center gap-1.5">
+                            <Wrench className="w-3 h-3 text-primary" />
+                            {tc.name}
+                          </div>
+                          {tc.result && (
+                            <pre className="mt-1 text-muted-foreground text-[10px] overflow-auto max-h-20 whitespace-pre-wrap">
+                              {tc.result.substring(0, 200)}{tc.result.length > 200 ? '...' : ''}
+                            </pre>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Compact Metadata */}
               <div className="mt-3 pt-3 border-t border-border">

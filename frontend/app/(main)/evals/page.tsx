@@ -2,7 +2,8 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from '@/hooks/use-router-with-progress'
+import { useSearchParams } from 'next/navigation'
 import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,17 +48,21 @@ function EvalsPageContent() {
     queryFn: () => apiClient.listAgents(),
   })
 
-  // Handle URL param for selected eval (e.g., from redirect)
+  // Handle URL param for selected eval (e.g., from redirect or back navigation)
   const selectedIdFromUrl = searchParams.get('selected')
   useEffect(() => {
     if (selectedIdFromUrl && data?.evals) {
       const evalFromUrl = data.evals.find((e) => e.id === selectedIdFromUrl)
-      if (evalFromUrl && !selectedEval) {
+      if (evalFromUrl) {
         setSelectedEval(evalFromUrl)
         setSheetOpen(true)
       }
+    } else if (!selectedIdFromUrl && sheetOpen) {
+      // URL no longer has selected param (e.g., user pressed back button)
+      setSelectedEval(null)
+      setSheetOpen(false)
     }
-  }, [selectedIdFromUrl, data?.evals, selectedEval])
+  }, [selectedIdFromUrl, data?.evals, sheetOpen])
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -84,16 +89,16 @@ function EvalsPageContent() {
   const handleSelect = (evalItem: Eval) => {
     setSelectedEval(evalItem)
     setSheetOpen(true)
-    // Update URL without navigation
-    router.replace(`/evals?selected=${evalItem.id}`, { scroll: false })
+    // Push to history so back button closes the modal instead of leaving the page
+    router.push(`/evals?selected=${evalItem.id}`, { scroll: false })
   }
 
-  // Handle sheet close
+  // Handle sheet close (user explicitly clicked close button)
   const handleSheetClose = (open: boolean) => {
-    setSheetOpen(open)
-    if (!open) {
-      setSelectedEval(null)
-      router.replace('/evals', { scroll: false })
+    if (!open && sheetOpen) {
+      // Go back in history to remove the ?selected param
+      // This works because we used router.push() when opening
+      router.back()
     }
   }
 

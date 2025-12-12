@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRouter } from 'next/navigation'
+import { useRouter } from '@/hooks/use-router-with-progress'
 import { apiClient } from '@/lib/api-client'
 import { SSEClient } from '@/lib/sse-client'
 import {
