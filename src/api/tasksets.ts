@@ -14,8 +14,11 @@ import {
   parseJsonBody,
 } from './utils';
 
+import { QueueProducer, type Queue } from '../queue/producer';
+
 export interface Env {
   DB: D1Database;
+  JOB_QUEUE?: Queue;
 }
 
 /**
@@ -385,7 +388,7 @@ export async function getTaskset(
 
     // Get tasks
     const tasksResult = await env.DB.prepare(
-      `SELECT id, user_message, expected_output, source, source_trace_id, created_at
+      `SELECT id, user_message, expected_output, source, source_trace_id, metadata, created_at
        FROM taskset_tasks
        WHERE taskset_id = ?
        ORDER BY created_at ASC`
@@ -399,6 +402,7 @@ export async function getTaskset(
         expected_output: t.expected_output,
         source: t.source,
         source_trace_id: t.source_trace_id,
+        metadata: t.metadata ? JSON.parse(t.metadata) : null,
         created_at: t.created_at,
       })),
     };
@@ -538,6 +542,303 @@ export async function archiveTaskset(
     return createSuccessResponse({ message: 'Taskset archived' });
   } catch (error: any) {
     console.error('Error archiving taskset:', error);
+    return createErrorResponse('INTERNAL_ERROR', error.message, 500);
+  }
+}
+
+// ============================================================================
+// POST /api/agents/:agentId/tasksets/:tasksetId/run
+// ============================================================================
+
+interface RunTasksetRequest {
+  model_provider?: string;
+  model_id?: string;
+  config?: {
+    parallelism?: number;
+    timeout_per_task_ms?: number;
+  };
+}
+
+/**
+ * Start a taskset run - executes all tasks in the taskset via background job.
+ */
+export async function runTaskset(
+  request: Request,
+  env: Env,
+  agentId: string,
+  tasksetId: string
+): Promise<Response> {
+  try {
+    const workspaceId = getWorkspaceId(request);
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'X-Workspace-Id header is required', 400);
+    }
+    validateWorkspaceAccess(workspaceId);
+
+    // Parse optional request body
+    let body: RunTasksetRequest = {};
+    try {
+      body = await parseJsonBody<RunTasksetRequest>(request);
+    } catch {
+      // Empty body is fine, use defaults
+    }
+
+    // Validate workspace exists
+    const workspace = await env.DB.prepare(
+      'SELECT id FROM workspaces WHERE id = ?'
+    ).bind(workspaceId).first();
+
+    if (!workspace) {
+      return createErrorResponse('NOT_FOUND', 'Workspace not found', 404);
+    }
+
+    // Validate agent exists
+    const agent = await env.DB.prepare(
+      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
+    ).bind(agentId, workspaceId).first();
+
+    if (!agent) {
+      return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
+    }
+
+    // Validate taskset exists and get task count
+    const taskset = await env.DB.prepare(
+      `SELECT id, task_count, status FROM tasksets
+       WHERE id = ? AND agent_id = ? AND workspace_id = ?`
+    ).bind(tasksetId, agentId, workspaceId).first();
+
+    if (!taskset) {
+      return createErrorResponse('NOT_FOUND', 'Taskset not found', 404);
+    }
+
+    if (taskset.status === 'archived') {
+      return createErrorResponse('VALIDATION_ERROR', 'Cannot run archived taskset', 400);
+    }
+
+    const taskCount = (taskset.task_count as number) || 0;
+    if (taskCount === 0) {
+      return createErrorResponse('VALIDATION_ERROR', 'Taskset has no tasks', 400);
+    }
+
+    // Create taskset run record
+    const runId = generateId('tsr');
+    const now = new Date().toISOString();
+    const modelProvider = body.model_provider || 'anthropic';
+    const modelId = body.model_id || 'anthropic/claude-sonnet-4-5';
+
+    await env.DB.prepare(
+      `INSERT INTO taskset_runs (
+        id, workspace_id, agent_id, taskset_id, status,
+        task_count, completed_count, failed_count,
+        model_provider, model_id, config, created_at
+      ) VALUES (?, ?, ?, ?, 'queued', ?, 0, 0, ?, ?, ?, ?)`
+    ).bind(
+      runId,
+      workspaceId,
+      agentId,
+      tasksetId,
+      taskCount,
+      modelProvider,
+      modelId,
+      body.config ? JSON.stringify(body.config) : '{}',
+      now
+    ).run();
+
+    // Enqueue job
+    if (!env.JOB_QUEUE) {
+      return createErrorResponse('INTERNAL_ERROR', 'Job queue not configured', 500);
+    }
+
+    const producer = new QueueProducer({
+      queue: env.JOB_QUEUE,
+      db: env.DB
+    });
+
+    const result = await producer.enqueueTasksetRunJob(
+      runId,
+      workspaceId,
+      agentId,
+      tasksetId,
+      {
+        modelProvider,
+        modelId,
+        config: body.config
+      }
+    );
+
+    if (!result.success) {
+      // Update run status to failed
+      await env.DB.prepare(
+        'UPDATE taskset_runs SET status = ?, error = ? WHERE id = ?'
+      ).bind('failed', result.error || 'Failed to enqueue job', runId).run();
+
+      return createErrorResponse(
+        'INTERNAL_ERROR',
+        result.error || 'Failed to enqueue taskset run job',
+        500
+      );
+    }
+
+    return createSuccessResponse({
+      run_id: runId,
+      status: 'queued',
+      task_count: taskCount,
+      model_provider: modelProvider,
+      model_id: modelId,
+    }, 201);
+  } catch (error: any) {
+    console.error('Error starting taskset run:', error);
+    return createErrorResponse('INTERNAL_ERROR', error.message, 500);
+  }
+}
+
+// ============================================================================
+// GET /api/agents/:agentId/tasksets/:tasksetId/runs
+// ============================================================================
+
+/**
+ * List all runs for a taskset.
+ */
+export async function listTasksetRuns(
+  request: Request,
+  env: Env,
+  agentId: string,
+  tasksetId: string
+): Promise<Response> {
+  try {
+    const workspaceId = getWorkspaceId(request);
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'X-Workspace-Id header is required', 400);
+    }
+    validateWorkspaceAccess(workspaceId);
+
+    // Validate taskset exists
+    const taskset = await env.DB.prepare(
+      'SELECT id FROM tasksets WHERE id = ? AND agent_id = ? AND workspace_id = ?'
+    ).bind(tasksetId, agentId, workspaceId).first();
+
+    if (!taskset) {
+      return createErrorResponse('NOT_FOUND', 'Taskset not found', 404);
+    }
+
+    // Get all runs for this taskset
+    const result = await env.DB.prepare(
+      `SELECT
+        id, workspace_id, agent_id, taskset_id, status,
+        task_count, completed_count, failed_count,
+        model_provider, model_id, config,
+        created_at, started_at, completed_at, error
+       FROM taskset_runs
+       WHERE taskset_id = ? AND workspace_id = ?
+       ORDER BY created_at DESC`
+    ).bind(tasksetId, workspaceId).all();
+
+    return createSuccessResponse({
+      runs: (result.results || []).map((row: any) => ({
+        id: row.id,
+        workspace_id: row.workspace_id,
+        agent_id: row.agent_id,
+        taskset_id: row.taskset_id,
+        status: row.status,
+        task_count: row.task_count,
+        completed_count: row.completed_count,
+        failed_count: row.failed_count,
+        model_provider: row.model_provider,
+        model_id: row.model_id,
+        config: row.config ? JSON.parse(row.config) : {},
+        created_at: row.created_at,
+        started_at: row.started_at,
+        completed_at: row.completed_at,
+        error: row.error,
+      })),
+    });
+  } catch (error: any) {
+    console.error('Error listing taskset runs:', error);
+    return createErrorResponse('INTERNAL_ERROR', error.message, 500);
+  }
+}
+
+// ============================================================================
+// GET /api/agents/:agentId/tasksets/:tasksetId/runs/:runId
+// ============================================================================
+
+/**
+ * Get specific run status with results.
+ */
+export async function getTasksetRun(
+  request: Request,
+  env: Env,
+  agentId: string,
+  tasksetId: string,
+  runId: string
+): Promise<Response> {
+  try {
+    const workspaceId = getWorkspaceId(request);
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'X-Workspace-Id header is required', 400);
+    }
+    validateWorkspaceAccess(workspaceId);
+
+    // Get run
+    const run = await env.DB.prepare(
+      `SELECT
+        id, workspace_id, agent_id, taskset_id, status,
+        task_count, completed_count, failed_count,
+        model_provider, model_id, config,
+        created_at, started_at, completed_at, error
+       FROM taskset_runs
+       WHERE id = ? AND taskset_id = ? AND agent_id = ? AND workspace_id = ?`
+    ).bind(runId, tasksetId, agentId, workspaceId).first();
+
+    if (!run) {
+      return createErrorResponse('NOT_FOUND', 'Run not found', 404);
+    }
+
+    // Get results for this run
+    const resultsData = await env.DB.prepare(
+      `SELECT
+        id, run_id, task_id, status, response, expected_output,
+        score, score_reason, trace_id, execution_time_ms, error, created_at
+       FROM taskset_run_results
+       WHERE run_id = ?
+       ORDER BY created_at ASC`
+    ).bind(runId).all();
+
+    const response = {
+      id: run.id,
+      workspace_id: run.workspace_id,
+      agent_id: run.agent_id,
+      taskset_id: run.taskset_id,
+      status: run.status,
+      task_count: run.task_count,
+      completed_count: run.completed_count,
+      failed_count: run.failed_count,
+      model_provider: run.model_provider,
+      model_id: run.model_id,
+      config: run.config ? JSON.parse(run.config as string) : {},
+      created_at: run.created_at,
+      started_at: run.started_at,
+      completed_at: run.completed_at,
+      error: run.error,
+      results: (resultsData.results || []).map((r: any) => ({
+        id: r.id,
+        run_id: r.run_id,
+        task_id: r.task_id,
+        status: r.status,
+        response: r.response,
+        expected_output: r.expected_output,
+        score: r.score,
+        score_reason: r.score_reason,
+        trace_id: r.trace_id,
+        execution_time_ms: r.execution_time_ms,
+        error: r.error,
+        created_at: r.created_at,
+      })),
+    };
+
+    return createSuccessResponse(response);
+  } catch (error: any) {
+    console.error('Error getting taskset run:', error);
     return createErrorResponse('INTERNAL_ERROR', error.message, 500);
   }
 }
