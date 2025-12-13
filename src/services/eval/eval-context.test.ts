@@ -6,23 +6,29 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { EvalContextImpl, SAFE_EVAL_IMPORTS, serializeEvalContextForPython } from './eval-context';
 import type { EvalContext } from '../../types/eval-context';
 
-// Mock Anthropic SDK
-vi.mock('@anthropic-ai/sdk', () => {
+// Mock OpenAI SDK
+vi.mock('openai', () => {
   return {
-    default: class MockAnthropic {
-      messages = {
-        create: vi.fn().mockResolvedValue({
-          content: [
-            {
-              type: 'text',
-              text: 'Mock LLM response'
-            }
-          ],
-          usage: {
-            input_tokens: 100,
-            output_tokens: 50
-          }
-        })
+    default: class MockOpenAI {
+      chat = {
+        completions: {
+          create: vi.fn().mockResolvedValue({
+            choices: [
+              {
+                message: {
+                  content: 'Mock LLM response',
+                  role: 'assistant'
+                }
+              }
+            ],
+            usage: {
+              prompt_tokens: 100,
+              completion_tokens: 50,
+              total_tokens: 150
+            },
+            model: 'anthropic/claude-sonnet-4-5'
+          })
+        }
       };
     }
   };
@@ -34,7 +40,8 @@ describe('EvalContextImpl', () => {
   beforeEach(() => {
     ctx = new EvalContextImpl({
       CF_ACCOUNT_ID: 'test-account',
-      CF_AI_GATEWAY_ID: 'test-gateway'
+      CF_AI_GATEWAY_ID: 'test-gateway',
+      CF_AI_GATEWAY_TOKEN: 'test-token'
     }, {
       max_budget_usd: 0.05,
       timeout_ms: 30000
@@ -105,7 +112,11 @@ describe('EvalContextImpl', () => {
 
     it('should throw error when budget exceeded', async () => {
       // Create context with very small budget
-      const smallBudgetCtx = new EvalContextImpl({ CF_ACCOUNT_ID: 'test-account', CF_AI_GATEWAY_ID: 'test-gateway' }, {
+      const smallBudgetCtx = new EvalContextImpl({
+        CF_ACCOUNT_ID: 'test-account',
+        CF_AI_GATEWAY_ID: 'test-gateway',
+        CF_AI_GATEWAY_TOKEN: 'test-token'
+      }, {
         max_budget_usd: 0.00001, // Very small budget
         timeout_ms: 30000
       });
@@ -191,12 +202,20 @@ describe('EvalContextImpl', () => {
 
   describe('configuration', () => {
     it('should use default config when not provided', () => {
-      const defaultCtx = new EvalContextImpl({ CF_ACCOUNT_ID: 'test-account', CF_AI_GATEWAY_ID: 'test-gateway' });
+      const defaultCtx = new EvalContextImpl({
+        CF_ACCOUNT_ID: 'test-account',
+        CF_AI_GATEWAY_ID: 'test-gateway',
+        CF_AI_GATEWAY_TOKEN: 'test-token'
+      });
       expect(defaultCtx.get_remaining_budget()).toBe(0.05); // Default budget
     });
 
     it('should allow custom config', () => {
-      const customCtx = new EvalContextImpl({ CF_ACCOUNT_ID: 'test-account', CF_AI_GATEWAY_ID: 'test-gateway' }, {
+      const customCtx = new EvalContextImpl({
+        CF_ACCOUNT_ID: 'test-account',
+        CF_AI_GATEWAY_ID: 'test-gateway',
+        CF_AI_GATEWAY_TOKEN: 'test-token'
+      }, {
         max_budget_usd: 0.10,
         timeout_ms: 60000
       });
@@ -204,7 +223,11 @@ describe('EvalContextImpl', () => {
     });
 
     it('should support additional imports', () => {
-      const customCtx = new EvalContextImpl({ CF_ACCOUNT_ID: 'test-account', CF_AI_GATEWAY_ID: 'test-gateway' }, {
+      const customCtx = new EvalContextImpl({
+        CF_ACCOUNT_ID: 'test-account',
+        CF_AI_GATEWAY_ID: 'test-gateway',
+        CF_AI_GATEWAY_TOKEN: 'test-token'
+      }, {
         max_budget_usd: 0.05,
         timeout_ms: 30000,
         additional_imports: ['numpy', 'pandas']
@@ -231,7 +254,11 @@ describe('SAFE_EVAL_IMPORTS', () => {
 
 describe('serializeEvalContextForPython', () => {
   it('should serialize context for Python integration', () => {
-    const ctx = new EvalContextImpl({ CF_ACCOUNT_ID: 'test-account', CF_AI_GATEWAY_ID: 'test-gateway' });
+    const ctx = new EvalContextImpl({
+      CF_ACCOUNT_ID: 'test-account',
+      CF_AI_GATEWAY_ID: 'test-gateway',
+      CF_AI_GATEWAY_TOKEN: 'test-token'
+    });
     const serialized = serializeEvalContextForPython(ctx);
 
     expect(serialized).toHaveProperty('methods');

@@ -89,6 +89,14 @@ export default {
     if (env.CF_AI_GATEWAY_TOKEN) {
       globalThis.process.env.OPENAI_API_KEY = env.CF_AI_GATEWAY_TOKEN;
     }
+    // Set LangSmith env vars for LangChain tracing
+    // LangChain reads these from process.env to enable automatic tracing
+    if (env.LANGSMITH_API_KEY) {
+      globalThis.process.env.LANGSMITH_API_KEY = env.LANGSMITH_API_KEY;
+      globalThis.process.env.LANGSMITH_TRACING_V2 = env.LANGSMITH_TRACING_V2 || 'true';
+      globalThis.process.env.LANGSMITH_PROJECT = env.LANGSMITH_PROJECT || 'iofold-development';
+      console.log(`[LangSmith] process.env polyfill set - project: ${globalThis.process.env.LANGSMITH_PROJECT}, tracing: ${globalThis.process.env.LANGSMITH_TRACING_V2}`);
+    }
 
     const url = new URL(request.url);
 
@@ -469,12 +477,14 @@ export default {
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
     const consumer = new QueueConsumer({
       db: env.DB,
+      benchmarksDb: env.BENCHMARKS_DB,
       sandboxBinding: env.SANDBOX,
       encryptionKey: env.ENCRYPTION_KEY || 'default-dev-key',
       deadLetterQueue: env.DEAD_LETTER_QUEUE,
       cfAccountId: env.CF_ACCOUNT_ID,
       cfGatewayId: env.CF_AI_GATEWAY_ID,
       cfGatewayToken: env.CF_AI_GATEWAY_TOKEN,
+      queue: env.JOB_QUEUE,
     });
 
     await consumer.processBatch(batch);

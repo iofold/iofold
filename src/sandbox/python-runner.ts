@@ -28,9 +28,16 @@ export interface PythonRunnerConfig {
   sandboxId?: string; // Unique identifier for this sandbox instance
   /** URL of dev Python executor service (default: http://localhost:9999) */
   devExecutorUrl?: string;
+  /** Custom allowed imports (default: basic imports for evals) */
+  allowedImports?: string[];
 }
 
-const ALLOWED_IMPORTS = ['json', 're', 'typing', 'httpx', 'openai', 'time', 'dataclasses', 'traceback', 'asyncio'];
+// Default allowed imports for general eval/playground use
+// These are safe, standard library modules with no filesystem/network access
+const DEFAULT_ALLOWED_IMPORTS = ['json', 're', 'typing', 'math', 'datetime', 'difflib'];
+
+// Extended imports for GEPA optimization (requires network access via httpx)
+export const GEPA_ALLOWED_IMPORTS = ['json', 're', 'typing', 'httpx', 'openai', 'time', 'dataclasses', 'traceback', 'asyncio'];
 const BLOCKED_IMPORTS = [
   'os', 'sys', 'subprocess', 'socket', 'urllib',
   'requests', 'http', 'ftplib', 'smtplib',
@@ -44,14 +51,17 @@ const DEV_EXECUTOR_URL = 'http://localhost:9999';
 export class PythonRunner {
   private config: PythonRunnerConfig;
   private sandbox?: Sandbox;
+  private allowedImports: string[];
 
   constructor(config: PythonRunnerConfig = {}) {
     this.config = {
       timeout: config.timeout || 5000,
       sandboxBinding: config.sandboxBinding,
       sandboxId: config.sandboxId || `python-eval-${Date.now()}`,
-      devExecutorUrl: config.devExecutorUrl || DEV_EXECUTOR_URL
+      devExecutorUrl: config.devExecutorUrl || DEV_EXECUTOR_URL,
+      allowedImports: config.allowedImports
     };
+    this.allowedImports = config.allowedImports || DEFAULT_ALLOWED_IMPORTS;
   }
 
   async execute(code: string): Promise<ExecutionResult> {
@@ -180,15 +190,15 @@ export class PythonRunner {
 
     for (const match of simpleImports) {
       const moduleName = match[1];
-      if (moduleName && !ALLOWED_IMPORTS.includes(moduleName)) {
-        return `Import not whitelisted: ${moduleName}. Allowed: ${ALLOWED_IMPORTS.join(', ')}`;
+      if (moduleName && !this.allowedImports.includes(moduleName)) {
+        return `Import not whitelisted: ${moduleName}. Allowed: ${this.allowedImports.join(', ')}`;
       }
     }
 
     for (const match of fromImports) {
       const moduleName = match[1];
-      if (moduleName && !ALLOWED_IMPORTS.includes(moduleName)) {
-        return `Import not whitelisted: ${moduleName}. Allowed: ${ALLOWED_IMPORTS.join(', ')}`;
+      if (moduleName && !this.allowedImports.includes(moduleName)) {
+        return `Import not whitelisted: ${moduleName}. Allowed: ${this.allowedImports.join(', ')}`;
       }
     }
 

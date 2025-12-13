@@ -273,9 +273,11 @@ export async function getComparisonMatrix(
         t.steps,
         f.rating as human_rating,
         f.notes as human_notes,
-        f.created_at as feedback_created_at
+        f.created_at as feedback_created_at,
+        i.platform as source
       FROM feedback f
       INNER JOIN traces t ON f.trace_id = t.id
+      LEFT JOIN integrations i ON t.integration_id = i.id
       WHERE ${conditions.join(' AND ')}
       ${cursorCondition}
       ORDER BY f.created_at ASC, t.id ASC
@@ -427,8 +429,8 @@ export async function getComparisonMatrix(
         }
       }
 
-      // Get source from integration (simplified - would need JOIN in real implementation)
-      const source = 'langfuse'; // TODO: Derive from integration_id
+      // Get source from integration (fetched via JOIN)
+      const source = (trace.source as string) || 'unknown';
 
       const row: MatrixRow = {
         trace_id: traceId,
@@ -733,9 +735,11 @@ export async function getEvalExecutions(
         ee.error,
         ee.created_at as executed_at,
         t.imported_at as trace_timestamp,
-        t.steps
+        t.steps,
+        i.platform as source
       FROM eval_executions ee
       INNER JOIN traces t ON ee.trace_id = t.id
+      LEFT JOIN integrations i ON t.integration_id = i.id
       WHERE ${conditions.join(' AND ')}
       ${cursorCondition}
       ORDER BY ee.created_at ASC, ee.trace_id ASC
@@ -769,7 +773,7 @@ export async function getEvalExecutions(
           timestamp: row.trace_timestamp as string,
           input_preview,
           output_preview,
-          source: 'langfuse' // TODO: Derive from integration
+          source: (row.source as string) || 'unknown'
         }
       };
     });

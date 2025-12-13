@@ -48,6 +48,7 @@ export interface PlaygroundSession {
 
 interface PlaygroundEnv {
   DB: D1Database;
+  BENCHMARKS_DB?: D1Database;
   SANDBOX?: unknown;
   CF_ACCOUNT_ID?: string;
   CF_AI_GATEWAY_ID?: string;
@@ -273,6 +274,7 @@ export async function playgroundChat(
           modelProvider: currentSession.modelProvider,
           modelId: currentSession.modelId,
           agentId, // Pass agent ID to enable tool registry lookup
+          benchmarksDb: env.BENCHMARKS_DB, // For email tools (Enron dataset)
           env: {
             CF_ACCOUNT_ID: env.CF_ACCOUNT_ID || '',
             CF_AI_GATEWAY_ID: env.CF_AI_GATEWAY_ID || '',
@@ -394,13 +396,15 @@ export async function playgroundChat(
               }
               const spanId = toolSpans.get(event.toolCallId);
               if (spanId) {
+                // Get toolName from the record (saved during tool-call-start), not from event
+                const toolName = record?.name || 'unknown';
                 // Log tool call with parsed args
                 try {
                   const parsedArgs = JSON.parse(event.args);
                   collector.logToolCall({
                     traceId,
                     spanId,
-                    toolName: event.toolName || 'unknown',
+                    toolName,
                     input: parsedArgs,
                   });
                 } catch (parseError) {
@@ -408,7 +412,7 @@ export async function playgroundChat(
                   collector.logToolCall({
                     traceId,
                     spanId,
-                    toolName: event.toolName || 'unknown',
+                    toolName,
                     input: { raw: event.args },
                   });
                 }

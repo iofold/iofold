@@ -8,7 +8,7 @@ vi.mock('@cloudflare/sandbox', async () => {
   };
 });
 
-import { PythonRunner } from './python-runner';
+import { PythonRunner, GEPA_ALLOWED_IMPORTS } from './python-runner';
 import { mockSandboxBinding } from './__mocks__/sandbox-mock';
 
 describe('PythonRunner', () => {
@@ -75,8 +75,11 @@ print(result)
     expect(result.output).toContain('True');
   });
 
-  it('should allow httpx and openai imports for GEPA', () => {
-    const runner = new PythonRunner({ sandboxBinding: mockSandboxBinding });
+  it('should allow httpx and openai imports for GEPA when configured', () => {
+    const runner = new PythonRunner({
+      sandboxBinding: mockSandboxBinding,
+      allowedImports: GEPA_ALLOWED_IMPORTS
+    });
 
     // Test httpx import validation
     const httpxCode = 'import httpx\nprint("test")';
@@ -86,7 +89,7 @@ print(result)
     // Test openai import validation
     const openaiCode = 'import openai\nprint("test")';
     const openaiValidation = runner.validateCode(openaiCode);
-    expect(openaiValidation).toBeNull(); // null means validation passed
+    expect(httpxValidation).toBeNull(); // null means validation passed
 
     // Test both imports together
     const bothCode = 'import httpx\nimport openai\nprint("test")';
@@ -94,17 +97,31 @@ print(result)
     expect(bothValidation).toBeNull(); // null means validation passed
   });
 
-  it('should still block http module (not httpx)', () => {
+  it('should block http module always', () => {
     const runner = new PythonRunner({ sandboxBinding: mockSandboxBinding });
 
     // http should be blocked
     const httpCode = 'import http\nprint("test")';
     const httpValidation = runner.validateCode(httpCode);
     expect(httpValidation).toContain('Blocked import detected: http');
+  });
 
-    // But httpx should be allowed
+  it('should block time and httpx imports by default', () => {
+    const runner = new PythonRunner({ sandboxBinding: mockSandboxBinding });
+
+    // time should be blocked by default (only allowed with GEPA_ALLOWED_IMPORTS)
+    const timeCode = 'import time\nprint("test")';
+    const timeValidation = runner.validateCode(timeCode);
+    expect(timeValidation).toContain('Import not whitelisted: time');
+
+    // httpx should be blocked by default (only allowed with GEPA_ALLOWED_IMPORTS)
     const httpxCode = 'import httpx\nprint("test")';
     const httpxValidation = runner.validateCode(httpxCode);
-    expect(httpxValidation).toBeNull();
+    expect(httpxValidation).toContain('Import not whitelisted: httpx');
+
+    // openai should be blocked by default (only allowed with GEPA_ALLOWED_IMPORTS)
+    const openaiCode = 'import openai\nprint("test")';
+    const openaiValidation = runner.validateCode(openaiCode);
+    expect(openaiValidation).toContain('Import not whitelisted: openai');
   });
 });

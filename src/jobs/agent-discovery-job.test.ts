@@ -220,7 +220,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -298,7 +299,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -401,7 +403,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -463,7 +466,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -554,7 +558,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -595,7 +600,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -656,7 +662,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -713,7 +720,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -761,7 +769,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -863,7 +872,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -981,7 +991,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -1083,7 +1094,8 @@ describe('AgentDiscoveryJob', () => {
           ai: mockAi,
           vectorize: mockVectorize,
           cfAccountId: mockCfAccountId,
-          cfGatewayId: mockCfGatewayId
+          cfGatewayId: mockCfGatewayId,
+          cfGatewayToken: 'test-token'
         }
       );
 

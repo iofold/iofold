@@ -14,7 +14,7 @@
 
 import type { D1Database, DurableObjectNamespace } from '@cloudflare/workers-types';
 import type { Sandbox } from '@cloudflare/sandbox';
-import { PythonRunner } from '../sandbox/python-runner';
+import { PythonRunner, GEPA_ALLOWED_IMPORTS } from '../sandbox/python-runner';
 import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
 import type { GEPAOptimizationJobPayload } from '../types/queue';
@@ -74,7 +74,8 @@ export class GEPAOptimizationJob {
     this.jobManager = new JobManager(deps.db);
     this.runner = new PythonRunner({
       sandboxBinding: deps.sandboxBinding,
-      timeout: 1800000 // 30 minutes for GEPA optimization
+      timeout: 1800000, // 30 minutes for GEPA optimization
+      allowedImports: GEPA_ALLOWED_IMPORTS // Allow httpx, openai, time, etc.
     });
   }
 

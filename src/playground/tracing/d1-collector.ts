@@ -220,16 +220,19 @@ export class D1TraceCollector implements TraceCollector {
       outputPreview: this.generateOutputPreview(),
       stepCount: steps.length,
       hasErrors: steps.some((s) => !!s.error),
+      // Include agent version info from metadata for proper trace-agent linking
+      agentVersionId: (this.metadata as any).agentVersionId || null,
     };
 
     try {
-      // Insert into traces table
+      // Insert into traces table with agent_version_id for proper trace-agent linking
       await this.db
         .prepare(
           `INSERT INTO traces (
           id, workspace_id, integration_id, trace_id, source, timestamp,
-          steps, input_preview, output_preview, step_count, has_errors, imported_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          steps, input_preview, output_preview, step_count, has_errors, imported_at,
+          agent_version_id, assignment_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           traceData.id,
@@ -243,7 +246,9 @@ export class D1TraceCollector implements TraceCollector {
           traceData.outputPreview,
           traceData.stepCount,
           traceData.hasErrors ? 1 : 0,
-          new Date().toISOString()
+          new Date().toISOString(),
+          traceData.agentVersionId,
+          traceData.agentVersionId ? 'assigned' : 'unassigned'
         )
         .run();
 
@@ -429,19 +434,31 @@ export class D1TraceCollector implements TraceCollector {
 
   /**
    * Generate output preview (first 200 chars)
+   * Searches backwards through spans to find the last LLM output
    */
   private generateOutputPreview(): string {
-    const lastSpan = Array.from(this.spans.values()).sort(
+    // Sort spans by startTime descending (most recent first)
+    const sortedSpans = Array.from(this.spans.values()).sort(
       (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
-    )[0];
+    );
 
-    if (!lastSpan?.output) return 'No output';
+    // Find the last span with an output (LLM calls have output, tool calls don't)
+    for (const span of sortedSpans) {
+      if (span.output) {
+        // Handle output that might be {content: string} or just a string
+        let outputStr: string;
+        if (typeof span.output === 'object' && 'content' in span.output) {
+          outputStr = String((span.output as { content: string }).content);
+        } else if (typeof span.output === 'string') {
+          outputStr = span.output;
+        } else {
+          outputStr = JSON.stringify(span.output);
+        }
 
-    const outputStr =
-      typeof lastSpan.output === 'string'
-        ? lastSpan.output
-        : JSON.stringify(lastSpan.output);
+        return outputStr.length > 200 ? `${outputStr.slice(0, 200)}...` : outputStr;
+      }
+    }
 
-    return outputStr.length > 200 ? `${outputStr.slice(0, 200)}...` : outputStr;
+    return 'No output';
   }
 }
