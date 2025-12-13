@@ -18,6 +18,7 @@ import type {
   PromptEvaluationJobPayload,
   RolloutTaskPayload,
   GEPAOptimizationJobPayload,
+  TasksetRunJobPayload,
   RetryAttempt
 } from '../types/queue';
 import { JobManager } from '../jobs/job-manager';
@@ -28,6 +29,7 @@ import { AgentDiscoveryJob } from '../jobs/agent-discovery-job';
 import { PromptImprovementJob } from '../jobs/prompt-improvement-job';
 import { PromptEvaluationJob } from '../jobs/prompt-evaluation-job';
 import { GEPAOptimizationJob } from '../jobs/gepa-optimization-job';
+import { TasksetRunJob } from '../jobs/taskset-run-job';
 import { classifyError, isRetryable, getErrorCategoryDescription, type ErrorCategory } from '../errors/classifier';
 import { calculateBackoffDelay, shouldRetry as shouldRetryBackoff, DEFAULT_RETRY_CONFIG } from '../retry/backoff';
 
@@ -83,6 +85,7 @@ export interface MessageErrorResult {
  */
 export interface QueueConsumerDeps {
   db: D1Database;
+  benchmarksDb?: D1Database;
   sandboxBinding?: DurableObjectNamespace<Sandbox>;
   encryptionKey: string;
   deadLetterQueue?: DeadLetterQueue;
@@ -96,6 +99,8 @@ export interface QueueConsumerDeps {
   cfGatewayId: string;
   /** Optional AI Gateway authentication token */
   cfGatewayToken?: string;
+  /** Queue binding for enqueueing follow-up jobs */
+  queue?: any;
 }
 
 /**
@@ -103,6 +108,7 @@ export interface QueueConsumerDeps {
  */
 export class QueueConsumer {
   private db: D1Database;
+  private benchmarksDb?: D1Database;
   private sandboxBinding?: DurableObjectNamespace<Sandbox>;
   private encryptionKey: string;
   private deadLetterQueue?: DeadLetterQueue;
@@ -111,10 +117,12 @@ export class QueueConsumer {
   private cfAccountId: string;
   private cfGatewayId: string;
   private cfGatewayToken?: string;
+  private queue?: any;
   private jobManager: JobManager;
 
   constructor(deps: QueueConsumerDeps) {
     this.db = deps.db;
+    this.benchmarksDb = deps.benchmarksDb;
     this.sandboxBinding = deps.sandboxBinding;
     this.encryptionKey = deps.encryptionKey;
     this.deadLetterQueue = deps.deadLetterQueue;
@@ -123,6 +131,7 @@ export class QueueConsumer {
     this.cfAccountId = deps.cfAccountId;
     this.cfGatewayId = deps.cfGatewayId;
     this.cfGatewayToken = deps.cfGatewayToken;
+    this.queue = deps.queue;
     this.jobManager = new JobManager(deps.db);
   }
 
@@ -221,6 +230,9 @@ export class QueueConsumer {
         case 'gepa_optimization':
           await this.processGEPAOptimizationJob(job_id, workspace_id, payload as GEPAOptimizationJobPayload);
           break;
+        case 'taskset_run':
+          await this.processTasksetRunJob(job_id, workspace_id, payload as TasksetRunJobPayload);
+          break;
         default:
           throw new Error(`Unknown job type: ${type}`);
       }
@@ -252,7 +264,8 @@ export class QueueConsumer {
       },
       {
         db: this.db,
-        encryptionKey: this.encryptionKey
+        encryptionKey: this.encryptionKey,
+        queue: this.queue
       }
     );
 
@@ -487,6 +500,38 @@ export class QueueConsumer {
     );
 
     await optimizationJob.execute();
+  }
+
+  /**
+   * Process taskset run job
+   */
+  private async processTasksetRunJob(
+    jobId: string,
+    workspaceId: string,
+    payload: TasksetRunJobPayload
+  ): Promise<void> {
+    const tasksetRunJob = new TasksetRunJob(
+      {
+        jobId,
+        runId: payload.run_id,
+        workspaceId,
+        agentId: payload.agent_id,
+        tasksetId: payload.taskset_id,
+        modelProvider: payload.model_provider,
+        modelId: payload.model_id,
+        config: payload.config
+      },
+      {
+        db: this.db,
+        benchmarksDb: this.benchmarksDb,
+        sandboxBinding: this.sandboxBinding,
+        cfAccountId: this.cfAccountId,
+        cfGatewayId: this.cfGatewayId,
+        cfGatewayToken: this.cfGatewayToken,
+      }
+    );
+
+    await tasksetRunJob.execute();
   }
 
   /**

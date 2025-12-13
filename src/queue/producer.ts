@@ -10,7 +10,9 @@ import type {
   GenerateJobPayload,
   ExecuteJobPayload,
   MonitorJobPayload,
-  AutoRefineJobPayload
+  AutoRefineJobPayload,
+  AgentDiscoveryJobPayload,
+  TasksetRunJobPayload
 } from '../types/queue';
 import type { JobType } from '../types/api';
 
@@ -142,10 +144,62 @@ export class QueueProducer {
   }
 
   /**
+   * Enqueue an agent discovery job
+   */
+  async enqueueAgentDiscoveryJob(
+    workspaceId: string,
+    options?: {
+      similarityThreshold?: number;
+      minClusterSize?: number;
+      maxTraces?: number;
+    }
+  ): Promise<EnqueueResult> {
+    const payload: AgentDiscoveryJobPayload = {
+      type: 'agent_discovery',
+      similarity_threshold: options?.similarityThreshold,
+      min_cluster_size: options?.minClusterSize,
+      max_traces: options?.maxTraces
+    };
+
+    return this.enqueueJob('agent_discovery' as JobType, workspaceId, payload);
+  }
+
+  /**
+   * Enqueue a taskset run job
+   */
+  async enqueueTasksetRunJob(
+    runId: string,
+    workspaceId: string,
+    agentId: string,
+    tasksetId: string,
+    options?: {
+      modelProvider?: string;
+      modelId?: string;
+      config?: {
+        parallelism?: number;
+        timeout_per_task_ms?: number;
+      };
+    }
+  ): Promise<EnqueueResult> {
+    const payload: TasksetRunJobPayload = {
+      type: 'taskset_run',
+      run_id: runId,
+      workspace_id: workspaceId,
+      agent_id: agentId,
+      taskset_id: tasksetId,
+      model_provider: options?.modelProvider,
+      model_id: options?.modelId,
+      config: options?.config
+    };
+
+    return this.enqueueJob('taskset_run' as JobType, workspaceId, payload);
+  }
+
+  /**
    * Generic method to enqueue any job type
    */
   private async enqueueJob(
-    type: JobType | 'monitor' | 'auto_refine',
+    type: JobType | 'monitor' | 'auto_refine' | 'agent_discovery' | 'taskset_run',
     workspaceId: string,
     payload: JobPayload
   ): Promise<EnqueueResult> {
@@ -216,7 +270,7 @@ export class QueueProducer {
    */
   async enqueueBatch(
     jobs: Array<{
-      type: JobType | 'monitor' | 'auto_refine';
+      type: JobType | 'monitor' | 'auto_refine' | 'agent_discovery' | 'taskset_run';
       workspaceId: string;
       payload: JobPayload;
     }>

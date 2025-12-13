@@ -12,7 +12,7 @@ export interface QueueMessage {
   /** Unique job identifier */
   job_id: string;
   /** Job type determines which handler processes the message */
-  type: JobType | 'monitor' | 'auto_refine' | 'agent_discovery' | 'prompt_improvement' | 'prompt_evaluation' | 'template_drift' | 'eval_revalidation' | 'rollout_task' | 'gepa_optimization';
+  type: JobType | 'monitor' | 'auto_refine' | 'agent_discovery' | 'prompt_improvement' | 'prompt_evaluation' | 'template_drift' | 'eval_revalidation' | 'rollout_task' | 'gepa_optimization' | 'taskset_run';
   /** Workspace this job belongs to */
   workspace_id: string;
   /** Job-specific payload data */
@@ -55,7 +55,8 @@ export type JobPayload =
   | PromptImprovementJobPayload
   | PromptEvaluationJobPayload
   | RolloutTaskPayload
-  | GEPAOptimizationJobPayload;
+  | GEPAOptimizationJobPayload
+  | TasksetRunJobPayload;
 
 /**
  * Payload for trace import jobs
@@ -219,6 +220,30 @@ export interface GEPAOptimizationJobPayload {
   api_base_url: string;
   /** Session token for authentication */
   session_token: string;
+}
+
+/**
+ * Payload for taskset run jobs
+ */
+export interface TasksetRunJobPayload {
+  type: 'taskset_run';
+  /** Run ID in taskset_runs table */
+  run_id: string;
+  /** Workspace ID */
+  workspace_id: string;
+  /** Agent ID to run tasks with */
+  agent_id: string;
+  /** Taskset ID containing tasks to run */
+  taskset_id: string;
+  /** Model provider (default: 'anthropic') */
+  model_provider?: string;
+  /** Model ID (default: 'anthropic/claude-sonnet-4-5') */
+  model_id?: string;
+  /** Execution configuration */
+  config?: {
+    parallelism?: number;
+    timeout_per_task_ms?: number;
+  };
 }
 
 /**
