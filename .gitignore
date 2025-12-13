@@ -30,3 +30,13 @@ wc
 
 # Test artifact files
 poem_*.txt
+
+# Prevent accidental test artifact commits
+file*.txt
+*-old.tsx
+*-old.ts
+*.bak
+*.backup
+test-coverage-summary.txt
+*-coverage-summary.txt
+bun.lock
