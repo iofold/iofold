@@ -24,8 +24,11 @@ import type {
   AgentPromptResponse,
 } from '../types/agent';
 
+import { QueueProducer, type Queue } from '../queue/producer';
+
 export interface Env {
   DB: D1Database;
+  JOB_QUEUE?: Queue;
 }
 
 /**
@@ -130,7 +133,7 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
     const limitParam = url.searchParams.get('limit');
     const limit = limitParam ? parseInt(limitParam, 10) : undefined;
 
-    // Build query with optional LIMIT
+    // Build query with optional LIMIT - includes counts for traces, evals, feedback, and tasks
     let query = `SELECT
         a.id,
         a.workspace_id,
@@ -148,7 +151,11 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
         av.parent_version_id,
         av.accuracy,
         av.status as version_status,
-        av.created_at as version_created_at
+        av.created_at as version_created_at,
+        (SELECT COUNT(*) FROM traces t JOIN agent_versions av2 ON t.agent_version_id = av2.id WHERE av2.agent_id = a.id) as trace_count,
+        (SELECT COUNT(*) FROM evals e WHERE e.agent_id = a.id) as eval_count,
+        (SELECT COUNT(*) FROM feedback f WHERE f.agent_id = a.id) as feedback_count,
+        (SELECT COALESCE(SUM(ts.task_count), 0) FROM tasksets ts WHERE ts.agent_id = a.id AND ts.status = 'active') as task_count
       FROM agents a
       LEFT JOIN agent_versions av ON a.active_version_id = av.id
       WHERE a.workspace_id = ? AND a.status != ?
@@ -191,6 +198,12 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
         status: row.version_status,
         created_at: row.version_created_at,
       } : null,
+      counts: {
+        traces: row.trace_count || 0,
+        evals: row.eval_count || 0,
+        feedback: row.feedback_count || 0,
+        tasks: row.task_count || 0,
+      },
     }));
 
     const response: ListAgentsResponse = {
@@ -274,20 +287,18 @@ export async function getAgentById(request: Request, env: Env, agentId: string):
       .bind(agentId, 'active')
       .all();
 
-    // Get metrics - use feedback.agent_id for direct relationship
+    // Get metrics - use direct agent_id where available, join via agent_versions for traces
     const metricsResult = await env.DB.prepare(
       `SELECT
-        COUNT(DISTINCT f.trace_id) as trace_count,
-        COUNT(DISTINCT f.id) as feedback_count,
-        COUNT(DISTINCT CASE WHEN f.rating = 'positive' THEN f.id END) as positive_feedback_count,
-        COUNT(DISTINCT CASE WHEN f.rating = 'negative' THEN f.id END) as negative_feedback_count,
-        COUNT(DISTINCT e.id) as eval_count
-      FROM agents a
-      LEFT JOIN feedback f ON f.agent_id = a.id
-      LEFT JOIN evals e ON e.agent_id = a.id
-      WHERE a.id = ?`
+        (SELECT COUNT(*) FROM traces t
+         JOIN agent_versions av ON t.agent_version_id = av.id
+         WHERE av.agent_id = ?) as trace_count,
+        (SELECT COUNT(*) FROM feedback WHERE agent_id = ?) as feedback_count,
+        (SELECT COUNT(*) FROM feedback WHERE agent_id = ? AND rating = 'positive') as positive_feedback_count,
+        (SELECT COUNT(*) FROM feedback WHERE agent_id = ? AND rating = 'negative') as negative_feedback_count,
+        (SELECT COUNT(*) FROM evals WHERE agent_id = ?) as eval_count`
     )
-      .bind(agentId)
+      .bind(agentId, agentId, agentId, agentId, agentId)
       .first();
 
     // Calculate accuracy from active eval candidate if available
@@ -681,6 +692,130 @@ export async function updateAgent(request: Request, env: Env, agentId: string): 
       return createErrorResponse('VALIDATION_ERROR', error.message, 400);
     }
     if (error.message === 'Invalid JSON in request body') {
+      return createErrorResponse('VALIDATION_ERROR', error.message, 400);
+    }
+    return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
+  }
+}
+
+/**
+ * POST /api/agents/discover
+ *
+ * Manually trigger agent discovery job to cluster unassigned traces.
+ * Processes traces with assignment_status = 'unassigned' and creates agents from clusters.
+ *
+ * @param request - HTTP request with optional configuration
+ * @param env - Cloudflare environment
+ * @returns 202 Accepted with job details
+ */
+export async function discoverAgents(request: Request, env: Env): Promise<Response> {
+  try {
+    const workspaceId = getWorkspaceId(request);
+    validateWorkspaceAccess(workspaceId);
+
+    // Parse optional configuration
+    let config: {
+      similarity_threshold?: number;
+      min_cluster_size?: number;
+      max_traces?: number;
+    } = {};
+
+    try {
+      config = await parseJsonBody(request);
+    } catch {
+      // Empty body is fine, use defaults
+    }
+
+    // Validate configuration if provided
+    if (config.similarity_threshold !== undefined) {
+      if (config.similarity_threshold < 0 || config.similarity_threshold > 1) {
+        return createErrorResponse(
+          'VALIDATION_ERROR',
+          'similarity_threshold must be between 0 and 1',
+          400
+        );
+      }
+    }
+
+    if (config.min_cluster_size !== undefined) {
+      if (config.min_cluster_size < 1 || config.min_cluster_size > 100) {
+        return createErrorResponse(
+          'VALIDATION_ERROR',
+          'min_cluster_size must be between 1 and 100',
+          400
+        );
+      }
+    }
+
+    if (config.max_traces !== undefined) {
+      if (config.max_traces < 1 || config.max_traces > 1000) {
+        return createErrorResponse(
+          'VALIDATION_ERROR',
+          'max_traces must be between 1 and 1000',
+          400
+        );
+      }
+    }
+
+    // Check if there are unassigned traces
+    const unassignedCount = await env.DB
+      .prepare('SELECT COUNT(*) as count FROM traces WHERE workspace_id = ? AND assignment_status = ?')
+      .bind(workspaceId, 'unassigned')
+      .first();
+
+    const count = (unassignedCount?.count as number) || 0;
+
+    if (count === 0) {
+      return createErrorResponse(
+        'VALIDATION_ERROR',
+        'No unassigned traces found. Import traces first.',
+        400
+      );
+    }
+
+    // Enqueue agent discovery job
+    if (!env.JOB_QUEUE) {
+      return createErrorResponse(
+        'INTERNAL_ERROR',
+        'Job queue not configured',
+        500
+      );
+    }
+
+    const producer = new QueueProducer({
+      queue: env.JOB_QUEUE,
+      db: env.DB
+    });
+
+    const result = await producer.enqueueAgentDiscoveryJob(workspaceId ?? 'workspace_default', {
+      similarityThreshold: config.similarity_threshold,
+      minClusterSize: config.min_cluster_size,
+      maxTraces: config.max_traces
+    });
+
+    if (!result.success) {
+      return createErrorResponse(
+        'INTERNAL_ERROR',
+        result.error || 'Failed to enqueue agent discovery job',
+        500
+      );
+    }
+
+    return createSuccessResponse(
+      {
+        job_id: result.job_id,
+        status: 'queued',
+        unassigned_traces: count,
+        config: {
+          similarity_threshold: config.similarity_threshold || 0.85,
+          min_cluster_size: config.min_cluster_size || 5,
+          max_traces: config.max_traces || 100
+        }
+      },
+      202
+    );
+  } catch (error: any) {
+    if (error.message === 'Missing X-Workspace-Id header') {
       return createErrorResponse('VALIDATION_ERROR', error.message, 400);
     }
     return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);

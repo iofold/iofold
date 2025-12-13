@@ -64,6 +64,7 @@ import {
   updateAgent,
   getAgentPrompt,
   improveAgent,
+  discoverAgents,
 } from './agents';
 
 import {
@@ -120,6 +121,9 @@ import {
   getTaskset,
   addTasksToTaskset,
   archiveTaskset,
+  runTaskset,
+  listTasksetRuns,
+  getTasksetRun,
 } from './tasksets';
 
 export interface Env {
@@ -459,6 +463,11 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   // Agents Endpoints
   // ============================================================================
 
+  // POST /api/agents/discover - must come BEFORE /api/agents POST
+  if (path === '/api/agents/discover' && method === 'POST') {
+    return discoverAgents(request, env);
+  }
+
   // POST /api/agents
   if (path === '/api/agents' && method === 'POST') {
     return createAgent(request, env);
@@ -684,6 +693,24 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   // DELETE /api/agents/:agentId/tasksets/:tasksetId - Archive taskset
   if (tasksetDetailMatch && method === 'DELETE') {
     return archiveTaskset(request, env, tasksetDetailMatch[1], tasksetDetailMatch[2]);
+  }
+
+  // POST /api/agents/:agentId/tasksets/:tasksetId/run - Start taskset run
+  const tasksetRunMatch = path.match(/^\/api\/agents\/([^\/]+)\/tasksets\/([^\/]+)\/run$/);
+  if (tasksetRunMatch && method === 'POST') {
+    return runTaskset(request, env, tasksetRunMatch[1], tasksetRunMatch[2]);
+  }
+
+  // GET /api/agents/:agentId/tasksets/:tasksetId/runs - List runs for taskset
+  const tasksetRunsListMatch = path.match(/^\/api\/agents\/([^\/]+)\/tasksets\/([^\/]+)\/runs$/);
+  if (tasksetRunsListMatch && method === 'GET') {
+    return listTasksetRuns(request, env, tasksetRunsListMatch[1], tasksetRunsListMatch[2]);
+  }
+
+  // GET /api/agents/:agentId/tasksets/:tasksetId/runs/:runId - Get run status with results
+  const tasksetRunDetailMatch = path.match(/^\/api\/agents\/([^\/]+)\/tasksets\/([^\/]+)\/runs\/([^\/]+)$/);
+  if (tasksetRunDetailMatch && method === 'GET') {
+    return getTasksetRun(request, env, tasksetRunDetailMatch[1], tasksetRunDetailMatch[2], tasksetRunDetailMatch[3]);
   }
 
   // ============================================================================

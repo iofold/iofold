@@ -10,6 +10,7 @@
 import OpenAI from 'openai';
 import { ChatOpenAI } from '@langchain/openai';
 import { createGatewayClient, DEFAULT_MODEL, MODELS, type GatewayEnv, type AIProvider } from '../../ai/gateway';
+import { getLangChainEnvVars, isLangSmithEnabled } from '../../ai/langsmith-tracer';
 import type { ModelProvider } from '../types';
 
 /**
@@ -105,7 +106,7 @@ export async function* streamCompletion(
  */
 export const DEFAULT_MODELS: Record<AIProvider, string> = {
   anthropic: 'anthropic/claude-sonnet-4-5',
-  openai: 'openai/gpt-5.1-mini',
+  openai: 'openai/gpt-5-nano',
   google: 'google-vertex-ai/google/gemini-2.5-flash',
   'workers-ai': 'workers-ai/@cf/meta/llama-3.1-8b-instruct',
 };
@@ -169,6 +170,9 @@ export function hasApiKey(provider: ModelProvider, env: Env): boolean {
  * Routes all requests through Cloudflare AI Gateway using ChatOpenAI
  * with custom baseURL. The gateway handles routing to the correct provider
  * based on the model prefix (anthropic/, openai/, google/).
+ *
+ * Automatically enables LangSmith tracing if LANGSMITH_TRACING_V2=true
+ * and LANGSMITH_API_KEY is set in the environment.
  */
 export function getChatModel(config: ChatModelConfig) {
   const { provider, modelId, env, temperature = 0.7, maxTokens = 4096 } = config;
@@ -190,6 +194,20 @@ export function getChatModel(config: ChatModelConfig) {
   // Validate gateway token is configured
   if (!env.CF_AI_GATEWAY_TOKEN) {
     throw new Error('Cloudflare AI Gateway token required (CF_AI_GATEWAY_TOKEN)');
+  }
+
+  // Prepare LangSmith environment variables for LangChain
+  // LangChain will automatically enable tracing when these are set
+  const langsmithEnv = getLangChainEnvVars(env);
+
+  if (isLangSmithEnabled(env)) {
+    console.log(`[LangSmith] LangChain tracing enabled for project: ${env.LANGSMITH_PROJECT || 'iofold-development'}`);
+
+    // Set environment variables for LangChain to pick up
+    // Note: In a Workers environment, these might need to be passed differently
+    if (typeof process !== 'undefined' && process.env) {
+      Object.assign(process.env, langsmithEnv);
+    }
   }
 
   // Use ChatOpenAI for all providers - the gateway routes based on model prefix

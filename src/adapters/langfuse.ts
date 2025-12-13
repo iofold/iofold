@@ -103,69 +103,73 @@ export class LangfuseAdapter {
     // observations is just an array of IDs
     const messages = langfuseTrace.output?.messages || [];
 
-    // Create steps from the messages
-    const steps: LangGraphExecutionStep[] = messages.map((msg: any, index: number) => {
-      // Extract tool calls if this is an AI message
-      const toolCalls = msg.type === 'ai' && msg.tool_calls
-        ? msg.tool_calls.map((tc: any) => ({
-            tool_name: tc.name,
-            arguments: tc.args || {},
-            result: null, // Result comes in next message
-            id: tc.id
-          }))
-        : [];
-
-      // Extract message content
-      let messageContent = '';
-      if (typeof msg.content === 'string') {
-        messageContent = msg.content;
-      } else if (Array.isArray(msg.content)) {
-        // Handle structured content (reasoning + text)
-        messageContent = msg.content
-          .filter((c: any) => c.type === 'text')
-          .map((c: any) => c.text)
-          .join('\n');
+    // Build a map of tool_call_id -> result from tool messages
+    // This allows us to link tool results back to their original tool calls
+    const toolResultsMap = new Map<string, any>();
+    for (const msg of messages) {
+      if (msg.type === 'tool' && msg.tool_call_id) {
+        toolResultsMap.set(msg.tool_call_id, msg.content);
       }
+    }
 
-      // Build messages_added array
-      const messages_added: any[] = [];
-      if (msg.type === 'human') {
-        messages_added.push({
-          role: 'user',
-          content: messageContent
-        });
-      } else if (msg.type === 'ai') {
-        messages_added.push({
-          role: 'assistant',
-          content: messageContent
-        });
-      } else if (msg.type === 'tool') {
-        // Tool result message
-        messages_added.push({
-          role: 'tool',
-          content: msg.content,
-          tool_call_id: msg.tool_call_id,
-          name: msg.name
-        });
-      }
+    // Create steps from the messages, filtering out tool messages since their results
+    // are already linked to the AI message tool_calls via toolResultsMap
+    const steps: LangGraphExecutionStep[] = messages
+      .filter((msg: any) => msg.type !== 'tool') // Skip tool messages - results are linked in tool_calls
+      .map((msg: any, index: number) => {
+        // Extract tool calls if this is an AI message, linking results from toolResultsMap
+        const toolCalls = msg.type === 'ai' && msg.tool_calls
+          ? msg.tool_calls.map((tc: any) => ({
+              tool_name: tc.name,
+              arguments: tc.args || {},
+              result: toolResultsMap.get(tc.id), // Link result from subsequent tool message (undefined if not found)
+              id: tc.id
+            }))
+          : [];
 
-      return {
-        step_id: msg.id || `step_${index}`,
-        trace_id: langfuseTrace.id,
-        timestamp: msg.created_at ? new Date(msg.created_at * 1000).toISOString() : langfuseTrace.timestamp,
-        messages_added,
-        tool_calls: toolCalls,
-        input: msg.type === 'human' ? messageContent : null,
-        output: msg.type === 'ai' ? messageContent : msg.type === 'tool' ? msg.content : null,
-        metadata: {
-          type: msg.type,
-          usage: msg.usage_metadata || null,
-          model: msg.response_metadata?.model || null,
-          ...msg.additional_kwargs
-        },
-        error: msg.status === 'error' ? msg.content : undefined
-      };
-    });
+        // Extract message content
+        let messageContent = '';
+        if (typeof msg.content === 'string') {
+          messageContent = msg.content;
+        } else if (Array.isArray(msg.content)) {
+          // Handle structured content (reasoning + text)
+          messageContent = msg.content
+            .filter((c: any) => c.type === 'text')
+            .map((c: any) => c.text)
+            .join('\n');
+        }
+
+        // Build messages_added array
+        const messages_added: any[] = [];
+        if (msg.type === 'human') {
+          messages_added.push({
+            role: 'user',
+            content: messageContent
+          });
+        } else if (msg.type === 'ai') {
+          messages_added.push({
+            role: 'assistant',
+            content: messageContent
+          });
+        }
+
+        return {
+          step_id: msg.id || `step_${index}`,
+          trace_id: langfuseTrace.id,
+          timestamp: msg.created_at ? new Date(msg.created_at * 1000).toISOString() : langfuseTrace.timestamp,
+          messages_added,
+          tool_calls: toolCalls,
+          input: msg.type === 'human' ? messageContent : null,
+          output: msg.type === 'ai' ? messageContent : null,
+          metadata: {
+            type: msg.type,
+            usage: msg.usage_metadata || null,
+            model: msg.response_metadata?.model || null,
+            ...msg.additional_kwargs
+          },
+          error: msg.status === 'error' ? msg.content : undefined
+        };
+      });
 
     return {
       id: langfuseTrace.id,

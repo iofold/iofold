@@ -15,6 +15,7 @@ import type { Trace } from '../types/trace';
 import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
 import { decryptAPIKey } from '../utils/crypto';
+import { QueueProducer, type Queue } from '../queue/producer';
 
 /**
  * Simple base64 decode for MVP (matching integrations.ts encryption)
@@ -39,6 +40,7 @@ export interface TraceImportJobConfig {
 export interface TraceImportJobDeps {
   db: D1Database;
   encryptionKey: string;
+  queue?: Queue;
 }
 
 export interface TraceImportJobResult {
@@ -208,6 +210,33 @@ export class TraceImportJob {
       await this.jobManager.completeJob(this.config.jobId, result);
       this.emitProgress('completed', 100, result);
 
+      // Trigger agent discovery job if traces were imported and queue is available
+      if (result.imported > 0 && this.deps.queue) {
+        try {
+          const producer = new QueueProducer({
+            queue: this.deps.queue,
+            db: this.deps.db
+          });
+
+          const discoveryResult = await producer.enqueueAgentDiscoveryJob(this.config.workspaceId);
+
+          if (discoveryResult.success) {
+            console.log(
+              `[TraceImportJob] Auto-triggered agent discovery job ${discoveryResult.job_id} after importing ${result.imported} traces`
+            );
+          } else {
+            console.error(
+              `[TraceImportJob] Failed to trigger agent discovery: ${discoveryResult.error}`
+            );
+          }
+        } catch (error: any) {
+          // Don't fail the import job if agent discovery enqueue fails
+          console.error(
+            `[TraceImportJob] Error triggering agent discovery: ${error.message}`
+          );
+        }
+      }
+
       return result;
     } catch (error: any) {
       console.error('Trace import job failed:', error);
@@ -291,20 +320,35 @@ export class TraceImportJob {
   private extractOutputPreview(steps: any[]): string {
     if (steps.length === 0) return 'No output';
 
-    const lastStep = steps[steps.length - 1];
+    // Search backwards through steps to find the last one with output
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const step = steps[i];
 
-    // Try output field first
-    if (lastStep.output) {
-      const outputStr = typeof lastStep.output === 'string'
-        ? lastStep.output
-        : JSON.stringify(lastStep.output);
-      return outputStr.substring(0, 200);
-    }
+      // Try output field first (handle both string and {content: string} formats)
+      if (step.output) {
+        let outputStr: string;
+        if (typeof step.output === 'object' && 'content' in step.output) {
+          outputStr = String(step.output.content);
+        } else if (typeof step.output === 'string') {
+          outputStr = step.output;
+        } else {
+          outputStr = JSON.stringify(step.output);
+        }
+        if (outputStr && outputStr !== '{}') {
+          return outputStr.substring(0, 200);
+        }
+      }
 
-    // Try last message
-    if (lastStep.messages_added && lastStep.messages_added.length > 0) {
-      const lastMsg = lastStep.messages_added[lastStep.messages_added.length - 1];
-      return (lastMsg.content || '').substring(0, 200);
+      // Try messages_added for assistant messages
+      if (step.messages_added && step.messages_added.length > 0) {
+        // Search backwards through messages for last assistant message
+        for (let j = step.messages_added.length - 1; j >= 0; j--) {
+          const msg = step.messages_added[j];
+          if (msg.role === 'assistant' && msg.content) {
+            return msg.content.substring(0, 200);
+          }
+        }
+      }
     }
 
     return 'No output';

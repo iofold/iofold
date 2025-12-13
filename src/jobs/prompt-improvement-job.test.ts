@@ -3,15 +3,32 @@ import { PromptImprovementJob } from './prompt-improvement-job';
 import type { D1Database, D1PreparedStatement, D1Result } from '@cloudflare/workers-types';
 import type { PromptImprovementJobResult } from '../types/agent';
 
-// Mock messages.create function
-const mockMessagesCreate = vi.fn();
+// Mock chat.completions.create function
+const mockChatCompletionsCreate = vi.fn();
 
-// Mock Anthropic SDK
-vi.mock('@anthropic-ai/sdk', () => {
+// Mock OpenAI SDK
+vi.mock('openai', () => {
   return {
     default: vi.fn().mockImplementation(() => ({
-      messages: {
-        create: mockMessagesCreate
+      chat: {
+        completions: {
+          create: mockChatCompletionsCreate
+        }
+      }
+    }))
+  };
+});
+
+// Mock AI Gateway module to bypass token validation
+vi.mock('../ai/gateway', async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    createGatewayClient: vi.fn(() => ({
+      chat: {
+        completions: {
+          create: mockChatCompletionsCreate
+        }
       }
     }))
   };
@@ -24,7 +41,7 @@ describe('PromptImprovementJob', () => {
   beforeEach(() => {
     // Reset mocks
     vi.clearAllMocks();
-    mockMessagesCreate.mockReset();
+    mockChatCompletionsCreate.mockReset();
 
     // Mock D1 Database
     const createMockPreparedStatement = (results: any[] = []): D1PreparedStatement => {
@@ -102,34 +119,40 @@ describe('PromptImprovementJob', () => {
 
   describe('Happy path: contradictions → improved prompt', () => {
     it('should generate improved prompt when contradictions exist', async () => {
-      // Setup: Mock Claude responses
-      mockMessagesCreate
+      // Setup: Mock OpenAI responses
+      mockChatCompletionsCreate
         .mockResolvedValueOnce({
           // First call: failure analysis
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              failure_patterns: [
-                'Fails on multi-part questions',
-                'Struggles with ambiguous requests'
-              ],
-              summary: 'The prompt lacks clarity on handling complex queries'
-            })
-          }]
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                failure_patterns: [
+                  'Fails on multi-part questions',
+                  'Struggles with ambiguous requests'
+                ],
+                summary: 'The prompt lacks clarity on handling complex queries'
+              })
+            }
+          }],
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+          model: 'anthropic/claude-sonnet-4-5'
         })
         .mockResolvedValueOnce({
           // Second call: improved prompt
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              improved_prompt: 'You are a helpful assistant. When handling {{task}}, break it down into steps and address each part clearly.',
-              changes: [
-                'Added instruction to break down complex tasks',
-                'Clarified handling of multi-part questions'
-              ],
-              reasoning: 'The improvements address failure patterns by explicitly guiding the agent to handle complex queries step-by-step'
-            })
-          }]
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                improved_prompt: 'You are a helpful assistant. When handling {{task}}, break it down into steps and address each part clearly.',
+                changes: [
+                  'Added instruction to break down complex tasks',
+                  'Clarified handling of multi-part questions'
+                ],
+                reasoning: 'The improvements address failure patterns by explicitly guiding the agent to handle complex queries step-by-step'
+              })
+            }
+          }],
+          usage: { prompt_tokens: 200, completion_tokens: 100, total_tokens: 300 },
+          model: 'anthropic/claude-sonnet-4-5'
         });
 
       job = new PromptImprovementJob(
@@ -142,7 +165,8 @@ describe('PromptImprovementJob', () => {
         {
           db: mockDb,
           cfAccountId: 'test-account-id',
-          cfGatewayId: 'test-gateway-id'
+          cfGatewayId: 'test-gateway-id',
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -208,7 +232,8 @@ describe('PromptImprovementJob', () => {
         {
           db: mockDb,
           cfAccountId: 'test-account-id',
-          cfGatewayId: 'test-gateway-id'
+          cfGatewayId: 'test-gateway-id',
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -220,8 +245,8 @@ describe('PromptImprovementJob', () => {
       expect(result.failure_patterns).toHaveLength(0);
       expect(result.best_practices_applied).toHaveLength(0);
 
-      // Verify Claude was NOT called
-      expect(mockMessagesCreate).not.toHaveBeenCalled();
+      // Verify OpenAI was NOT called
+      expect(mockChatCompletionsCreate).not.toHaveBeenCalled();
 
       // Verify no version was created
       expect(mockDb.prepare).not.toHaveBeenCalledWith(
@@ -232,25 +257,31 @@ describe('PromptImprovementJob', () => {
 
   describe('Best practices applied correctly', () => {
     it('should fetch and apply best practices in meta-prompt', async () => {
-      mockMessagesCreate
+      mockChatCompletionsCreate
         .mockResolvedValueOnce({
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              failure_patterns: ['Pattern 1'],
-              summary: 'Summary'
-            })
-          }]
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                failure_patterns: ['Pattern 1'],
+                summary: 'Summary'
+              })
+            }
+          }],
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+          model: 'anthropic/claude-sonnet-4-5'
         })
         .mockResolvedValueOnce({
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              improved_prompt: 'Improved prompt with best practices',
-              changes: ['Applied best practice: Be Specific'],
-              reasoning: 'Used clarity guidelines'
-            })
-          }]
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                improved_prompt: 'Improved prompt with best practices',
+                changes: ['Applied best practice: Be Specific'],
+                reasoning: 'Used clarity guidelines'
+              })
+            }
+          }],
+          usage: { prompt_tokens: 200, completion_tokens: 100, total_tokens: 300 },
+          model: 'anthropic/claude-sonnet-4-5'
         });
 
       job = new PromptImprovementJob(
@@ -262,7 +293,8 @@ describe('PromptImprovementJob', () => {
         {
           db: mockDb,
           cfAccountId: 'test-account-id',
-          cfGatewayId: 'test-gateway-id'
+          cfGatewayId: 'test-gateway-id',
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -273,17 +305,17 @@ describe('PromptImprovementJob', () => {
         expect.stringContaining('FROM prompt_best_practices')
       );
 
-      // Verify Claude was called with best practices in prompt
-      const secondClaudeCall = mockMessagesCreate.mock.calls[1];
-      expect(secondClaudeCall[0].messages[0].content).toContain('Be Specific');
-      expect(secondClaudeCall[0].messages[0].content).toContain('Provide Examples');
+      // Verify OpenAI was called with best practices in prompt
+      const secondOpenAICall = mockChatCompletionsCreate.mock.calls[1];
+      expect(secondOpenAICall[0].messages[0].content).toContain('Be Specific');
+      expect(secondOpenAICall[0].messages[0].content).toContain('Provide Examples');
     });
   });
 
   describe('LLM failure handling', () => {
-    it('should handle Claude API failure gracefully', async () => {
-      mockMessagesCreate.mockRejectedValueOnce(
-        new Error('Claude API error: rate limit exceeded')
+    it('should handle OpenAI API failure gracefully', async () => {
+      mockChatCompletionsCreate.mockRejectedValueOnce(
+        new Error('OpenAI API error: rate limit exceeded')
       );
 
       job = new PromptImprovementJob(
@@ -295,11 +327,12 @@ describe('PromptImprovementJob', () => {
         {
           db: mockDb,
           cfAccountId: 'test-account-id',
-          cfGatewayId: 'test-gateway-id'
+          cfGatewayId: 'test-gateway-id',
+          cfGatewayToken: 'test-token'
         }
       );
 
-      await expect(job.execute()).rejects.toThrow('Claude API error');
+      await expect(job.execute()).rejects.toThrow('OpenAI API error');
 
       // Verify job was marked as failed
       expect(mockDb.prepare).toHaveBeenCalledWith(
@@ -307,24 +340,30 @@ describe('PromptImprovementJob', () => {
       );
     });
 
-    it('should handle invalid JSON response from Claude', async () => {
+    it('should handle invalid JSON response from OpenAI', async () => {
       // First call: valid failure analysis
-      mockMessagesCreate.mockResolvedValueOnce({
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            failure_patterns: ['Pattern'],
-            summary: 'Summary'
-          })
-        }]
+      mockChatCompletionsCreate.mockResolvedValueOnce({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              failure_patterns: ['Pattern'],
+              summary: 'Summary'
+            })
+          }
+        }],
+        usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+        model: 'anthropic/claude-sonnet-4-5'
       });
 
       // Second call: invalid JSON response
-      mockMessagesCreate.mockResolvedValueOnce({
-        content: [{
-          type: 'text',
-          text: 'This is not valid JSON'
-        }]
+      mockChatCompletionsCreate.mockResolvedValueOnce({
+        choices: [{
+          message: {
+            content: 'This is not valid JSON'
+          }
+        }],
+        usage: { prompt_tokens: 200, completion_tokens: 100, total_tokens: 300 },
+        model: 'anthropic/claude-sonnet-4-5'
       });
 
       job = new PromptImprovementJob(
@@ -336,36 +375,43 @@ describe('PromptImprovementJob', () => {
         {
           db: mockDb,
           cfAccountId: 'test-account-id',
-          cfGatewayId: 'test-gateway-id'
+          cfGatewayId: 'test-gateway-id',
+          cfGatewayToken: 'test-token'
         }
       );
 
       // Should throw due to invalid JSON in improvement response
       await expect(job.execute()).rejects.toThrow();
 
-      // Verify both Claude calls were made
-      expect(mockMessagesCreate).toHaveBeenCalledTimes(2);
+      // Verify both OpenAI calls were made
+      expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(2);
     });
 
     it('should handle missing required fields in improved prompt response', async () => {
-      mockMessagesCreate
+      mockChatCompletionsCreate
         .mockResolvedValueOnce({
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              failure_patterns: ['Pattern'],
-              summary: 'Summary'
-            })
-          }]
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                failure_patterns: ['Pattern'],
+                summary: 'Summary'
+              })
+            }
+          }],
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+          model: 'anthropic/claude-sonnet-4-5'
         })
         .mockResolvedValueOnce({
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              improved_prompt: 'Some prompt',
-              // Missing 'changes' and 'reasoning'
-            })
-          }]
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                improved_prompt: 'Some prompt',
+                // Missing 'changes' and 'reasoning'
+              })
+            }
+          }],
+          usage: { prompt_tokens: 200, completion_tokens: 100, total_tokens: 300 },
+          model: 'anthropic/claude-sonnet-4-5'
         });
 
       job = new PromptImprovementJob(
@@ -377,7 +423,8 @@ describe('PromptImprovementJob', () => {
         {
           db: mockDb,
           cfAccountId: 'test-account-id',
-          cfGatewayId: 'test-gateway-id'
+          cfGatewayId: 'test-gateway-id',
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -429,25 +476,31 @@ describe('PromptImprovementJob', () => {
         return createMockStmt([]);
       });
 
-      mockMessagesCreate
+      mockChatCompletionsCreate
         .mockResolvedValueOnce({
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              failure_patterns: ['Pattern'],
-              summary: 'Summary'
-            })
-          }]
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                failure_patterns: ['Pattern'],
+                summary: 'Summary'
+              })
+            }
+          }],
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+          model: 'anthropic/claude-sonnet-4-5'
         })
         .mockResolvedValueOnce({
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              improved_prompt: 'You are {{role}} expertly handling {{task}} in {{language}}.',
-              changes: ['Enhanced clarity'],
-              reasoning: 'Improved wording'
-            })
-          }]
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                improved_prompt: 'You are {{role}} expertly handling {{task}} in {{language}}.',
+                changes: ['Enhanced clarity'],
+                reasoning: 'Improved wording'
+              })
+            }
+          }],
+          usage: { prompt_tokens: 200, completion_tokens: 100, total_tokens: 300 },
+          model: 'anthropic/claude-sonnet-4-5'
         });
 
       job = new PromptImprovementJob(
@@ -459,15 +512,16 @@ describe('PromptImprovementJob', () => {
         {
           db: mockDb,
           cfAccountId: 'test-account-id',
-          cfGatewayId: 'test-gateway-id'
+          cfGatewayId: 'test-gateway-id',
+          cfGatewayToken: 'test-token'
         }
       );
 
       await job.execute();
 
       // Verify the meta-prompt includes all variables
-      const secondClaudeCall = mockMessagesCreate.mock.calls[1];
-      const metaPrompt = secondClaudeCall[0].messages[0].content;
+      const secondOpenAICall = mockChatCompletionsCreate.mock.calls[1];
+      const metaPrompt = secondOpenAICall[0].messages[0].content;
       expect(metaPrompt).toContain('role, task, language');
       expect(metaPrompt).toContain('Preserve these variables');
 
@@ -508,7 +562,8 @@ describe('PromptImprovementJob', () => {
         {
           db: mockDb,
           cfAccountId: 'test-account-id',
-          cfGatewayId: 'test-gateway-id'
+          cfGatewayId: 'test-gateway-id',
+          cfGatewayToken: 'test-token'
         }
       );
 
@@ -524,25 +579,31 @@ describe('PromptImprovementJob', () => {
         sendFailed: vi.fn()
       };
 
-      mockMessagesCreate
+      mockChatCompletionsCreate
         .mockResolvedValueOnce({
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              failure_patterns: ['Pattern'],
-              summary: 'Summary'
-            })
-          }]
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                failure_patterns: ['Pattern'],
+                summary: 'Summary'
+              })
+            }
+          }],
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+          model: 'anthropic/claude-sonnet-4-5'
         })
         .mockResolvedValueOnce({
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              improved_prompt: 'Improved',
-              changes: ['Change'],
-              reasoning: 'Reason'
-            })
-          }]
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                improved_prompt: 'Improved',
+                changes: ['Change'],
+                reasoning: 'Reason'
+              })
+            }
+          }],
+          usage: { prompt_tokens: 200, completion_tokens: 100, total_tokens: 300 },
+          model: 'anthropic/claude-sonnet-4-5'
         });
 
       job = new PromptImprovementJob(
@@ -554,7 +615,8 @@ describe('PromptImprovementJob', () => {
         {
           db: mockDb,
           cfAccountId: 'test-account-id',
-          cfGatewayId: 'test-gateway-id'
+          cfGatewayId: 'test-gateway-id',
+          cfGatewayToken: 'test-token'
         }
       );
 

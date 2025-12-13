@@ -1,13 +1,34 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EvalGenerator } from './generator';
 import type { Trace } from '../types/trace';
 
+// Check if real API keys are available for integration tests
+const hasGatewayConfig =
+  process.env.CF_ACCOUNT_ID &&
+  process.env.CF_AI_GATEWAY_ID &&
+  process.env.CF_AI_GATEWAY_TOKEN;
+
 describe('EvalGenerator', () => {
-  it('should generate eval function from labeled traces', async () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should instantiate with config', () => {
+    const generator = new EvalGenerator({
+      cfAccountId: 'test-account-id',
+      cfGatewayId: 'test-gateway-id',
+      cfGatewayToken: 'test-token'
+    });
+
+    expect(generator).toBeDefined();
+    expect(generator).toBeInstanceOf(EvalGenerator);
+  });
+
+  it.skipIf(!hasGatewayConfig)('should generate eval function from labeled traces', async () => {
     const generator = new EvalGenerator({
       cfAccountId: process.env.CF_ACCOUNT_ID!,
       cfGatewayId: process.env.CF_AI_GATEWAY_ID!,
-      cfGatewayToken: process.env.CF_AI_GATEWAY_TOKEN
+      cfGatewayToken: process.env.CF_AI_GATEWAY_TOKEN!
     });
 
     const positiveTraces: Trace[] = [

@@ -35,6 +35,7 @@ export interface DeepAgentConfig {
   env: Env;
   availableTools?: string[]; // Tool IDs to load from registry (if omitted, uses default tools)
   agentId?: string; // Agent ID for loading tools from agent_tools table
+  benchmarksDb?: D1Database; // BENCHMARKS_DB for email tools (Enron dataset)
 }
 
 /**
@@ -237,6 +238,7 @@ export async function createPlaygroundDeepAgent(config: DeepAgentConfig) {
     sessionId: config.sessionId,
     sandbox: config.sandbox as any,
     env: config.env as any, // Env type is compatible but not strictly Record<string, string>
+    BENCHMARKS_DB: config.benchmarksDb, // For email tools (Enron dataset)
   };
 
   // Load tools from registry if configured
@@ -320,6 +322,8 @@ export async function createPlaygroundDeepAgent(config: DeepAgentConfig) {
         const toolArgsAccumulator: Record<string, string> = {};
         // Track pending tool calls that haven't received results yet
         const pendingToolCalls = new Set<string>();
+        // FIFO queue of pending tool call IDs (maintains execution order for matching)
+        const pendingToolCallsQueue: string[] = [];
         let currentToolCallId: string | undefined = undefined;
         // Map ToolNode execution IDs to original tool call IDs
         const toolExecutionIdMap: Record<string, string> = {};
@@ -378,6 +382,7 @@ export async function createPlaygroundDeepAgent(config: DeepAgentConfig) {
                   currentToolCallId = toolId;
                   seenToolCalls.add(toolId);
                   pendingToolCalls.add(toolId);
+                  pendingToolCallsQueue.push(toolId); // Add to FIFO queue
                   toolArgsAccumulator[toolId] = '';
                   // Track tool name to ID mapping for matching on_tool_end
                   const toolName = toolChunk.name;
@@ -386,7 +391,7 @@ export async function createPlaygroundDeepAgent(config: DeepAgentConfig) {
                   }
                   pendingToolCallsByName[toolName].push(toolId);
                   toolCallIdToName[toolId] = toolName;
-                  if (DEBUG) console.log('[STREAM] Emitting tool-call-start:', toolId, toolName, 'pendingByName:', pendingToolCallsByName);
+                  if (DEBUG) console.log('[STREAM] Emitting tool-call-start:', toolId, toolName, 'queue:', pendingToolCallsQueue, 'pendingByName:', pendingToolCallsByName);
                   yield {
                     type: 'tool-call-start',
                     toolCallId: currentToolCallId,
@@ -424,29 +429,71 @@ export async function createPlaygroundDeepAgent(config: DeepAgentConfig) {
 
           // Handle tool start from ToolNode
           if (event === 'on_tool_start') {
+            if (DEBUG) {
+              console.log('[STREAM] on_tool_start event data:');
+              console.log('  - run_id:', run_id);
+              console.log('  - currentToolCallId:', currentToolCallId);
+              console.log('  - data.input:', JSON.stringify(data.input));
+              console.log('  - data.input?.tool_call_id:', data.input?.tool_call_id);
+            }
             const toolCallId = data.input?.tool_call_id || run_id || currentToolCallId;
-            if (DEBUG) console.log('[STREAM] on_tool_start, run_id:', run_id, 'toolCallId:', toolCallId);
+            if (DEBUG) console.log('[STREAM] on_tool_start, run_id:', run_id, 'resolved toolCallId:', toolCallId);
             if (run_id && toolCallId) {
               toolExecutionIdMap[run_id] = toolCallId;
+              if (DEBUG) console.log('[STREAM] Stored in toolExecutionIdMap:', run_id, '->', toolCallId);
             }
           }
 
           // Handle tool execution results from ToolNode
           if (event === 'on_tool_end') {
-            // Try to get tool call ID from our map, or fall back to looking up by tool name
-            let toolCallId = toolExecutionIdMap[run_id] || run_id;
+            let toolCallId: string | undefined;
 
-            // If we don't have a valid toolCallId, try to match by tool name (nodeName)
-            if (!toolCallId && nodeName && pendingToolCallsByName[nodeName]?.length > 0) {
-              // Get the first pending tool call for this tool name (FIFO order)
-              const matchedId = pendingToolCallsByName[nodeName].shift();
+            if (DEBUG) console.log('[STREAM] on_tool_end START, run_id:', run_id, 'pendingToolCallsQueue:', pendingToolCallsQueue);
+
+            // PRIMARY METHOD: Use FIFO queue (assumes sequential tool execution)
+            // Pop the first pending tool call from the queue
+            if (pendingToolCallsQueue.length > 0) {
+              toolCallId = pendingToolCallsQueue.shift();
+              if (DEBUG) console.log('[STREAM] Using FIFO queue, popped toolCallId:', toolCallId, 'remaining queue:', pendingToolCallsQueue);
+            }
+
+            // Get actual tool name from ToolMessage (for logging and frontend fallback)
+            const actualToolName = (data.output instanceof ToolMessage && data.output.name)
+              ? data.output.name
+              : nodeName;
+
+            if (DEBUG) {
+              console.log('[STREAM] on_tool_end tool name:', actualToolName);
+            }
+
+            // FALLBACK 1: Try to match by tool name
+            if (!toolCallId && actualToolName && pendingToolCallsByName[actualToolName]?.length > 0) {
+              const matchedId = pendingToolCallsByName[actualToolName].shift();
               if (matchedId) {
                 toolCallId = matchedId;
               }
-              if (DEBUG) console.log('[STREAM] Matched tool result by name:', nodeName, '-> toolCallId:', toolCallId);
+              if (DEBUG) console.log('[STREAM] Matched tool result by name:', actualToolName, '-> toolCallId:', toolCallId);
             }
 
-            if (DEBUG) console.log('[STREAM] on_tool_end, run_id:', run_id, 'nodeName:', nodeName, 'resolved toolCallId:', toolCallId);
+            // FALLBACK 2: Try to get tool call ID from execution map
+            if (!toolCallId) {
+              toolCallId = toolExecutionIdMap[run_id];
+              if (toolCallId && DEBUG) console.log('[STREAM] Got toolCallId from execution map:', toolCallId);
+            }
+
+            // FALLBACK 3: Try using data.output.tool_call_id from ToolMessage (likely won't work)
+            if (!toolCallId && data.output instanceof ToolMessage && data.output.tool_call_id) {
+              toolCallId = data.output.tool_call_id;
+              if (DEBUG) console.log('[STREAM] Got toolCallId from ToolMessage.tool_call_id (likely a run_id):', toolCallId);
+            }
+
+            // FINAL FALLBACK: use run_id (this will not match frontend!)
+            if (!toolCallId) {
+              toolCallId = run_id;
+              if (DEBUG) console.log('[STREAM] ⚠️  FALLBACK to run_id as toolCallId:', toolCallId, '(THIS WILL NOT MATCH!)');
+            }
+
+            if (DEBUG) console.log('[STREAM] on_tool_end FINAL, run_id:', run_id, 'resolved toolCallId:', toolCallId);
 
             // Get the output - ToolNode returns a ToolMessage
             let result: string;
@@ -460,21 +507,26 @@ export async function createPlaygroundDeepAgent(config: DeepAgentConfig) {
               result = JSON.stringify(data.output);
             }
 
-            if (DEBUG) console.log('[STREAM] Emitting tool-result for:', toolCallId, 'toolName:', nodeName);
+            if (DEBUG) console.log('[STREAM] Emitting tool-result for:', toolCallId, 'toolName:', actualToolName);
             yield {
               type: 'tool-result',
               toolCallId,
-              toolName: nodeName, // Include tool name for frontend fallback
+              toolName: actualToolName, // Include actual tool name for frontend fallback
               result,
             };
 
             // Mark this tool call as completed
             if (toolCallId) {
               pendingToolCalls.delete(toolCallId);
+              // Remove from FIFO queue if still present (shouldn't be if we used FIFO fallback)
+              const queueIndex = pendingToolCallsQueue.indexOf(toolCallId);
+              if (queueIndex !== -1) {
+                pendingToolCallsQueue.splice(queueIndex, 1);
+              }
               // Also remove from toolCallIdToName
               delete toolCallIdToName[toolCallId];
             }
-            if (DEBUG) console.log('[STREAM] Remaining pending tool calls:', Array.from(pendingToolCalls));
+            if (DEBUG) console.log('[STREAM] Remaining pending tool calls:', Array.from(pendingToolCalls), 'queue:', pendingToolCallsQueue);
           }
         }
 
