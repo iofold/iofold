@@ -27,3 +27,6 @@ wc
 
 # pnpm store
 .pnpm-store/
+
+# Test artifact files
+poem_*.txt
