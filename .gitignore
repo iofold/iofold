@@ -17,3 +17,13 @@ playwright-report/
 *.swp
 *~
 .mcp.json
+
+# E2E test screenshots
+e2e-screenshots/
+frontend/e2e-screenshots/
+
+# Temp files
+wc
+
+# pnpm store
+.pnpm-store/
