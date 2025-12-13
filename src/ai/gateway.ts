@@ -11,6 +11,7 @@
  */
 
 import OpenAI from 'openai';
+import { wrapOpenAIWithLangSmith, type LangSmithEnv } from './langsmith-tracer';
 
 /**
  * Supported AI providers through Cloudflare AI Gateway
@@ -60,18 +61,18 @@ export const MODELS: Record<string, ModelConfig> = {
     inputCostPer1M: 15.00,
     outputCostPer1M: 75.00,
   },
-  // OpenAI GPT-5.1 series
-  'openai/gpt-5.1-mini': {
-    id: 'openai/gpt-5.1-mini',
+  // OpenAI GPT-5 series
+  'openai/gpt-5-mini': {
+    id: 'openai/gpt-5-mini',
     provider: 'openai',
-    label: 'GPT-5.1 Mini',
+    label: 'GPT-5 Mini',
     inputCostPer1M: 0.15,
     outputCostPer1M: 0.60,
   },
-  'openai/gpt-5.1-nano': {
-    id: 'openai/gpt-5.1-nano',
+  'openai/gpt-5-nano': {
+    id: 'openai/gpt-5-nano',
     provider: 'openai',
-    label: 'GPT-5.1 Nano',
+    label: 'GPT-5 Nano',
     inputCostPer1M: 0.075,
     outputCostPer1M: 0.30,
   },
@@ -109,7 +110,7 @@ export const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
  * Gateway environment configuration
  * Only Cloudflare gateway config needed - no provider API keys
  */
-export interface GatewayEnv {
+export interface GatewayEnv extends LangSmithEnv {
   /** Cloudflare Account ID */
   CF_ACCOUNT_ID: string;
   /** Cloudflare AI Gateway ID */
@@ -129,8 +130,11 @@ export function getGatewayUrl(accountId: string, gatewayId: string): string {
 /**
  * Create an OpenAI-compatible client for the AI Gateway /compat endpoint
  *
+ * Automatically wraps the client with LangSmith tracing if LANGSMITH_TRACING_V2=true
+ * and LANGSMITH_API_KEY is set in the environment.
+ *
  * @param env - Environment with gateway configuration
- * @returns Configured OpenAI client pointing to AI Gateway
+ * @returns Configured OpenAI client pointing to AI Gateway (with LangSmith tracing if enabled)
  * @throws Error if gateway configuration is missing
  */
 export function createGatewayClient(env: GatewayEnv): OpenAI {
@@ -152,10 +156,13 @@ export function createGatewayClient(env: GatewayEnv): OpenAI {
     );
   }
 
-  return new OpenAI({
+  const client = new OpenAI({
     apiKey: env.CF_AI_GATEWAY_TOKEN,
     baseURL,
   });
+
+  // Wrap with LangSmith tracing if enabled
+  return wrapOpenAIWithLangSmith(client, env);
 }
 
 /**
