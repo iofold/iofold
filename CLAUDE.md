@@ -58,11 +58,10 @@ Tables: `users`, `workspaces`, `agents`, `traces`, `evals`, `tools`, `agent_tool
 
 ## Test Auth (E2E)
 ```
-Email: e2e+clerk_test@iofold.com
-Pass:  E2eTestPassword123!
-OTP:   424242
+Email: e2e-test@iofold.com
+Pass:  (see frontend/.env.local or 1Password)
 ```
-See `docs/testing-guide.md` for Clerk Testing Token setup.
+No 2FA enabled - works without OTP verification.
 
 ## API Pattern
 ```bash

@@ -56,7 +56,7 @@
   "devDependencies": {
     "@clerk/testing": "^1.13.21",
     "@cloudflare/next-on-pages": "^1.13.5",
-    "@playwright/test": "^1.48.2",
+    "@playwright/test": "^1.57.0",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

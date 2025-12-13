@@ -91,9 +91,12 @@ RUN pip3 install --no-cache-dir \
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SANDBOX` | Durable Object namespace binding | Required |
+| `SANDBOX` | Durable Object namespace binding (production) | Required in production |
+| `PYTHON_EXECUTOR_URL` | URL for dev Python executor service (local dev only) | `http://localhost:9999` |
 | `PYTHON_POOL_MIN_SIZE` | Minimum Python process pool | 3 |
 | `PYTHON_POOL_MAX_SIZE` | Maximum Python process pool | 15 |
+
+**Note**: In local development, the `PYTHON_EXECUTOR_URL` is set to `http://python-sandbox:9999` when using Docker Compose (internal container network) or `http://localhost:9999` when running the executor service directly.
 
 ## Usage in Code
 
@@ -195,9 +198,35 @@ console.log(result.stdout);  // "4"
 
 For local development without Cloudflare Sandbox:
 
-### Option 1: Dev Python Executor Service
+### Option 1: Docker Compose (Recommended)
 
-Run a local Python executor:
+Run the full development stack including containerized Python executor:
+
+```bash
+docker compose -f docker-compose.dev.yml up
+```
+
+This starts:
+- **python-sandbox** service on port 9999 (containerized Python executor)
+- **backend** service on port 8787 (Cloudflare Worker)
+- **frontend** service on port 3000 (Next.js)
+
+**Docker Python Sandbox Features:**
+- **Base Image**: `python:3.11-slim` with Bun runtime installed
+- **Resource Limits**: 256MB RAM, 0.5 CPU cores
+- **Security**:
+  - `no-new-privileges:true` - prevents privilege escalation
+  - Read-only mounted scripts
+  - Isolated container network
+- **Health Check**: Automatic health monitoring at `/health` endpoint
+- **Auto-restart**: `unless-stopped` policy for resilience
+- **Backend Connection**: Backend automatically connects via `PYTHON_EXECUTOR_URL=http://python-sandbox:9999`
+
+The containerized setup provides production-like isolation while maintaining fast development iteration.
+
+### Option 2: Local Python Executor Service
+
+Run a standalone Python executor without Docker:
 
 ```bash
 bun scripts/python-executor-service.ts
@@ -205,7 +234,7 @@ bun scripts/python-executor-service.ts
 
 The PythonRunner will automatically fall back to `http://localhost:9999` when no sandbox binding is available.
 
-### Option 2: Mock Sandbox
+### Option 3: Mock Sandbox
 
 Use the mock sandbox for testing:
 

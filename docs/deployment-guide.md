@@ -1,7 +1,7 @@
 # Deployment Guide
 
-**Version**: 2.0
-**Last Updated**: 2025-12-10
+**Version**: 2.1
+**Last Updated**: 2025-12-12
 **Target Platform**: Cloudflare Workers + Pages + D1
 
 ---
@@ -10,6 +10,11 @@
 
 1. [Overview](#overview)
 2. [Environments](#environments)
+   - [Local Development](#1-local-development)
+     - [Docker-Based Development](#option-a-docker-based-development-recommended)
+     - [Native Development](#option-b-native-development-traditional)
+   - [Staging](#2-staging)
+   - [Production](#3-production)
 3. [Deploy Commands](#deploy-commands)
 4. [Required Secrets](#required-secrets)
 5. [Database Bindings](#database-bindings)
@@ -32,6 +37,30 @@ iofold.com is deployed on Cloudflare's edge infrastructure:
 - **AI**: Cloudflare AI Gateway (LLM routing)
 - **Containers**: Python sandbox for eval execution
 
+### Quick Reference - Docker Development
+
+All services run in Docker with auto-restart:
+
+```bash
+# Start all services
+./scripts/dev-docker.sh start
+
+# View logs
+./scripts/dev-docker.sh logs
+
+# Stop services
+./scripts/dev-docker.sh stop
+
+# Fix cache issues
+./scripts/dev-docker.sh clean
+```
+
+**Services**: Frontend (:3000) | Backend (:8787) | Python Sandbox (:9999)
+
+**Required**: `CLOUDFLARE_API_TOKEN` in `.dev.vars`
+
+See [Docker Development](#option-a-docker-development-recommended) for full details.
+
 ---
 
 ## Environments
@@ -43,8 +72,260 @@ iofold.com is deployed on Cloudflare's edge infrastructure:
 **Configuration**:
 - Backend: `http://localhost:8787`
 - Frontend: `http://localhost:3000`
+- Python Sandbox: `http://localhost:9999`
 - Database: Shared staging database (see Gotchas)
 - Wrangler: `wrangler dev`
+
+#### Option A: Docker Development (Recommended)
+
+All services run in Docker containers with auto-restart:
+
+**Prerequisites**:
+- Docker Engine 20.10+ or Docker Desktop
+- Docker Compose V2
+- `CLOUDFLARE_API_TOKEN` in `.dev.vars`
+
+**Quick Start**:
+```bash
+# Start all services
+./scripts/dev-docker.sh start
+
+# View logs
+./scripts/dev-docker.sh logs
+
+# Stop services
+./scripts/dev-docker.sh stop
+```
+
+**Required API Token Permissions**:
+- Workers Scripts:Edit
+- D1:Edit
+- Workers AI:Read
+
+**Service Architecture**:
+```
+┌──────────────────────────────────────────────────────────┐
+│                    iofold_dev_network                     │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌─────────────────┐      ┌──────────────────┐         │
+│  │   Frontend      │─────▶│    Backend       │         │
+│  │   Next.js       │      │  Wrangler Dev    │         │
+│  │   :3000         │      │    :8787         │         │
+│  └─────────────────┘      └──────────────────┘         │
+│         │                          │                     │
+│         │                          ▼                     │
+│         │                 ┌──────────────────┐          │
+│         │                 │  Python Sandbox  │          │
+│         │                 │   Bun + Python3  │          │
+│         │                 │     :9999        │          │
+│         │                 └──────────────────┘          │
+│         │                          │                     │
+│         ▼                          ▼                     │
+│  ┌────────────────────────────────────────────┐         │
+│  │        Cloudflare Staging Database          │         │
+│  │              D1 (Remote)                    │         │
+│  └────────────────────────────────────────────┘         │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+**All Commands**:
+```bash
+# Start services in background
+./scripts/dev-docker.sh start
+
+# Stop all services
+./scripts/dev-docker.sh stop
+
+# Restart all services
+./scripts/dev-docker.sh restart
+
+# View all logs
+./scripts/dev-docker.sh logs
+
+# View specific service logs
+./scripts/dev-docker.sh logs:be   # Backend only
+./scripts/dev-docker.sh logs:fe   # Frontend only
+./scripts/dev-docker.sh logs:py   # Python sandbox only
+
+# Check container status
+./scripts/dev-docker.sh status
+
+# Clean cache (fixes .next corruption)
+./scripts/dev-docker.sh clean
+
+# Full rebuild (removes node_modules)
+./scripts/dev-docker.sh rebuild
+```
+
+**Port Mappings**:
+| Service | Container Port | Host Port | URL |
+|---------|---------------|-----------|-----|
+| Frontend | 3000 | 3000 | http://localhost:3000 |
+| Backend | 8787 | 8787 | http://localhost:8787 |
+| Python Sandbox | 9999 | 9999 | http://localhost:9999 |
+
+**Environment Variables**:
+
+Docker setup requires a `.dev.vars` file in your home directory (`~/.dev.vars`). Copy from `.env.example`:
+```bash
+# Copy template to home directory
+cp .env.example ~/.dev.vars
+
+# Edit with your API keys
+nano ~/.dev.vars
+```
+
+**Required variables**:
+```bash
+# Langfuse Integration
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+
+# External API Keys
+TAVILY_API_KEY=tvly-...
+
+# Cloudflare AI Gateway
+CF_ACCOUNT_ID=...
+CF_AI_GATEWAY_TOKEN=...
+CF_AI_GATEWAY_ID=...
+
+# Optional: LangSmith Tracing
+LANGSMITH_API_KEY=...
+LANGSMITH_TRACING_V2=true
+LANGSMITH_PROJECT=iofold-development
+```
+
+**Volumes**:
+
+Docker uses named volumes to improve performance and prevent corruption:
+
+| Volume | Purpose | Size |
+|--------|---------|------|
+| `iofold_backend_node_modules` | Backend dependencies | ~200MB |
+| `iofold_frontend_node_modules` | Frontend dependencies | ~400MB |
+| `iofold_backend_wrangler` | Wrangler cache | ~50MB |
+| `iofold_frontend_next_cache` | Next.js build cache | ~100MB |
+
+**Container Resource Limits**:
+- Python Sandbox: 256MB RAM, 0.5 CPU cores (matches production sandbox)
+- Backend: Unlimited (adjust in docker-compose.dev.yml if needed)
+- Frontend: Unlimited (adjust in docker-compose.dev.yml if needed)
+
+**Troubleshooting Docker Issues**:
+
+**Problem**: "Port already in use" error
+```bash
+# Find what's using the port
+lsof -i :8787  # or :3000, :9999
+# Kill the process or stop Docker services
+./scripts/dev-docker.sh stop
+```
+
+**Problem**: Frontend showing stale/cached content
+```bash
+# Clean Next.js cache
+./scripts/dev-docker.sh clean
+
+# Rebuild from scratch
+./scripts/dev-docker.sh rebuild
+```
+
+**Problem**: "Cannot connect to Docker daemon"
+```bash
+# Start Docker Desktop or Docker service
+sudo systemctl start docker  # Linux
+open -a Docker              # macOS
+
+# Verify Docker is running
+docker ps
+```
+
+**Problem**: "ENOSPC: System limit for number of file watchers reached"
+```bash
+# Increase file watcher limit (Linux)
+echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+```
+
+**Problem**: Slow performance on macOS
+```bash
+# Use cached or delegated volume mounts (already configured)
+# Or use Docker Desktop's VirtioFS for better performance
+# Docker Desktop > Settings > Experimental Features > VirtioFS
+```
+
+**Problem**: Backend can't connect to Python sandbox
+```bash
+# Check if sandbox is healthy
+docker ps --filter name=iofold-python-sandbox
+
+# Check logs
+./scripts/dev-docker.sh logs:py
+
+# Verify backend can resolve hostname
+docker exec -it iofold-backend curl http://python-sandbox:9999/health
+```
+
+**Problem**: "Module not found" after adding dependencies
+```bash
+# Reinstall dependencies in container
+docker compose -f docker-compose.dev.yml restart backend
+# Or rebuild if that doesn't work
+./scripts/dev-docker.sh rebuild
+```
+
+**Problem**: Database migrations not applied
+```bash
+# Backend uses remote staging database by default
+# Run migrations using wrangler CLI (not in Docker)
+wrangler d1 execute iofold-staging-db --env staging \
+  --file=migrations/XXX_migration.sql
+```
+
+**How to Fix Cache Corruption**:
+
+If you see weird build errors or stale content:
+
+```bash
+# 1. Clean (preserves node_modules)
+./scripts/dev-docker.sh clean
+./scripts/dev-docker.sh start
+
+# 2. Rebuild (removes everything)
+./scripts/dev-docker.sh rebuild
+./scripts/dev-docker.sh start
+
+# 3. Nuclear option (removes all Docker state)
+docker compose -f docker-compose.dev.yml down -v --remove-orphans
+docker system prune -af --volumes
+./scripts/dev-docker.sh start
+```
+
+**Accessing Container Shells**:
+```bash
+# Backend shell
+docker exec -it iofold-backend sh
+
+# Frontend shell
+docker exec -it iofold-frontend sh
+
+# Python sandbox shell
+docker exec -it iofold-python-sandbox sh
+```
+
+**Viewing Container Resources**:
+```bash
+# Real-time resource usage
+docker stats
+
+# Inspect specific container
+docker inspect iofold-backend
+```
+
+#### Option B: Native Development (Traditional)
 
 **Access**:
 ```bash
@@ -56,6 +337,8 @@ pnpm dev
 cd /home/ygupta/workspace/iofold/frontend
 pnpm dev
 ```
+
+**Note**: Native development requires local installation of Node.js 22+, pnpm, and Python 3.11+ for the sandbox service.
 
 ### 2. Staging
 
@@ -924,8 +1207,8 @@ From `wrangler.toml` and secrets:
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: 2025-12-10
+**Document Version**: 2.1
+**Last Updated**: 2025-12-12
 **Maintained By**: iofold Platform Team
 
 **Questions?** Contact ygupta or see `docs/` for additional documentation.

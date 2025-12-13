@@ -2,7 +2,7 @@
 
 Complete REST API documentation for the iofold automated eval generation platform.
 
-**Last Updated**: 2025-12-01
+**Last Updated**: 2025-12-12
 
 ## Base Configuration
 
@@ -854,6 +854,707 @@ Jobs classify errors into 9 categories for intelligent retry decisions:
 
 ---
 
+## 9. Tools API
+
+Manage tools and agent-tool associations for the Tool Registry system.
+
+### List All Tools
+
+**Endpoint:** `GET /api/tools`
+
+**Query Parameters:**
+- `category` (string) - Filter by tool category
+
+**Response:** `200 OK`
+```typescript
+{
+  "tools": [
+    {
+      "id": string,
+      "name": string,
+      "description": string,
+      "parameters_schema": string,  // JSON Schema
+      "handler_key": string,
+      "category": string | null,
+      "created_at": string
+    }
+  ]
+}
+```
+
+### Get Tool Details
+
+**Endpoint:** `GET /api/tools/:id`
+
+**Response:** `200 OK` - Single tool object
+
+### Get Agent Tools
+
+**Endpoint:** `GET /api/agents/:agentId/tools`
+
+**Response:** `200 OK`
+```typescript
+{
+  "tools": [
+    {
+      "id": string,
+      "name": string,
+      "description": string,
+      "parameters_schema": string,
+      "handler_key": string,
+      "category": string | null,
+      "created_at": string,
+      "config": Record<string, unknown> | null  // Tool-specific config
+    }
+  ]
+}
+```
+
+### Attach Tool to Agent
+
+**Endpoint:** `POST /api/agents/:agentId/tools`
+
+**Request Body:**
+```typescript
+{
+  "tool_id": string,
+  "config": Record<string, unknown>  // Optional: Tool-specific config
+}
+```
+
+**Response:** `201 Created` - Tool object with config
+
+### Detach Tool from Agent
+
+**Endpoint:** `DELETE /api/agents/:agentId/tools/:toolId`
+
+**Response:** `204 No Content`
+
+---
+
+## 10. Tasksets API
+
+Manage tasksets - collections of test cases for prompt optimization.
+
+### Create Taskset
+
+**Endpoint:** `POST /api/agents/:agentId/tasksets`
+
+**Request Body:**
+```typescript
+{
+  "name": string,
+  "description": string  // Optional
+}
+```
+
+**Response:** `201 Created`
+```typescript
+{
+  "id": string,
+  "workspace_id": string,
+  "agent_id": string,
+  "name": string,
+  "description": string | null,
+  "task_count": number,
+  "status": "active",
+  "created_at": string,
+  "updated_at": string
+}
+```
+
+### Create Taskset from Traces
+
+**Endpoint:** `POST /api/agents/:agentId/tasksets/from-traces`
+
+**Request Body:**
+```typescript
+{
+  "name": string,
+  "description": string,  // Optional
+  "filter": {
+    "rating": "positive" | "negative" | "any",  // Optional
+    "limit": number  // Optional, default 100, max 500
+  }
+}
+```
+
+**Response:** `201 Created`
+```typescript
+{
+  "id": string,
+  "name": string,
+  "task_count": number,
+  "skipped_duplicates": number,
+  "message": string
+}
+```
+
+### List Tasksets
+
+**Endpoint:** `GET /api/agents/:agentId/tasksets`
+
+**Query Parameters:**
+- `include_archived` (boolean) - Include archived tasksets
+
+**Response:** `200 OK`
+```typescript
+{
+  "tasksets": TasksetResponse[]
+}
+```
+
+### Get Taskset
+
+**Endpoint:** `GET /api/agents/:agentId/tasksets/:tasksetId`
+
+**Response:** `200 OK`
+```typescript
+{
+  "id": string,
+  "workspace_id": string,
+  "agent_id": string,
+  "name": string,
+  "description": string | null,
+  "task_count": number,
+  "status": string,
+  "created_at": string,
+  "updated_at": string,
+  "tasks": [
+    {
+      "id": string,
+      "user_message": string,
+      "expected_output": string | null,
+      "source": string,
+      "source_trace_id": string | null,
+      "metadata": Record<string, unknown> | null,
+      "created_at": string
+    }
+  ]
+}
+```
+
+### Add Tasks to Taskset
+
+**Endpoint:** `POST /api/agents/:agentId/tasksets/:tasksetId/tasks`
+
+**Request Body:**
+```typescript
+{
+  "tasks": [
+    {
+      "user_message": string,
+      "expected_output": string,  // Optional
+      "source": "manual" | "imported",  // Optional, defaults to "manual"
+      "metadata": Record<string, unknown>  // Optional
+    }
+  ]
+}
+```
+
+**Response:** `200 OK`
+```typescript
+{
+  "inserted": number,
+  "skipped_duplicates": number,
+  "total_tasks": number
+}
+```
+
+### Archive Taskset
+
+**Endpoint:** `DELETE /api/agents/:agentId/tasksets/:tasksetId`
+
+**Response:** `200 OK`
+```typescript
+{
+  "message": "Taskset archived"
+}
+```
+
+### Run Taskset
+
+**Endpoint:** `POST /api/agents/:agentId/tasksets/:tasksetId/run`
+
+Executes all tasks in a taskset via background job.
+
+**Request Body:**
+```typescript
+{
+  "model_provider": string,  // Optional, defaults to "anthropic"
+  "model_id": string,  // Optional, defaults to "anthropic/claude-sonnet-4-5"
+  "config": {
+    "parallelism": number,  // Optional
+    "timeout_per_task_ms": number  // Optional
+  }
+}
+```
+
+**Response:** `201 Created`
+```typescript
+{
+  "run_id": string,
+  "status": "queued",
+  "task_count": number,
+  "model_provider": string,
+  "model_id": string
+}
+```
+
+### List Taskset Runs
+
+**Endpoint:** `GET /api/agents/:agentId/tasksets/:tasksetId/runs`
+
+**Response:** `200 OK`
+```typescript
+{
+  "runs": [
+    {
+      "id": string,
+      "workspace_id": string,
+      "agent_id": string,
+      "taskset_id": string,
+      "status": "queued" | "running" | "completed" | "failed",
+      "task_count": number,
+      "completed_count": number,
+      "failed_count": number,
+      "model_provider": string,
+      "model_id": string,
+      "config": Record<string, unknown>,
+      "created_at": string,
+      "started_at": string | null,
+      "completed_at": string | null,
+      "error": string | null
+    }
+  ]
+}
+```
+
+### Get Taskset Run
+
+**Endpoint:** `GET /api/agents/:agentId/tasksets/:tasksetId/runs/:runId`
+
+**Response:** `200 OK`
+```typescript
+{
+  "id": string,
+  "workspace_id": string,
+  "agent_id": string,
+  "taskset_id": string,
+  "status": string,
+  "task_count": number,
+  "completed_count": number,
+  "failed_count": number,
+  "model_provider": string,
+  "model_id": string,
+  "config": Record<string, unknown>,
+  "created_at": string,
+  "started_at": string | null,
+  "completed_at": string | null,
+  "error": string | null,
+  "results": [
+    {
+      "id": string,
+      "run_id": string,
+      "task_id": string,
+      "status": string,
+      "response": string,
+      "expected_output": string | null,
+      "score": number | null,
+      "score_reason": string | null,
+      "trace_id": string | null,
+      "execution_time_ms": number | null,
+      "error": string | null,
+      "created_at": string
+    }
+  ]
+}
+```
+
+---
+
+## 11. GEPA Optimization API
+
+GEPA (Generative Evolution of Prompts via Algorithms) endpoints for prompt optimization.
+
+### Start GEPA Optimization
+
+**Endpoint:** `POST /api/agents/:agentId/gepa/start`
+
+**Request Body:**
+```typescript
+{
+  "taskset_id": string,  // PREFERRED: Use tasks from this taskset
+  "eval_id": string,  // DEPRECATED: Use tasks from eval's traces
+  "tasks": [  // OR provide tasks directly
+    {
+      "user_message": string,
+      "expected_output": string  // Optional
+    }
+  ],
+  "seed_prompt": string,  // Optional, defaults to agent's current prompt
+  "train_split": number,  // Default: 0.7
+  "random_seed": number,  // For reproducible splits
+  "max_metric_calls": number,  // Default: 50
+  "parallelism": number  // Default: 5
+}
+```
+
+**Response:** `201 Created`
+```typescript
+{
+  "run_id": string,
+  "status": "pending",
+  "message": "GEPA optimization started"
+}
+```
+
+### List GEPA Runs
+
+**Endpoint:** `GET /api/agents/:agentId/gepa/runs`
+
+**Response:** `200 OK`
+```typescript
+{
+  "runs": [
+    {
+      "id": string,
+      "status": "pending" | "running" | "completed" | "failed",
+      "progress": {
+        "metric_calls": number,
+        "max_metric_calls": number,
+        "best_score": number | null,
+        "total_candidates": number
+      },
+      "test_case_count": number,
+      "error": string | null,
+      "created_at": string,
+      "started_at": string | null,
+      "completed_at": string | null
+    }
+  ]
+}
+```
+
+### Get GEPA Run Status
+
+**Endpoint:** `GET /api/agents/:agentId/gepa/runs/:runId`
+
+**Response:** `200 OK`
+```typescript
+{
+  "id": string,
+  "status": "pending" | "running" | "completed" | "failed",
+  "progress": {
+    "metric_calls": number,
+    "max_metric_calls": number,
+    "best_score": number | undefined,
+    "total_candidates": number
+  },
+  "result": {  // Only present if status is "completed"
+    "best_prompt": string,
+    "best_score": number
+  },
+  "error": string,  // Only present if status is "failed"
+  "created_at": string,
+  "started_at": string,  // Present if started
+  "completed_at": string  // Present if completed or failed
+}
+```
+
+### Stream GEPA Progress (SSE)
+
+**Endpoint:** `GET /api/agents/:agentId/gepa/runs/:runId/stream`
+
+**Response:** Server-Sent Events stream
+
+**Event Types:**
+```typescript
+// Progress update
+{ "type": "progress", "metric_calls": number, "max_metric_calls": number, "best_score": number | null, "total_candidates": number }
+
+// Completion
+{ "type": "complete", "best_prompt": string, "best_score": number, "total_candidates": number }
+
+// Error
+{ "type": "error", "error": string }
+
+// Keep-alive (every ~10 polls)
+: keepalive
+```
+
+---
+
+## 12. Playground API
+
+Real-time chat interactions with agents in the playground environment.
+
+### Playground Chat (SSE)
+
+**Endpoint:** `POST /api/agents/:agentId/playground/chat`
+
+**Request Body:**
+```typescript
+{
+  "messages": [
+    {
+      "role": "user" | "assistant" | "system",
+      "content": string
+    }
+  ],
+  "sessionId": string,  // Optional: Resume existing session
+  "variables": Record<string, string>,  // Optional: Template variables
+  "modelProvider": "anthropic" | "openai" | "google",  // Optional
+  "modelId": string  // Optional
+}
+```
+
+**Response:** Server-Sent Events stream with AI SDK Protocol
+
+**Event Types:**
+```typescript
+// Message start
+{ "type": "message-start", "messageId": string }
+
+// Text streaming
+{ "type": "text-delta", "text": string }
+
+// Tool call
+{ "type": "tool-call", "toolCallId": string, "toolName": string }
+
+// Tool call arguments
+{ "type": "tool-call-args", "toolCallId": string, "args": string }
+
+// Tool call end
+{ "type": "tool-call-end", "toolCallId": string }
+
+// Tool result
+{ "type": "tool-result", "toolCallId": string, "result": string }
+
+// Message finish
+{ "type": "finish", "messageId": string }
+
+// Session info (custom)
+{ "type": "session-info", "sessionId": string, "traceId": string }
+
+// Error
+{ "type": "error", "errorText": string, "errorCategory": string, "retryable": boolean }
+
+// Done signal
+[DONE]
+```
+
+### List Playground Sessions
+
+**Endpoint:** `GET /api/agents/:agentId/playground/sessions`
+
+**Query Parameters:**
+- `limit` (number) - Results per page (default: 50, max: 200)
+- `offset` (number) - Pagination offset (default: 0)
+
+**Response:** `200 OK`
+```typescript
+{
+  "sessions": [
+    {
+      "id": string,
+      "agentVersionId": string,
+      "modelProvider": string,
+      "modelId": string,
+      "messageCount": number,
+      "createdAt": string,
+      "updatedAt": string
+    }
+  ],
+  "pagination": {
+    "total": number,
+    "limit": number,
+    "offset": number,
+    "hasMore": boolean
+  }
+}
+```
+
+### Get Playground Session
+
+**Endpoint:** `GET /api/agents/:agentId/playground/sessions/:sessionId`
+
+**Response:** `200 OK`
+```typescript
+{
+  "id": string,
+  "workspaceId": string,
+  "agentId": string,
+  "agentVersionId": string,
+  "messages": [
+    {
+      "id": string,
+      "role": "user" | "assistant" | "system",
+      "content": string,
+      "traceId": string,  // For assistant messages
+      "toolCalls": [  // For assistant messages with tool usage
+        {
+          "id": string,
+          "name": string,
+          "args": string,
+          "result": string
+        }
+      ],
+      "timestamp": string
+    }
+  ],
+  "variables": Record<string, string>,
+  "files": Record<string, string>,
+  "modelProvider": string,
+  "modelId": string,
+  "createdAt": string,
+  "updatedAt": string
+}
+```
+
+### Delete Playground Session
+
+**Endpoint:** `DELETE /api/agents/:agentId/playground/sessions/:sessionId`
+
+**Response:** `204 No Content`
+
+### List All Playground Sessions
+
+**Endpoint:** `GET /api/playground/sessions`
+
+List all sessions across all agents in a workspace.
+
+**Query Parameters:**
+- `limit` (number) - Results per page (default: 50, max: 200)
+- `offset` (number) - Pagination offset (default: 0)
+
+**Response:** `200 OK`
+```typescript
+{
+  "sessions": [
+    {
+      "id": string,
+      "agentId": string,
+      "agentName": string,
+      "agentVersionId": string,
+      "modelProvider": string,
+      "modelId": string,
+      "messageCount": number,
+      "createdAt": string,
+      "updatedAt": string
+    }
+  ],
+  "pagination": {
+    "total": number,
+    "limit": number,
+    "offset": number,
+    "hasMore": boolean
+  }
+}
+```
+
+---
+
+## 13. Eval Generation API (GEPA Flow)
+
+Multi-step eval generation workflow endpoints.
+
+### Extract Tasks
+
+**Endpoint:** `POST /api/agents/:agentId/tasks/extract`
+
+Extract tasks from labeled traces for eval generation.
+
+**Request Body:**
+```typescript
+{
+  "filter": {
+    "rating": "positive" | "negative" | "any",
+    "limit": number
+  }
+}
+```
+
+**Response:** `201 Created` with extracted tasks
+
+### List Tasks
+
+**Endpoint:** `GET /api/agents/:agentId/tasks`
+
+List extracted tasks for an agent.
+
+**Response:** `200 OK` with tasks array
+
+### Generate Candidate Evals
+
+**Endpoint:** `POST /api/agents/:agentId/evals/generate`
+
+Generate multiple candidate eval functions.
+
+**Response:** `202 Accepted` with job_id
+
+### Test Candidate Evals
+
+**Endpoint:** `POST /api/agents/:agentId/evals/test`
+
+Test candidate evals on traces.
+
+**Response:** `202 Accepted` with job_id
+
+### Select Winner
+
+**Endpoint:** `POST /api/agents/:agentId/evals/select-winner`
+
+Select and activate the best performing eval.
+
+**Response:** `200 OK` with selected eval details
+
+### Activate Eval
+
+**Endpoint:** `POST /api/agents/:agentId/evals/:evalId/activate`
+
+Activate a specific eval for an agent.
+
+**Response:** `200 OK`
+
+### Get Active Eval
+
+**Endpoint:** `GET /api/agents/:agentId/evals/active`
+
+Get the currently active eval for an agent.
+
+**Response:** `200 OK` - Eval object or 404 if none active
+
+---
+
+## 14. Internal APIs (GEPA Integration)
+
+Internal endpoints for GEPA batch rollout system.
+
+### List Rollout Batches
+
+**Endpoint:** `GET /api/internal/rollouts/batches`
+
+**Response:** `200 OK` with list of rollout batches
+
+### Create Batch Rollout
+
+**Endpoint:** `POST /api/internal/rollouts/batch`
+
+Create a new batch rollout request for prompt evaluation.
+
+**Response:** `201 Created` with batch details
+
+### Get Batch Status
+
+**Endpoint:** `GET /api/internal/rollouts/batch/:batchId`
+
+Get status and results of a batch rollout.
+
+**Response:** `200 OK` with batch status and results
+
+---
+
 ## Common Patterns
 
 ### Pagination
@@ -969,4 +1670,4 @@ import type {
 ---
 
 **API Version:** v1
-**Last Updated:** 2025-12-01
+**Last Updated:** 2025-12-12
