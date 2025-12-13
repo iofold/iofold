@@ -6,7 +6,7 @@ export default function AuthLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-background">
+    <main id="main-content" tabIndex={-1} className="min-h-screen flex flex-col lg:flex-row bg-background">
       {/* Marketing Content - Left Side */}
       <div className="lg:w-1/2 bg-gradient-to-br from-primary/10 via-accent/10 to-background p-8 lg:p-12 flex flex-col justify-center">
         <div className="max-w-xl mx-auto">
@@ -108,6 +108,6 @@ export default function AuthLayout({
           {children}
         </div>
       </div>
-    </div>
+    </main>
   )
 }
