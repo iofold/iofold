@@ -91,6 +91,7 @@ export function usePlaygroundChat(agentId: string, workspaceId: string, initialS
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [sessionId, setSessionId] = useState<string | undefined>(initialSessionId);
+  const [sessionVariables, setSessionVariables] = useState<Record<string, string> | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   // Flag to prevent auto-loading session after intentional clear
@@ -631,9 +632,13 @@ export function usePlaygroundChat(agentId: string, workspaceId: string, initialS
           };
         });
 
-        // Update state with loaded messages and session ID
+        // Update state with loaded messages, session ID, and variables
         setMessages(loadedMessages);
         setSessionId(loadSessionId);
+        // Store session variables so component can sync with them
+        if (sessionData.variables && typeof sessionData.variables === 'object') {
+          setSessionVariables(sessionData.variables as Record<string, string>);
+        }
 
         toast.success('Session loaded successfully');
 
@@ -672,6 +677,7 @@ export function usePlaygroundChat(agentId: string, workspaceId: string, initialS
     isLoading,
     error,
     sessionId,
+    sessionVariables,
     retry,
     stop,
     clearMessages,

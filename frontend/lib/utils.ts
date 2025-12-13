@@ -17,7 +17,13 @@ export function formatDate(date: string | Date): string {
 }
 
 export function formatRelativeTime(date: string | Date): string {
+  if (!date || (typeof date === 'string' && date.trim() === '')) {
+    return 'N/A'
+  }
   const d = typeof date === 'string' ? new Date(date) : date
+  if (isNaN(d.getTime())) {
+    return 'N/A'
+  }
   const now = new Date()
   const diffMs = now.getTime() - d.getTime()
   const diffSecs = Math.floor(diffMs / 1000)

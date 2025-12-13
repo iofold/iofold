@@ -31,7 +31,7 @@ import type {
   AgentPromptResponse,
   Tool,
 } from '@/types/agent'
-import type { Taskset, TasksetWithTasks, CreateTasksetRequest, CreateTasksetFromTracesRequest, CreateTasksetFromTracesResponse, AddTasksRequest, AddTasksResponse } from '@/types/taskset'
+import type { Taskset, TasksetWithTasks, CreateTasksetRequest, CreateTasksetFromTracesRequest, CreateTasksetFromTracesResponse, AddTasksRequest, AddTasksResponse, RunTasksetRequest, ListTasksetRunsResponse, TasksetRunStatusResponse } from '@/types/taskset'
 
 class APIClient {
   private baseURL: string
@@ -47,6 +47,10 @@ class APIClient {
   setAuth(token: string, workspaceId: string) {
     this.token = token
     this.workspaceId = workspaceId
+  }
+
+  getWorkspaceId(): string {
+    return this.workspaceId || 'workspace_default'
   }
 
   private async request<T>(
@@ -696,6 +700,37 @@ class APIClient {
     return this.request(`/api/agents/${agentId}/tasksets/${tasksetId}`, {
       method: 'DELETE',
     });
+  }
+
+  async runTaskset(
+    agentId: string,
+    tasksetId: string,
+    data?: RunTasksetRequest
+  ): Promise<{ run_id: string; status: string }> {
+    return this.request(`/api/agents/${agentId}/tasksets/${tasksetId}/run`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
+  async listTasksetRuns(
+    agentId: string,
+    tasksetId: string
+  ): Promise<ListTasksetRunsResponse> {
+    return this.request(`/api/agents/${agentId}/tasksets/${tasksetId}/runs`);
+  }
+
+  async getTasksetRunStatus(
+    agentId: string,
+    tasksetId: string,
+    runId: string
+  ): Promise<TasksetRunStatusResponse> {
+    return this.request(`/api/agents/${agentId}/tasksets/${tasksetId}/runs/${runId}`);
+  }
+
+  streamTasksetRun(agentId: string, tasksetId: string, runId: string): EventSource {
+    const url = `${this.baseURL}/api/agents/${agentId}/tasksets/${tasksetId}/runs/${runId}/stream`
+    return new EventSource(url)
   }
 
   // ============================================================================
