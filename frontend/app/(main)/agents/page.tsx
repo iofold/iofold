@@ -6,7 +6,7 @@ import { apiClient } from '@/lib/api-client'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ErrorState } from '@/components/ui/error-state'
-import { Plus, AlertCircle, Bot } from 'lucide-react'
+import { Plus, AlertCircle, Bot, Activity, FileCode, ThumbsUp, ListChecks } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime, getStatusColor } from '@/lib/utils'
 import { CreateAgentModal } from '@/components/modals/create-agent-modal'
@@ -93,7 +93,7 @@ export default function AgentsPage() {
                 )}
 
                 {agent.active_version ? (
-                  <div className="mb-4" data-testid="agent-card-active-version">
+                  <div className="mb-3" data-testid="agent-card-active-version">
                     <div className="flex items-center gap-2 text-sm">
                       <span className="text-muted-foreground">Active version:</span>
                       <span className="font-medium">v{agent.active_version.version}</span>
@@ -106,8 +106,29 @@ export default function AgentsPage() {
                     )}
                   </div>
                 ) : (
-                  <div className="mb-4" data-testid="agent-card-no-version">
+                  <div className="mb-3" data-testid="agent-card-no-version">
                     <span className="text-sm text-muted-foreground italic">No active version</span>
+                  </div>
+                )}
+
+                {agent.counts && (
+                  <div className="flex flex-wrap gap-3 mb-3 text-xs text-muted-foreground" data-testid="agent-card-counts">
+                    <span className="flex items-center gap-1" title="Traces">
+                      <Activity className="w-3 h-3" />
+                      {agent.counts.traces}
+                    </span>
+                    <span className="flex items-center gap-1" title="Evals">
+                      <FileCode className="w-3 h-3" />
+                      {agent.counts.evals}
+                    </span>
+                    <span className="flex items-center gap-1" title="Feedback">
+                      <ThumbsUp className="w-3 h-3" />
+                      {agent.counts.feedback}
+                    </span>
+                    <span className="flex items-center gap-1" title="Tasks">
+                      <ListChecks className="w-3 h-3" />
+                      {agent.counts.tasks}
+                    </span>
                   </div>
                 )}
 

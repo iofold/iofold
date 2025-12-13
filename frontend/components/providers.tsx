@@ -39,7 +39,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider
       attribute="class"
-      defaultTheme="system"
+      defaultTheme="light"
       enableSystem
       disableTransitionOnChange
     >
@@ -47,7 +47,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         {children}
         <Toaster
           position="bottom-right"
-          theme="system"
+          theme="light"
           richColors
           closeButton
           toastOptions={{

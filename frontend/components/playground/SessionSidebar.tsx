@@ -68,9 +68,9 @@ function getModelLabel(provider: string, modelId: string): string {
     'anthropic/claude-sonnet-4-5': 'Claude Sonnet 4.5',
     'anthropic/claude-haiku-4-5': 'Claude Haiku 4.5',
     'anthropic/claude-opus-4-5': 'Claude Opus 4.5',
-    // OpenAI - GPT-5.1 series
-    'openai/gpt-5.1-mini': 'GPT-5.1 Mini',
-    'openai/gpt-5.1-nano': 'GPT-5.1 Nano',
+    // OpenAI - GPT-5 series
+    'openai/gpt-5-mini': 'GPT-5 Mini',
+    'openai/gpt-5-nano': 'GPT-5 Nano',
     // Google Vertex AI - Gemini 2.5 series
     'google-vertex-ai/google/gemini-2.5-flash': 'Gemini 2.5 Flash',
     'google-vertex-ai/google/gemini-2.5-pro': 'Gemini 2.5 Pro',

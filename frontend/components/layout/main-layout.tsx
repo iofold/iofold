@@ -10,6 +10,8 @@ function MainContent({ children }: { children: ReactNode }) {
 
   return (
     <main
+      id="main-content"
+      tabIndex={-1}
       className={cn(
         'min-h-screen transition-all duration-300 ease-in-out bg-background',
         isExpanded ? 'ml-64' : 'ml-[72px]'

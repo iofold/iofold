@@ -40,8 +40,16 @@ export interface Tool {
   config?: Record<string, unknown> | null; // Agent-specific config
 }
 
+export interface AgentCounts {
+  traces: number;
+  evals: number;
+  feedback: number;
+  tasks: number;
+}
+
 export interface AgentWithVersion extends Agent {
   active_version: AgentVersion | null;
+  counts?: AgentCounts;
 }
 
 export interface AgentWithDetails extends AgentWithVersion {
