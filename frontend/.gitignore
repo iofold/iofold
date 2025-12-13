@@ -42,3 +42,6 @@ playwright-report/
 .playwright-artifacts/
 .tmp/
 playwright/.auth/
+
+# clerk configuration (can include secrets)
+/.clerk/
