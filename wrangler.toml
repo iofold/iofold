@@ -27,6 +27,9 @@ LANGFUSE_BASE_URL = "https://cloud.langfuse.com"
 # Create gateway at: https://dash.cloudflare.com/?to=/:account/ai/ai-gateway
 CF_AI_GATEWAY_ID = "iofold-ai-gw"
 CF_ACCOUNT_ID = "b26e4af8b7631a2c8d99476fd7bce974"
+# LangSmith Tracing (set LANGSMITH_API_KEY in secrets)
+LANGSMITH_TRACING_V2 = "true"
+LANGSMITH_PROJECT = "iofold-staging"
 
 [[env.staging.d1_databases]]
 binding = "DB"
@@ -92,6 +95,9 @@ LANGFUSE_BASE_URL = "https://cloud.langfuse.com"
 # Set CF_ACCOUNT_ID in .dev.vars or environment
 # Create gateway at: https://dash.cloudflare.com/?to=/:account/ai/ai-gateway
 CF_AI_GATEWAY_ID = "iofold-ai-gw"
+# LangSmith Tracing (set LANGSMITH_API_KEY in .dev.vars)
+LANGSMITH_TRACING_V2 = "true"
+LANGSMITH_PROJECT = "iofold-development"
 
 [[d1_databases]]
 binding = "DB"

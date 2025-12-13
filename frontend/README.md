@@ -1,61 +1,71 @@
 # iofold.com Frontend
 
-Modern, type-safe web dashboard for the iofold automated eval generation platform. Built with Next.js 14, TypeScript, and Tailwind CSS, optimized for Cloudflare Pages deployment.
+Modern, type-safe web dashboard for the iofold automated eval generation platform. Built with Next.js 15, TypeScript, and Tailwind CSS, deployed on Cloudflare Workers via OpenNext adapter.
 
 ## Tech Stack
 
-- **Framework:** Next.js 14 (App Router)
+- **Framework:** Next.js 15 (App Router)
 - **Language:** TypeScript
-- **Styling:** Tailwind CSS
+- **Styling:** Tailwind CSS v4
 - **State Management:** TanStack Query (React Query)
-- **Authentication:** Clerk (ready to integrate)
+- **Authentication:** Clerk
 - **Code Editor:** Monaco Editor
-- **Deployment:** Cloudflare Pages
+- **Deployment:** Cloudflare Workers via @opennextjs/cloudflare
 - **Icons:** Lucide React
 - **Notifications:** Sonner
+- **Charts:** Recharts
+- **AI SDK:** Vercel AI SDK
 
 ## Project Structure
 
 ```
 frontend/
 ├── app/                          # Next.js App Router pages
-│   ├── page.tsx                  # Home page
-│   ├── layout.tsx                # Root layout with navigation
+│   ├── (auth)/                   # Auth routes (Clerk)
+│   │   ├── sign-in/[[...sign-in]]/
+│   │   └── sign-up/[[...sign-up]]/
+│   ├── (main)/                   # Protected main app routes
+│   │   ├── agents/               # Agent management
+│   │   │   ├── [id]/             # Agent detail, playground, evals
+│   │   │   │   ├── playground/   # Agent testing interface
+│   │   │   │   ├── evals/        # Agent-specific evals
+│   │   │   │   ├── gepa/         # GEPA optimization dashboard
+│   │   │   │   └── tasksets/     # Taskset management
+│   │   │   └── page.tsx          # Agent list
+│   │   ├── playground/           # Global playground
+│   │   ├── traces/               # Trace list & detail
+│   │   ├── review/               # Trace review interface
+│   │   ├── evals/                # Generated evals
+│   │   ├── matrix/               # Comparison matrix
+│   │   ├── analytics/            # Analytics dashboard
+│   │   ├── integrations/         # Platform connections
+│   │   ├── resources/            # Tool registry
+│   │   ├── settings/             # User settings
+│   │   ├── setup/                # Initial setup wizard
+│   │   ├── system/               # System info
+│   │   └── page.tsx              # Home page
+│   ├── layout.tsx                # Root layout with Clerk
 │   ├── globals.css               # Global styles & Tailwind
-│   ├── integrations/             # Platform connections
-│   │   └── page.tsx
-│   ├── traces/                   # Trace list & detail
-│   │   ├── page.tsx
-│   │   └── [id]/page.tsx
-│   ├── eval-sets/                # Eval set management
-│   │   ├── page.tsx
-│   │   └── [id]/page.tsx
-│   ├── evals/                    # Generated evals
-│   │   ├── page.tsx
-│   │   └── [id]/page.tsx
-│   └── matrix/                   # Comparison matrix
-│       └── [eval_set_id]/page.tsx
+│   └── not-found.tsx             # 404 page
 ├── components/                   # React components
 │   ├── ui/                       # Base UI components
-│   │   ├── button.tsx
-│   │   └── card.tsx
-│   ├── navigation.tsx            # Main nav bar
-│   ├── providers.tsx             # React Query provider
-│   ├── trace-card.tsx            # Trace list item
-│   ├── trace-detail.tsx          # Expandable trace viewer
-│   ├── feedback-buttons.tsx      # Thumbs up/down/neutral
-│   ├── code-viewer.tsx           # Python code display
-│   └── matrix-table.tsx          # Comparison grid
+│   ├── layout/                   # Layout components
+│   ├── providers.tsx             # React Query + Clerk providers
+│   └── skip-link.tsx             # Accessibility component
 ├── lib/                          # Utilities & API client
 │   ├── api-client.ts             # Type-safe API SDK
 │   └── utils.ts                  # Helper functions
 ├── types/                        # TypeScript definitions
-│   └── api.ts                    # API types from spec
+│   ├── agent.ts                  # Agent types
+│   ├── taskset.ts                # Taskset types
+│   └── api.ts                    # API types
+├── hooks/                        # Custom React hooks
+│   └── use-playground-chat.ts    # Playground chat logic
+├── e2e/                          # Playwright E2E tests
 ├── package.json
 ├── tsconfig.json
 ├── tailwind.config.ts
 ├── next.config.js
-├── wrangler.toml                 # Cloudflare Pages config
 └── README.md
 ```
 
@@ -84,12 +94,16 @@ cp .env.example .env.local
 Edit `.env.local`:
 
 ```bash
-# Point to your backend API (local or deployed)
+# Backend API endpoint
 NEXT_PUBLIC_API_URL=http://localhost:8787/v1
 
-# Optional: Clerk authentication (for production)
-# NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
-# CLERK_SECRET_KEY=sk_test_...
+# Clerk authentication (required)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+
+# Optional: E2E test credentials
+E2E_TEST_EMAIL=e2e-test@iofold.com
+E2E_TEST_PASSWORD=...
 ```
 
 3. **Run development server:**
@@ -118,30 +132,62 @@ pnpm run lint
 # Type check
 pnpm run type-check
 
-# Build for Cloudflare Pages
-pnpm run pages:build
+# Build and preview for Cloudflare Workers
+pnpm run preview
 
-# Deploy to Cloudflare Pages
-pnpm run pages:deploy
+# Deploy to Cloudflare Workers (production)
+pnpm run deploy
+
+# Deploy to staging environment
+pnpm run deploy:staging
+
+# Run E2E tests
+pnpm run test:e2e
+
+# Run E2E tests in UI mode
+pnpm run test:e2e:ui
+
+# Run E2E tests with browser visible
+pnpm run test:e2e:headed
 ```
 
 ## Features
 
-### 1. Integrations Management
+### 1. Agent Management
 
-Connect to observability platforms (Langfuse, Langsmith, OpenAI):
+Create and configure AI agents with tools and prompts:
 
-- Add/remove platform connections
-- Test connection status
-- View last sync timestamps
+- Agent list and detail views
+- Agent-specific playgrounds for testing
+- GEPA optimization dashboard for prompt iteration
+- Taskset management for benchmarking
 
-**Route:** `/integrations`
+**Routes:**
+- List: `/agents`
+- Detail: `/agents/[id]`
+- Playground: `/agents/[id]/playground`
+- GEPA: `/agents/[id]/gepa`
+- Tasksets: `/agents/[id]/tasksets`
 
-### 2. Trace Review
+### 2. Playground
+
+Interactive AI agent testing interface:
+
+- Real-time streaming responses
+- Tool execution visualization
+- Global and agent-specific playgrounds
+- Chat history and context management
+
+**Routes:**
+- Global: `/playground`
+- Agent-specific: `/agents/[id]/playground`
+- Eval-specific: `/evals/[id]/playground`
+
+### 3. Trace Review
 
 Browse and annotate imported traces:
 
-- List view with summaries (input/output previews)
+- List view with summaries
 - Detail view with expandable execution steps
 - Filter by source, rating, date range
 - Feedback buttons (thumbs up/down/neutral)
@@ -149,33 +195,23 @@ Browse and annotate imported traces:
 **Routes:**
 - List: `/traces`
 - Detail: `/traces/[id]`
+- Review interface: `/review`
 
-### 3. Eval Set Management
-
-Organize feedback collections:
-
-- Create named eval sets
-- Track feedback statistics (positive/negative/neutral counts)
-- Generate button (enabled at minimum examples threshold)
-- View associated evals
-
-**Routes:**
-- List: `/eval-sets`
-- Detail: `/eval-sets/[id]`
-
-### 4. Eval Viewer
+### 4. Eval Management
 
 View and manage generated eval functions:
 
 - Python code display with syntax highlighting
 - Training accuracy metrics
 - Test results breakdown
-- Execution count & contradictions
 - Refine and execute actions
+- Eval-specific playground for testing
 
 **Routes:**
 - List: `/evals`
 - Detail: `/evals/[id]`
+- Playground: `/evals/[id]/playground`
+- Agent evals: `/agents/[id]/evals`
 
 ### 5. Comparison Matrix
 
@@ -186,36 +222,84 @@ Compare eval predictions vs human feedback:
 - Filter by disagreements/errors
 - Drill-down into execution details
 
-**Route:** `/matrix/[eval_set_id]`
+**Routes:**
+- List: `/matrix`
+- Detail: `/matrix/[agent_id]`
+
+### 6. Integrations
+
+Connect to observability platforms (Langfuse, Langsmith):
+
+- Add/remove platform connections
+- Test connection status
+- View last sync timestamps
+
+**Route:** `/integrations`
+
+### 7. Analytics
+
+System-wide analytics and metrics:
+
+- Usage statistics
+- Performance monitoring
+- Trace and eval trends
+
+**Route:** `/analytics`
+
+### 8. Resources (Tool Registry)
+
+Manage tools and functions available to agents:
+
+- View and edit tool definitions
+- Test tool execution
+- Configure tool parameters
+
+**Route:** `/resources`
+
+### 9. System & Settings
+
+Configuration and system information:
+
+- User settings and preferences
+- System status and diagnostics
+- Initial setup wizard
+
+**Routes:**
+- Settings: `/settings`
+- System: `/system`
+- Setup: `/setup`
 
 ## API Integration
 
-The frontend uses a type-safe API client (`lib/api-client.ts`) that matches the backend specification:
+The frontend uses a type-safe API client (`lib/api-client.ts`) with Clerk authentication:
 
 ```typescript
 import { apiClient } from '@/lib/api-client'
+import { useAuth } from '@clerk/nextjs'
 
-// Set auth (from Clerk or other provider)
+// In a component, set auth from Clerk
+const { getToken } = useAuth()
+const token = await getToken()
 apiClient.setAuth(token, workspaceId)
 
-// Example: Fetch traces
-const traces = await apiClient.listTraces({ limit: 50 })
+// Example: Fetch agents
+const agents = await apiClient.listAgents()
 
 // Example: Submit feedback
 await apiClient.submitFeedback({
   trace_id: 'trace_123',
-  eval_set_id: 'set_abc',
+  agent_id: 'agent_abc',
   rating: 'positive',
 })
 
-// Example: Stream job progress (SSE)
-const eventSource = apiClient.streamJob('job_xyz')
-eventSource.addEventListener('progress', (e) => {
-  console.log(JSON.parse(e.data))
+// Example: Stream playground responses
+const stream = await apiClient.streamPlaygroundChat({
+  agent_id: 'agent_abc',
+  messages: [...],
 })
 ```
 
-All API types are defined in `types/api.ts` based on the API specification.
+All API types are defined in `types/` based on the API specification.
 
 ## State Management
 
@@ -275,67 +359,95 @@ getRatingEmoji()        // 👍 👎 😐
 
 ## Deployment
 
-### Cloudflare Pages
+### Cloudflare Workers (via OpenNext)
 
-The frontend is configured for **static export** to deploy on Cloudflare Pages:
+The frontend is deployed on **Cloudflare Workers** using the `@opennextjs/cloudflare` adapter:
 
 1. **Build for Cloudflare:**
 
 ```bash
-pnpm run pages:build
+pnpm run preview  # Build and preview locally
 ```
 
-This creates a static export in `.vercel/output/static/` compatible with Cloudflare Pages.
-
-2. **Deploy:**
+2. **Deploy to production:**
 
 ```bash
-pnpm run pages:deploy
+pnpm run deploy
 ```
 
-Or connect your GitHub repo to Cloudflare Pages dashboard for automatic deployments.
+3. **Deploy to staging:**
+
+```bash
+pnpm run deploy:staging
+```
+
+This uses the OpenNext Cloudflare adapter which supports:
+- Dynamic routes without static generation
+- Server-side rendering on the edge
+- API routes (if needed)
+- Streaming responses
+- Full Next.js 15 App Router features
 
 ### Environment Variables in Production
 
-Set in Cloudflare Pages dashboard:
+Set in Cloudflare Workers dashboard or via `wrangler secret`:
 
-```
+```bash
+# Public variables (set in dashboard)
 NEXT_PUBLIC_API_URL=https://api.iofold.com/v1
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_...
+
+# Secret variables (use wrangler)
+wrangler secret put CLERK_SECRET_KEY
 ```
 
 ### Build Configuration
 
-- `next.config.js` sets `output: 'export'` for static generation
-- Images are unoptimized (no server-side image optimization)
-- All pages are pre-rendered at build time
-- Client-side data fetching with React Query
+- `next.config.js` does NOT use `output: 'export'` (supports dynamic routes)
+- Uses `@opennextjs/cloudflare` adapter for Workers deployment
+- Images are unoptimized (as configured)
+- Supports dynamic rendering and streaming
 
-## Authentication (TODO)
+## Authentication
 
-Authentication is **not yet implemented** but ready for Clerk integration:
+Authentication is fully implemented using **Clerk** (@clerk/nextjs 6.35.5):
 
-1. **Install Clerk:**
+### Setup
 
-```bash
-pnpm add @clerk/nextjs
-```
+1. **ClerkProvider** wraps the app in `app/layout.tsx`
+2. **Route groups** separate auth and protected routes:
+   - `(auth)/` - Sign in/sign up pages
+   - `(main)/` - Protected app routes
+3. **Middleware** protects routes (configured in `middleware.ts`)
 
-2. **Wrap app in ClerkProvider** (in `app/layout.tsx`)
+### Usage
 
-3. **Protect routes with middleware**
-
-4. **Get auth token:**
+Get auth token in components:
 
 ```typescript
 import { useAuth } from '@clerk/nextjs'
 
-const { getToken } = useAuth()
+const { getToken, userId } = useAuth()
 const token = await getToken()
 apiClient.setAuth(token, workspaceId)
 ```
 
-See Clerk docs: https://clerk.com/docs/quickstarts/nextjs
+### E2E Testing
+
+Clerk testing is configured for Playwright tests:
+
+```typescript
+import { clerkSetup } from '@clerk/testing/playwright'
+
+// In global setup
+await clerkSetup()
+
+// Test credentials in .env.local:
+// E2E_TEST_EMAIL=e2e-test@iofold.com
+// E2E_TEST_PASSWORD=...
+```
+
+See `frontend/e2e/CLERK_TESTING_SETUP.md` for details.
 
 ## Performance Optimizations
 
@@ -346,25 +458,43 @@ See Clerk docs: https://clerk.com/docs/quickstarts/nextjs
 - **Code splitting** via Next.js automatic splitting
 - **Stale-while-revalidate** caching with React Query
 
+## Testing
+
+### E2E Tests (Playwright)
+
+Comprehensive E2E test suite covering:
+
+- Authentication flows (sign in/sign up)
+- Agent management
+- Playground interactions
+- Trace review
+- Eval generation
+- Accessibility testing
+
+Run tests:
+
+```bash
+cd frontend
+pnpm run test:e2e              # Run all tests
+pnpm run test:e2e:ui           # Run in UI mode
+pnpm run test:e2e:headed       # Run with browser visible
+pnpm run test:e2e:debug        # Debug mode
+pnpm run test:e2e:accessibility # Accessibility tests only
+```
+
+See `frontend/e2e/README.md` for detailed testing documentation.
+
 ## Next Steps
-
-### Immediate
-
-1. **Run backend API** (see `/src` directory)
-2. **Test all routes** with real data
-3. **Implement authentication** with Clerk
-4. **Add SSE progress bars** for job monitoring
 
 ### Future Enhancements
 
-1. **Real-time updates** with Server-Sent Events
-2. **Dark mode toggle**
-3. **Advanced filtering** on list pages
-4. **Export functionality** (download Python code)
-5. **Keyboard shortcuts** for power users
-6. **Bulk operations** (delete multiple traces)
-7. **Analytics dashboard** with charts (Recharts/Victory)
-8. **Monaco Editor** for code editing (inline eval refinement)
+1. **Dark mode** - Theme toggle (next-themes is installed)
+2. **Advanced filtering** - More filter options on list pages
+3. **Export functionality** - Download Python code, export data
+4. **Keyboard shortcuts** - Power user shortcuts
+5. **Bulk operations** - Multi-select and batch actions
+6. **Enhanced analytics** - More charts and metrics
+7. **Collaborative features** - Multi-user workspace support
 
 ## Troubleshooting
 
@@ -390,22 +520,25 @@ pnpm install
 pnpm run type-check
 ```
 
-### Cloudflare Pages Build Fails
+### Cloudflare Workers Deployment Issues
 
-Ensure:
-- `output: 'export'` in `next.config.js`
-- No server-side APIs (API routes not supported in static export)
-- All data fetching is client-side
+Common issues:
+- Check `@opennextjs/cloudflare` is installed and up to date
+- Verify environment variables are set in Cloudflare dashboard
+- Check Wrangler configuration in `wrangler.toml`
+- Ensure Node.js compatibility settings are correct
 
 ## Contributing
 
 When adding new pages or components:
 
-1. **Add types** to `types/api.ts` if needed
-2. **Update API client** in `lib/api-client.ts`
+1. **Add types** to appropriate files in `types/`
+2. **Update API client** in `lib/api-client.ts` if needed
 3. **Create reusable components** in `components/`
 4. **Use TanStack Query** for data fetching
 5. **Follow existing patterns** (see existing pages)
+6. **Write E2E tests** for critical user flows
+7. **Test accessibility** with Playwright accessibility tests
 
 ## Support
 
@@ -416,4 +549,4 @@ For issues or questions:
 
 ---
 
-**Built with Next.js 14 + TypeScript + Tailwind CSS**
+**Built with Next.js 15 + TypeScript + Tailwind CSS v4**

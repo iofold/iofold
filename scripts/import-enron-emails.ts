@@ -202,8 +202,9 @@ async function parseParquet(filePath: string, limit: number): Promise<EmailRow[]
   console.log(`Limit: ${limit === 0 ? 'unlimited' : limit}`);
 
   try {
-    // Dynamic import parquetjs
-    const parquet = await import('parquetjs');
+    // parquetjs uses CommonJS, so require it properly
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const parquet = require('parquetjs');
 
     const reader = await parquet.ParquetReader.openFile(filePath);
     const cursor = reader.getCursor();

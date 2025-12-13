@@ -98,6 +98,42 @@ pnpm run dev
 
 The server will start at `http://localhost:8787`
 
+### Docker Development (Recommended)
+
+All services run in Docker with auto-restart:
+
+```bash
+# Start all services
+./scripts/dev-docker.sh start
+
+# View logs
+./scripts/dev-docker.sh logs
+
+# Stop services
+./scripts/dev-docker.sh stop
+
+# Fix cache issues
+./scripts/dev-docker.sh clean && ./scripts/dev-docker.sh start
+```
+
+**Services:**
+- Backend: `http://localhost:8787`
+- Frontend: `http://localhost:3000`
+- Python Sandbox: `http://localhost:9999`
+
+**Required:** Add `CLOUDFLARE_API_TOKEN` to `.dev.vars` with permissions:
+- Workers Scripts:Edit
+- D1:Edit
+- Workers AI:Read
+
+**Benefits:**
+- Auto-restart on crashes
+- Isolated dependency caches
+- Consistent environment across machines
+- Secure Python sandbox (resource limits, no-new-privileges)
+
+See `docs/deployment-guide.md` for detailed Docker setup and troubleshooting.
+
 ### API Endpoints
 
 #### Health Check
