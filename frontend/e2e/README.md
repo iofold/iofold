@@ -6,13 +6,26 @@ This directory contains end-to-end tests for the IOFold frontend application usi
 
 ```
 e2e/
-├── 01-navigation/          # Basic navigation and routing tests
-├── 02-features/            # Feature-specific tests (traces, review, etc.)
 ├── 03-traces/              # Traces explorer page tests
 │   ├── trace-list.spec.ts      # Trace list, filtering, sorting, detail panel
 │   └── import-traces.spec.ts   # Import traces modal and integration
 ├── 04-accessibility/       # Accessibility compliance tests (WCAG 2.1 AA)
 │   └── accessibility.spec.ts
+├── 04-review/              # Review page tests
+│   └── review-page.spec.ts
+├── 05-playground/          # Agent playground tests
+│   └── playground.spec.ts
+├── 06-evals/               # Evals list page tests
+│   └── evals-list.spec.ts
+├── 07-staging/             # Staging-specific integration tests
+│   ├── agents-flow-test.spec.ts
+│   ├── staging-traces-flow.spec.ts
+│   ├── staging-evals-*.spec.ts
+│   └── test-tasksets-staging.spec.ts
+├── fixtures/               # Test fixtures and helpers
+│   └── clerk-auth.ts           # Authentication helpers
+├── global.setup.ts         # Clerk authentication setup (runs first)
+├── CLERK_TESTING_SETUP.md  # Comprehensive auth documentation
 └── README.md
 ```
 
@@ -75,6 +88,28 @@ The accessibility test suite (`04-accessibility/accessibility.spec.ts`) includes
 - Keyboard shortcuts documentation
 - Review page keyboard navigation (1/2/3 shortcuts)
 - Focus trap in modals
+
+## Authentication Setup
+
+This test suite uses Clerk's official testing utilities for authentication. See [CLERK_TESTING_SETUP.md](./CLERK_TESTING_SETUP.md) for detailed documentation.
+
+### Quick Setup
+
+1. Add test user credentials to `.env.local`:
+   ```bash
+   E2E_CLERK_USER_USERNAME=your-test-user@example.com
+   E2E_CLERK_USER_PASSWORD=YourTestPassword123!
+   PLAYWRIGHT_TEST_BASE_URL=https://platform.staging.iofold.com
+   ```
+
+2. The global setup will authenticate once and save the session state
+3. All tests will reuse the authenticated state for faster execution
+
+### Features
+
+- **Testing Token** - Bypasses Turnstile CAPTCHA during tests
+- **Auth State Persistence** - Sign in once, reuse for all tests
+- **Flexible Authentication** - Tests can override auth state when needed
 
 ## Setup
 

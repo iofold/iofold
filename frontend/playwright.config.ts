@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
-import dotenv from 'dotenv'
-import path from 'path'
+import * as dotenv from 'dotenv'
+import * as path from 'path'
+import * as fs from 'fs'
 
 // Load environment variables from .env.local
 dotenv.config({ path: path.resolve(__dirname, '.env.local') })
@@ -9,6 +10,11 @@ dotenv.config({ path: path.resolve(__dirname, '.env.local') })
 const useStaging = process.env.USE_STAGING !== 'false'
 const stagingBaseURL = 'https://platform.staging.iofold.com'
 const localBaseURL = 'http://dev4:3000'
+
+// Path to stored auth state
+const authFile = path.join(__dirname, 'playwright/.auth/user.json')
+// Check if auth state exists
+const hasAuthState = fs.existsSync(authFile)
 
 /**
  * Playwright Configuration for iofold E2E Tests
@@ -40,6 +46,8 @@ export default defineConfig({
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    /* Use stored auth state if available for faster test execution */
+    ...(hasAuthState ? { storageState: authFile } : {}),
   },
 
   /* Configure projects for major browsers */
@@ -71,7 +79,7 @@ export default defineConfig({
   ...(useStaging ? {} : {
     webServer: {
       command: 'pnpm run dev',
-      url: localBaseURL,
+      url: process.env.BASE_URL || localBaseURL,
       reuseExistingServer: true,
       timeout: 120 * 1000,
     },
