@@ -34,6 +34,7 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
   const [customInstructions, setCustomInstructions] = useState('')
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<'running' | 'completed' | 'failed' | null>(null)
+  const [jobError, setJobError] = useState<string | null>(null)
   const [generatedEvalId, setGeneratedEvalId] = useState<string | null>(null)
 
   // Generate mutation
@@ -61,39 +62,39 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
     },
   })
 
-  // Listen for job completion via polling (LiveJobMonitor handles SSE)
+  // Reset state when modal closes
   useEffect(() => {
-    if (!jobId || jobStatus !== 'running') return
+    if (!open) {
+      setName('')
+      setDescription('')
+      setModel('claude-3-5-sonnet-20241022')
+      setCustomInstructions('')
+      setJobId(null)
+      setJobStatus(null)
+      setJobError(null)
+      setGeneratedEvalId(null)
+      generateMutation.reset()
+    }
+  }, [open, generateMutation])
 
-    // Poll job status to detect completion and extract eval_id
-    const pollInterval = setInterval(async () => {
-      try {
-        const job = await apiClient.getJob(jobId)
+  // Callbacks for LiveJobMonitor
+  const handleJobComplete = (result: any) => {
+    setJobStatus('completed')
 
-        if (job.status === 'completed') {
-          setJobStatus('completed')
+    // Extract eval_id from result
+    if (result?.eval_id) {
+      setGeneratedEvalId(result.eval_id)
+    }
 
-          // Extract eval_id from result
-          if (job.result?.eval_id) {
-            setGeneratedEvalId(job.result.eval_id)
-          }
+    // Refetch agent to show the new eval
+    queryClient.invalidateQueries({ queryKey: ['agent', agentId] })
+    queryClient.invalidateQueries({ queryKey: ['evals'] })
+  }
 
-          // Refetch agent to show the new eval
-          queryClient.invalidateQueries({ queryKey: ['agent', agentId] })
-          queryClient.invalidateQueries({ queryKey: ['evals'] })
-
-          clearInterval(pollInterval)
-        } else if (job.status === 'failed' || job.status === 'cancelled') {
-          setJobStatus('failed')
-          clearInterval(pollInterval)
-        }
-      } catch (error) {
-        console.error('Failed to poll job status:', error)
-      }
-    }, 2000)
-
-    return () => clearInterval(pollInterval)
-  }, [jobId, jobStatus, agentId, queryClient])
+  const handleJobFail = (error: string) => {
+    setJobStatus('failed')
+    setJobError(error)
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -111,15 +112,6 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
       if (!confirmed) return
     }
 
-    // Reset state when closing
-    setName('')
-    setDescription('')
-    setModel('claude-3-5-sonnet-20241022')
-    setCustomInstructions('')
-    setJobId(null)
-    setJobStatus(null)
-    setGeneratedEvalId(null)
-    generateMutation.reset()
     onOpenChange(false)
   }
 
@@ -146,9 +138,14 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
         </DialogHeader>
 
         {/* Show LiveJobMonitor if generation started */}
-        {jobId && jobStatus === 'running' && (
+        {jobId && jobStatus && (
           <div className="my-4">
-            <LiveJobMonitor jobId={jobId} jobType="generate" />
+            <LiveJobMonitor
+              jobId={jobId}
+              jobType="generate"
+              onComplete={handleJobComplete}
+              onFail={handleJobFail}
+            />
           </div>
         )}
 
@@ -173,7 +170,7 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
               <span className="font-medium text-destructive">Generation Failed</span>
             </div>
             <p className="text-sm text-muted-foreground">
-              The eval generation failed. Please check the logs above for details and try again.
+              {jobError || 'The eval generation failed. Please check the logs above for details and try again.'}
             </p>
           </div>
         )}
