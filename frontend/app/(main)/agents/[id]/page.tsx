@@ -14,6 +14,7 @@ import { formatRelativeTime, formatPercentage } from '@/lib/utils'
 import { CreateAgentVersionModal } from '@/components/modals/create-agent-version-modal'
 import { GEPAOptimizationModal } from '@/components/modals/gepa-optimization-modal'
 import { AttachToolModal } from '@/components/modals/attach-tool-modal'
+import { GenerateEvalModal } from '@/components/modals/GenerateEvalModal'
 import { TasksetsSection } from '@/components/tasksets/tasksets-section'
 import { toast } from 'sonner'
 import type { AgentVersionStatus, AgentVersionSource, Tool } from '@/types/agent'
@@ -191,12 +192,12 @@ export default function AgentDetailPage() {
                 Playground
               </Button>
             </Link>
-            <Link href={`/agents/${agentId}/evals`}>
+            <GenerateEvalModal agentId={agentId}>
               <Button variant="outline">
                 <Sparkles className="w-4 h-4 mr-2" />
                 Generate Eval
               </Button>
-            </Link>
+            </GenerateEvalModal>
             <Link href={`/agents/${agentId}/gepa`}>
               <Button variant="outline">
                 <History className="w-4 h-4 mr-2" />
