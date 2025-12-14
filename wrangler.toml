@@ -35,6 +35,7 @@ LANGSMITH_PROJECT = "iofold-staging"
 binding = "DB"
 database_name = "iofold-staging-db"
 database_id = "9eaff631-3152-432f-9d07-20de2ed8857f"
+migrations_dir = "drizzle"  # Drizzle-generated migrations
 
 [[env.staging.d1_databases]]
 binding = "BENCHMARKS_DB"
@@ -105,6 +106,7 @@ LANGSMITH_PROJECT = "iofold-development"
 binding = "DB"
 database_name = "iofold-staging-db"
 database_id = "9eaff631-3152-432f-9d07-20de2ed8857f"
+migrations_dir = "drizzle"  # Drizzle-generated migrations
 
 [[d1_databases]]
 binding = "BENCHMARKS_DB"
