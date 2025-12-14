@@ -1,216 +1,152 @@
 'use client'
 
-import { useState } from 'react'
-import { Card } from '@/components/ui/card'
+import { useState, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
 import {
-  DollarSign,
-  ChevronDown,
-  Download,
-  TrendingUp,
-  TrendingDown,
-  AlertTriangle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Briefcase,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Loader2,
   AlertCircle,
-  Info,
-  ArrowUpDown,
-  BarChart3,
+  RefreshCw,
+  StopCircle,
+  Trash2,
+  Eye,
+  Filter,
 } from 'lucide-react'
+import { toast } from 'sonner'
+import { formatRelativeTime } from '@/lib/utils'
+import type { Job } from '@/types/api'
 
-// Mock data types
-interface BudgetAlert {
-  id: string
-  severity: 'warning' | 'error' | 'info'
-  title: string
-  message: string
+type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+type JobType = 'import' | 'generate' | 'execute' | 'taskset_run' | 'agent_discovery' | 'gepa_optimization'
+
+function getStatusIcon(status: JobStatus) {
+  switch (status) {
+    case 'queued':
+      return <Clock className="w-4 h-4 text-muted-foreground" />
+    case 'running':
+      return <Loader2 className="w-4 h-4 text-primary animate-spin" />
+    case 'completed':
+      return <CheckCircle2 className="w-4 h-4 text-green-500" />
+    case 'failed':
+      return <XCircle className="w-4 h-4 text-destructive" />
+    case 'cancelled':
+      return <StopCircle className="w-4 h-4 text-muted-foreground" />
+    default:
+      return <AlertCircle className="w-4 h-4" />
+  }
+}
+
+function getStatusBadgeVariant(status: JobStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
+  switch (status) {
+    case 'completed':
+      return 'default'
+    case 'failed':
+      return 'destructive'
+    case 'running':
+    case 'queued':
+      return 'secondary'
+    default:
+      return 'outline'
+  }
+}
+
+function getJobTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    import: 'Import Traces',
+    generate: 'Generate Eval',
+    execute: 'Execute Eval',
+    taskset_run: 'Taskset Run',
+    agent_discovery: 'Agent Discovery',
+    gepa_optimization: 'GEPA Optimization',
+    rollout_task: 'Rollout Task',
+  }
+  return labels[type] || type
+}
+
+interface JobLog {
   timestamp: string
+  level: 'info' | 'warn' | 'error'
+  message: string
 }
 
-interface KPICard {
-  id: string
-  title: string
-  value: string
-  badge?: {
-    text: string
-    variant: 'success' | 'error' | 'warning'
+export default function JobsPage() {
+  const queryClient = useQueryClient()
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+
+  // Fetch jobs with polling for active jobs
+  const { data: jobsData, isLoading, refetch } = useQuery({
+    queryKey: ['jobs', statusFilter, typeFilter],
+    queryFn: () => apiClient.listJobs({
+      status: statusFilter !== 'all' ? statusFilter as JobStatus : undefined,
+      type: typeFilter !== 'all' ? typeFilter as JobType : undefined,
+      limit: 100,
+    }),
+    refetchInterval: (query) => {
+      const data = query.state.data
+      const hasActiveJobs = data?.jobs?.some(
+        (j: Job) => j.status === 'running' || j.status === 'queued'
+      )
+      return hasActiveJobs ? 3000 : false
+    },
+  })
+
+  // Cancel job mutation
+  const cancelJobMutation = useMutation({
+    mutationFn: (jobId: string) => apiClient.cancelJob(jobId),
+    onSuccess: () => {
+      toast.success('Job cancelled')
+      queryClient.invalidateQueries({ queryKey: ['jobs'] })
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to cancel job')
+    },
+  })
+
+  const jobs = jobsData?.jobs || []
+  const activeJobs = jobs.filter(j => j.status === 'running' || j.status === 'queued')
+  const completedJobs = jobs.filter(j => j.status === 'completed')
+  const failedJobs = jobs.filter(j => j.status === 'failed')
+
+  const handleViewDetails = (job: Job) => {
+    setSelectedJob(job)
+    setDetailsOpen(true)
   }
-  budget?: string
-  trend: {
-    value: number
-    isPositive: boolean
-  }
-}
 
-interface CostDriver {
-  rank: number
-  service: string
-  cost: number
-  percentage: number
-  trend: number
-}
-
-interface Recommendation {
-  id: string
-  title: string
-  description: string
-  potentialSavings: number
-}
-
-// Mock data
-const budgetAlerts: BudgetAlert[] = [
-  {
-    id: '1',
-    severity: 'warning',
-    title: 'API costs approaching budget threshold',
-    message: 'Current spend is at 87% of monthly budget ($3,200 of $3,680)',
-    timestamp: '2 hours ago',
-  },
-  {
-    id: '2',
-    severity: 'error',
-    title: 'Compute costs exceeded budget',
-    message: 'Exceeded budget by 12% this month ($4,480 vs $4,000 budget)',
-    timestamp: '5 hours ago',
-  },
-  {
-    id: '3',
-    severity: 'info',
-    title: 'Storage optimization opportunity',
-    message: 'Identified 340GB of unused data that can be archived to reduce costs',
-    timestamp: '1 day ago',
-  },
-]
-
-const kpiCards: KPICard[] = [
-  {
-    id: '1',
-    title: 'Total Monthly Spend',
-    value: '$3,647',
-    badge: {
-      text: 'Within Budget',
-      variant: 'success',
-    },
-    budget: '$4,000',
-    trend: {
-      value: 8.7,
-      isPositive: false,
-    },
-  },
-  {
-    id: '2',
-    title: 'Budget Variance',
-    value: '$353',
-    trend: {
-      value: 12.3,
-      isPositive: true,
-    },
-  },
-  {
-    id: '3',
-    title: 'Cost per Evaluation',
-    value: '$2.47',
-    trend: {
-      value: 5.2,
-      isPositive: true,
-    },
-  },
-  {
-    id: '4',
-    title: 'Projected Monthly Burn',
-    value: '$4,234',
-    badge: {
-      text: 'Over Budget',
-      variant: 'error',
-    },
-    budget: '$4,000',
-    trend: {
-      value: 15.8,
-      isPositive: false,
-    },
-  },
-]
-
-const costDrivers: CostDriver[] = [
-  { rank: 1, service: 'Claude API', cost: 1847, percentage: 50.6, trend: 12.3 },
-  { rank: 2, service: 'Cloudflare Workers', cost: 892, percentage: 24.5, trend: -3.2 },
-  { rank: 3, service: 'D1 Database', cost: 412, percentage: 11.3, trend: 8.7 },
-  { rank: 4, service: 'R2 Storage', cost: 287, percentage: 7.9, trend: 2.1 },
-  { rank: 5, service: 'Vectorize', cost: 209, percentage: 5.7, trend: -1.5 },
-]
-
-const recommendations: Recommendation[] = [
-  {
-    id: '1',
-    title: 'Implement response caching',
-    description: 'Cache Claude API responses for similar queries to reduce redundant calls',
-    potentialSavings: 420,
-  },
-  {
-    id: '2',
-    title: 'Archive old traces',
-    description: 'Move traces older than 90 days to cold storage',
-    potentialSavings: 180,
-  },
-  {
-    id: '3',
-    title: 'Optimize worker execution',
-    description: 'Reduce worker duration by optimizing database queries',
-    potentialSavings: 145,
-  },
-  {
-    id: '4',
-    title: 'Batch API requests',
-    description: 'Combine multiple eval requests into batch operations',
-    potentialSavings: 230,
-  },
-]
-
-const chartData = [
-  { date: 'Nov 1', apiCosts: 45, compute: 28, storage: 12, database: 15 },
-  { date: 'Nov 5', apiCosts: 52, compute: 32, storage: 13, database: 16 },
-  { date: 'Nov 10', apiCosts: 61, compute: 29, storage: 14, database: 18 },
-  { date: 'Nov 15', apiCosts: 58, compute: 35, storage: 15, database: 17 },
-  { date: 'Nov 20', apiCosts: 67, compute: 31, storage: 14, database: 19 },
-  { date: 'Nov 25', apiCosts: 72, compute: 38, storage: 16, database: 20 },
-  { date: 'Nov 30', apiCosts: 68, compute: 34, storage: 15, database: 18 },
-]
-
-export default function ResourcesPage() {
-  const [activeTab, setActiveTab] = useState<'drivers' | 'recommendations'>('drivers')
-  const [sortBy, setSortBy] = useState<'cost' | 'date'>('cost')
-
-  const getSeverityIcon = (severity: BudgetAlert['severity']) => {
-    switch (severity) {
-      case 'error':
-        return <AlertCircle className="w-5 h-5 text-destructive" />
-      case 'warning':
-        return <AlertTriangle className="w-5 h-5 text-warning" />
-      case 'info':
-        return <Info className="w-5 h-5 text-info" />
+  const handleCancelJob = (jobId: string) => {
+    if (confirm('Are you sure you want to cancel this job?')) {
+      cancelJobMutation.mutate(jobId)
     }
   }
 
-  const getSeverityBg = (severity: BudgetAlert['severity']) => {
-    switch (severity) {
-      case 'error':
-        return 'bg-destructive/20'
-      case 'warning':
-        return 'bg-warning/10'
-      case 'info':
-        return 'bg-info/10'
-    }
-  }
-
-  const getBadgeStyles = (variant: 'success' | 'error' | 'warning') => {
-    switch (variant) {
-      case 'success':
-        return 'bg-success/20 text-success border-success/30'
-      case 'error':
-        return 'bg-destructive/20 text-destructive border-destructive/30'
-      case 'warning':
-        return 'bg-warning/10 text-warning border-warning/30'
-    }
+  // Get logs from job metadata
+  const getJobLogs = (job: Job): JobLog[] => {
+    const metadata = job.metadata as Record<string, unknown> | undefined
+    return (metadata?.logs as JobLog[]) || []
   }
 
   return (
@@ -218,315 +154,348 @@ export default function ResourcesPage() {
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-lg bg-info/10 flex items-center justify-center">
-            <DollarSign className="w-6 h-6 text-info" />
+          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Briefcase className="w-6 h-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Cost & Resource Analytics</h1>
+            <h1 className="text-3xl font-bold text-foreground">Jobs</h1>
             <p className="text-muted-foreground mt-1">
-              Monitor resource utilization, track costs, and optimize infrastructure spending
+              Monitor and manage background jobs
             </p>
           </div>
         </div>
 
-        {/* Header Controls */}
+        {/* Controls */}
         <div className="flex flex-wrap items-center gap-3 mt-6">
-          {/* Cost Center Selector */}
-          <button className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg hover:bg-muted transition-colors">
-            <span className="text-sm font-medium text-foreground">All Cost Centers</span>
-            <ChevronDown className="w-4 h-4 text-muted-foreground" />
-          </button>
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="queued">Queued</SelectItem>
+                <SelectItem value="running">Running</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
 
-          {/* Date Range Selector */}
-          <button className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg hover:bg-muted transition-colors">
-            <span className="text-sm font-medium text-foreground">Current Month</span>
-            <ChevronDown className="w-4 h-4 text-muted-foreground" />
-          </button>
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="import">Import Traces</SelectItem>
+                <SelectItem value="generate">Generate Eval</SelectItem>
+                <SelectItem value="execute">Execute Eval</SelectItem>
+                <SelectItem value="taskset_run">Taskset Run</SelectItem>
+                <SelectItem value="agent_discovery">Agent Discovery</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="flex-1" />
 
-          {/* Budget View Toggle */}
-          <Button variant="outline" className="gap-2" onClick={() => toast.info('Not implemented: Budget View')}>
-            <BarChart3 className="w-4 h-4" />
-            Budget View
-          </Button>
-
-          {/* Export Report */}
-          <Button className="gap-2 bg-info hover:bg-info/90 text-white" onClick={() => toast.info('Not implemented: Export Report')}>
-            <Download className="w-4 h-4" />
-            Export Report
+          <Button variant="outline" onClick={() => refetch()} className="gap-2">
+            <RefreshCw className="w-4 h-4" />
+            Refresh
           </Button>
         </div>
       </div>
 
-      {/* Budget Alerts */}
-      <div className="mb-8">
-        <h2 className="text-lg font-semibold text-foreground mb-4">Budget Alerts</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {budgetAlerts.map((alert) => (
-            <Card
-              key={alert.id}
-              className={cn('p-4 border-l-4', getSeverityBg(alert.severity))}
-              style={{
-                borderLeftColor:
-                  alert.severity === 'error'
-                    ? 'hsl(var(--destructive))'
-                    : alert.severity === 'warning'
-                    ? 'hsl(var(--warning))'
-                    : 'hsl(var(--info))',
-              }}
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 mt-0.5">{getSeverityIcon(alert.severity)}</div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-medium text-sm text-foreground mb-1">{alert.title}</h3>
-                  <p className="text-xs text-muted-foreground mb-2">{alert.message}</p>
-                  <p className="text-xs text-muted-foreground/70">{alert.timestamp}</p>
-                </div>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-blue-500/10 rounded-xl">
+                <Loader2 className={`w-6 h-6 text-blue-500 ${activeJobs.length > 0 ? 'animate-spin' : ''}`} />
               </div>
-            </Card>
-          ))}
-        </div>
+              <div>
+                <div className="text-3xl font-bold">{activeJobs.length}</div>
+                <div className="text-sm text-muted-foreground">Active Jobs</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-green-500/10 rounded-xl">
+                <CheckCircle2 className="w-6 h-6 text-green-500" />
+              </div>
+              <div>
+                <div className="text-3xl font-bold">{completedJobs.length}</div>
+                <div className="text-sm text-muted-foreground">Completed</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-red-500/10 rounded-xl">
+                <XCircle className="w-6 h-6 text-red-500" />
+              </div>
+              <div>
+                <div className="text-3xl font-bold">{failedJobs.length}</div>
+                <div className="text-sm text-muted-foreground">Failed</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-primary/10 rounded-xl">
+                <Briefcase className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <div className="text-3xl font-bold">{jobs.length}</div>
+                <div className="text-sm text-muted-foreground">Total Jobs</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {kpiCards.map((kpi) => (
-          <Card key={kpi.id} className="p-6 bg-card">
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">{kpi.title}</span>
-                {kpi.badge && (
-                  <span
-                    className={cn(
-                      'text-xs font-medium px-2 py-0.5 rounded-full border',
-                      getBadgeStyles(kpi.badge.variant)
-                    )}
-                  >
-                    {kpi.badge.text}
-                  </span>
-                )}
-              </div>
-              <div className="text-3xl font-bold text-foreground mb-1">{kpi.value}</div>
-              {kpi.budget && (
-                <div className="text-sm text-muted-foreground">Budget: {kpi.budget}</div>
-              )}
+      {/* Jobs List */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Jobs</CardTitle>
+          <CardDescription>
+            Background jobs for imports, evals, and taskset runs
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
-
-            {/* Trend */}
-            <div className="flex items-center gap-2">
-              <div
-                className={cn(
-                  'flex items-center gap-1 text-sm font-medium',
-                  kpi.trend.isPositive ? 'text-success' : 'text-destructive'
-                )}
-              >
-                {kpi.trend.isPositive ? (
-                  <TrendingUp className="w-4 h-4" />
-                ) : (
-                  <TrendingDown className="w-4 h-4" />
-                )}
-                <span>{kpi.trend.value}%</span>
-              </div>
-              <span className="text-xs text-muted-foreground/70">vs last month</span>
+          ) : jobs.length === 0 ? (
+            <div className="text-center py-16 bg-muted/20 rounded-lg border-2 border-dashed">
+              <Briefcase className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+              <h3 className="text-lg font-semibold mb-2">No jobs found</h3>
+              <p className="text-muted-foreground">Jobs will appear here when you import traces, generate evals, or run tasksets</p>
             </div>
-          </Card>
-        ))}
-      </div>
+          ) : (
+            <div className="space-y-3">
+              {jobs.map((job) => {
+                const logs = getJobLogs(job)
+                const lastLog = logs[logs.length - 1]
+                const metadata = job.metadata as Record<string, unknown> | undefined
+                const statusMessage = metadata?.statusMessage as string | undefined
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Cost Breakdown Chart */}
-        <div className="lg:col-span-2">
-          <Card className="p-6 bg-card">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-foreground">Cost Breakdown Over Time</h2>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setSortBy(sortBy === 'cost' ? 'date' : 'cost')}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
-                >
-                  <ArrowUpDown className="w-3.5 h-3.5" />
-                  Sort by {sortBy === 'cost' ? 'Cost' : 'Date'}
-                </button>
-                <Button variant="outline" size="sm" className="gap-2" onClick={() => toast.info('Not implemented: Export Chart')}>
-                  <Download className="w-3.5 h-3.5" />
-                  Export Chart
-                </Button>
-              </div>
-            </div>
-
-            {/* Simple Bar Chart */}
-            <div className="space-y-4">
-              {chartData.map((item, index) => {
-                const total = item.apiCosts + item.compute + item.storage + item.database
                 return (
-                  <div key={index} className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground font-medium">{item.date}</span>
-                      <span className="text-foreground font-semibold">${total}</span>
-                    </div>
-                    <div className="flex h-8 rounded-lg overflow-hidden">
-                      <div
-                        className="bg-info transition-all"
-                        style={{ width: `${(item.apiCosts / total) * 100}%` }}
-                        title={`API: $${item.apiCosts}`}
-                      />
-                      <div
-                        className="bg-warning transition-all"
-                        style={{ width: `${(item.compute / total) * 100}%` }}
-                        title={`Compute: $${item.compute}`}
-                      />
-                      <div
-                        className="bg-primary transition-all"
-                        style={{ width: `${(item.storage / total) * 100}%` }}
-                        title={`Storage: $${item.storage}`}
-                      />
-                      <div
-                        className="bg-success transition-all"
-                        style={{ width: `${(item.database / total) * 100}%` }}
-                        title={`Database: $${item.database}`}
-                      />
+                  <div
+                    key={job.id}
+                    className="border rounded-lg p-4 hover:border-primary/50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-2">
+                          {getStatusIcon(job.status as JobStatus)}
+                          <Badge variant={getStatusBadgeVariant(job.status as JobStatus)}>
+                            {job.status}
+                          </Badge>
+                          <Badge variant="outline">
+                            {getJobTypeLabel(job.type)}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground">
+                            {formatRelativeTime(job.created_at)}
+                          </span>
+                        </div>
+
+                        <div className="text-sm text-muted-foreground mb-2 font-mono">
+                          {job.id}
+                        </div>
+
+                        {/* Progress bar for running jobs */}
+                        {(job.status === 'running' || job.status === 'queued') && (
+                          <div className="space-y-1 mb-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">
+                                {statusMessage || 'Processing...'}
+                              </span>
+                              <span className="font-medium">{job.progress}%</span>
+                            </div>
+                            <Progress value={job.progress} className="h-2" />
+                          </div>
+                        )}
+
+                        {/* Error message for failed jobs */}
+                        {job.status === 'failed' && job.error && (
+                          <div className="text-sm text-destructive bg-destructive/10 p-2 rounded mt-2">
+                            {job.error}
+                          </div>
+                        )}
+
+                        {/* Last log message */}
+                        {lastLog && job.status === 'running' && (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Latest: {lastLog.message}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewDetails(job)}
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          Details
+                        </Button>
+                        {(job.status === 'running' || job.status === 'queued') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCancelJob(job.id)}
+                            disabled={cancelJobMutation.isPending}
+                          >
+                            <StopCircle className="w-4 h-4 mr-1" />
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
               })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-              {/* Legend */}
-              <div className="flex flex-wrap gap-6 pt-4 border-t border-border">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm bg-info" />
-                  <span className="text-xs text-muted-foreground font-medium">API Costs</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm bg-warning" />
-                  <span className="text-xs text-muted-foreground font-medium">Compute</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm bg-primary" />
-                  <span className="text-xs text-muted-foreground font-medium">Storage</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm bg-success" />
-                  <span className="text-xs text-muted-foreground font-medium">Database</span>
-                </div>
+      {/* Job Details Dialog */}
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Job Details</DialogTitle>
+            <DialogDescription>
+              {selectedJob && (
+                <span className="font-mono text-xs">{selectedJob.id}</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedJob && (
+            <div className="space-y-4 px-6 pb-6">
+              {/* Status & Type */}
+              <div className="flex items-center gap-3">
+                {getStatusIcon(selectedJob.status as JobStatus)}
+                <Badge variant={getStatusBadgeVariant(selectedJob.status as JobStatus)}>
+                  {selectedJob.status}
+                </Badge>
+                <Badge variant="outline">
+                  {getJobTypeLabel(selectedJob.type)}
+                </Badge>
               </div>
-            </div>
-          </Card>
-        </div>
 
-        {/* Top Cost Drivers / Recommendations Sidebar */}
-        <div className="lg:col-span-1">
-          <Card className="p-6 bg-card">
-            {/* Tab Toggle */}
-            <div className="flex gap-2 mb-6 p-1 bg-muted rounded-lg">
-              <button
-                onClick={() => setActiveTab('drivers')}
-                className={cn(
-                  'flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors',
-                  activeTab === 'drivers'
-                    ? 'bg-card text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
+              {/* Timestamps */}
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Created:</span>
+                  <span className="ml-2">{new Date(selectedJob.created_at).toLocaleString()}</span>
+                </div>
+                {selectedJob.started_at && (
+                  <div>
+                    <span className="text-muted-foreground">Started:</span>
+                    <span className="ml-2">{new Date(selectedJob.started_at).toLocaleString()}</span>
+                  </div>
                 )}
-              >
-                Cost Drivers
-              </button>
-              <button
-                onClick={() => setActiveTab('recommendations')}
-                className={cn(
-                  'flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors',
-                  activeTab === 'recommendations'
-                    ? 'bg-card text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
+                {selectedJob.completed_at && (
+                  <div>
+                    <span className="text-muted-foreground">Completed:</span>
+                    <span className="ml-2">{new Date(selectedJob.completed_at).toLocaleString()}</span>
+                  </div>
                 )}
-              >
-                Recommendations
-              </button>
-            </div>
+              </div>
 
-            {/* Content */}
-            {activeTab === 'drivers' ? (
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-foreground mb-4">Top Cost Drivers</h3>
-                {costDrivers.map((driver) => (
-                  <div key={driver.rank} className="space-y-2">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-3 flex-1">
-                        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-info/10 flex items-center justify-center">
-                          <span className="text-xs font-semibold text-success">
-                            {driver.rank}
+              {/* Progress */}
+              {(selectedJob.status === 'running' || selectedJob.status === 'queued') && (
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>Progress</span>
+                    <span>{selectedJob.progress}%</span>
+                  </div>
+                  <Progress value={selectedJob.progress} />
+                </div>
+              )}
+
+              {/* Error */}
+              {selectedJob.error && (
+                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                  <h4 className="font-medium text-destructive mb-1">Error</h4>
+                  <p className="text-sm text-destructive/90">{selectedJob.error}</p>
+                </div>
+              )}
+
+              {/* Logs */}
+              {(() => {
+                const logs = getJobLogs(selectedJob)
+                if (logs.length === 0) return null
+
+                return (
+                  <div>
+                    <h4 className="font-medium mb-2">Logs ({logs.length})</h4>
+                    <div className="bg-muted rounded-lg p-3 max-h-60 overflow-y-auto font-mono text-xs space-y-1">
+                      {logs.map((log, idx) => (
+                        <div key={idx} className="flex gap-2">
+                          <span className="text-muted-foreground shrink-0">
+                            {new Date(log.timestamp).toLocaleTimeString()}
+                          </span>
+                          <span className={
+                            log.level === 'error' ? 'text-destructive' :
+                            log.level === 'warn' ? 'text-warning' :
+                            'text-foreground'
+                          }>
+                            {log.message}
                           </span>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-foreground mb-1">
-                            {driver.service}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {driver.percentage}% of total
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-semibold text-foreground">
-                          ${driver.cost}
-                        </div>
-                        <div
-                          className={cn(
-                            'text-xs font-medium flex items-center gap-0.5',
-                            driver.trend > 0 ? 'text-destructive' : 'text-success'
-                          )}
-                        >
-                          {driver.trend > 0 ? (
-                            <TrendingUp className="w-3 h-3" />
-                          ) : (
-                            <TrendingDown className="w-3 h-3" />
-                          )}
-                          {Math.abs(driver.trend)}%
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                    {driver.rank < costDrivers.length && (
-                      <div className="h-px bg-border" />
-                    )}
                   </div>
-                ))}
+                )
+              })()}
+
+              {/* Result */}
+              {selectedJob.result && (
+                <div>
+                  <h4 className="font-medium mb-2">Result</h4>
+                  <pre className="bg-muted rounded-lg p-3 text-xs overflow-x-auto">
+                    {JSON.stringify(selectedJob.result, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                {(selectedJob.status === 'running' || selectedJob.status === 'queued') && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      handleCancelJob(selectedJob.id)
+                      setDetailsOpen(false)
+                    }}
+                  >
+                    <StopCircle className="w-4 h-4 mr-2" />
+                    Cancel Job
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setDetailsOpen(false)}>
+                  Close
+                </Button>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-foreground mb-4">
-                  Optimization Recommendations
-                </h3>
-                {recommendations.map((rec, index) => (
-                  <div key={rec.id} className="space-y-2">
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <h4 className="text-sm font-medium text-foreground flex-1">
-                          {rec.title}
-                        </h4>
-                        <span className="text-xs font-semibold text-success whitespace-nowrap">
-                          Save ${rec.potentialSavings}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{rec.description}</p>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full text-xs bg-info/5 border-info/30 hover:bg-info/10"
-                        onClick={() => toast.info('Not implemented: Learn More')}
-                      >
-                        Learn More
-                      </Button>
-                    </div>
-                    {index < recommendations.length - 1 && (
-                      <div className="h-px bg-border" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
-      </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

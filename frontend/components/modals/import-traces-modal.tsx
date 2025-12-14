@@ -129,7 +129,7 @@ export function ImportTracesModal({ open, onOpenChange, integrations }: ImportTr
               </div>
             )}
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 px-6 py-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={importMutation.isPending || jobStatus === 'running'}>
               Cancel
             </Button>

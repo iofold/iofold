@@ -80,7 +80,7 @@ export function AttachToolModal({
           <DialogTitle>Attach Tool to Agent</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 max-h-[400px] overflow-y-auto py-4">
+        <div className="space-y-4 max-h-[400px] overflow-y-auto py-4 px-6">
           {loadingTools ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
