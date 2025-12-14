@@ -9,16 +9,16 @@ import { apiClient } from '@/lib/api-client';
 
 interface LiveJobMonitorProps {
   jobId: string;
-  jobType: 'import' | 'generate' | 'execute';
+  jobType: 'import' | 'generate' | 'execute' | 'taskset_run';
   onComplete?: (result: any) => void;
   onFail?: (error: string) => void;
 }
 
 interface LogEntry {
   timestamp: string;
-  level: 'info' | 'warn' | 'error';
+  level: 'info' | 'warn' | 'error' | 'debug';
   message: string;
-  metadata?: any;
+  data?: any;
 }
 
 /**
@@ -29,6 +29,7 @@ function getJobTypeLabel(jobType: string): string {
     import: 'Import Traces',
     generate: 'Generate Eval',
     execute: 'Execute Eval',
+    taskset_run: 'Run Taskset',
   };
   return labels[jobType] || jobType;
 }
@@ -44,6 +45,16 @@ export function LiveJobMonitor({ jobId, jobType, onComplete, onFail }: LiveJobMo
   const [error, setError] = useState<string | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Format timestamp for display
+  const formatTimestamp = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString('en-US', { hour12: false });
+    } catch {
+      return timestamp;
+    }
+  };
 
   useEffect(() => {
     // Connect to SSE stream using apiClient pattern
@@ -125,13 +136,13 @@ export function LiveJobMonitor({ jobId, jobType, onComplete, onFail }: LiveJobMo
         eventSourceRef.current.close();
       }
     };
-  }, [jobId]);
+  }, [jobId, onComplete, onFail]);
 
   return (
     <Card className="w-full">
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>{getJobTypeLabel(jobType)}</CardTitle>
+          <CardTitle className="text-base">{getJobTypeLabel(jobType)}</CardTitle>
           <Badge
             variant={
               status === 'completed'
@@ -168,31 +179,51 @@ export function LiveJobMonitor({ jobId, jobType, onComplete, onFail }: LiveJobMo
         <div className="space-y-2">
           <h4 className="text-sm font-semibold">Execution Log</h4>
           <div className="h-64 border rounded p-3 bg-muted/50 overflow-y-auto">
-            <div className="space-y-1 text-sm">
-              {logs.map((log, i) => (
-                <div key={i} className="flex gap-2 font-mono text-xs">
-                  <span className="text-muted-foreground shrink-0">
-                    {log.timestamp}
-                  </span>
-                  <Badge
-                    variant="outline"
-                    className={`h-5 shrink-0 ${
-                      log.level === 'error'
-                        ? 'border-destructive text-destructive'
-                        : log.level === 'warn'
-                        ? 'border-yellow-500 text-yellow-500'
-                        : ''
-                    }`}
-                  >
-                    {log.level}
-                  </Badge>
-                  <span className="break-words">{log.message}</span>
-                </div>
-              ))}
-              {status === 'running' && (
+            <div className="space-y-2 text-sm">
+              {logs.length === 0 && status === 'running' && (
                 <div className="flex gap-2 items-center text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   <span>Waiting for updates...</span>
+                </div>
+              )}
+              {logs.map((log, i) => (
+                <div key={i} className="font-mono text-xs space-y-0.5">
+                  <div className="flex gap-2 items-start">
+                    <span className="text-muted-foreground shrink-0">
+                      {formatTimestamp(log.timestamp)}
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={`h-5 shrink-0 ${
+                        log.level === 'error'
+                          ? 'border-destructive text-destructive'
+                          : log.level === 'warn'
+                          ? 'border-yellow-500 text-yellow-500'
+                          : log.level === 'debug'
+                          ? 'border-muted-foreground text-muted-foreground'
+                          : ''
+                      }`}
+                    >
+                      {log.level}
+                    </Badge>
+                    <span className="break-words flex-1">{log.message}</span>
+                  </div>
+                  {log.data && Object.keys(log.data).length > 0 && (
+                    <div className="ml-20 text-muted-foreground bg-muted/50 rounded px-2 py-1">
+                      {Object.entries(log.data).map(([key, value]) => (
+                        <div key={key}>
+                          <span className="text-muted-foreground">{key}:</span>{' '}
+                          <span>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {logs.length > 0 && status === 'running' && (
+                <div className="flex gap-2 items-center text-muted-foreground pt-2">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>Processing...</span>
                 </div>
               )}
               <div ref={logsEndRef} />
