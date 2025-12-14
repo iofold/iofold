@@ -1,5 +1,5 @@
 // src/db/schema/agents.ts
-import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { agentStatus, agentVersionStatus, agentVersionSource, functionRole } from './enums';
 import { workspaces } from './users';
@@ -44,7 +44,7 @@ export const agentFunctions = sqliteTable('agent_functions', {
   functionId: text('function_id').notNull().references(() => functions.id, { onDelete: 'cascade' }),
   role: text('role', { enum: functionRole }).notNull(),
 }, (table) => ({
-  pk: { name: 'agent_functions_pkey', columns: [table.agentId, table.role] },
+  pk: primaryKey({ columns: [table.agentId, table.role] }),
 }));
 
 export const agentTools = sqliteTable('agent_tools', {
@@ -53,7 +53,7 @@ export const agentTools = sqliteTable('agent_tools', {
   config: text('config', { mode: 'json' }).$type<Record<string, unknown>>(),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => ({
-  pk: { name: 'agent_tools_pkey', columns: [table.agentId, table.toolId] },
+  pk: primaryKey({ columns: [table.agentId, table.toolId] }),
   agentIdx: index('idx_agent_tools_agent').on(table.agentId),
   toolIdx: index('idx_agent_tools_tool').on(table.toolId),
 }));
