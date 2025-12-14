@@ -24,6 +24,25 @@ After ANY task, append to `docs/progress_log.ndjson` (see user CLAUDE.md for jq 
 | Deploy staging | `wrangler deploy --env staging` |
 | ART-E benchmark | `npx tsx scripts/run-art-e-benchmark.ts --agent ID --limit 10` |
 
+## Database Migrations
+
+Drizzle generates migrations in `drizzle/`. Apply using Wrangler's migration system (tracks applied migrations in `d1_migrations` table).
+
+**Generate migration after schema changes:**
+```bash
+pnpm drizzle-kit generate
+```
+
+**Local (Docker):** Must run from inside the container:
+```bash
+docker exec iofold-backend npx wrangler d1 migrations apply DB --local
+```
+
+**Staging:** Run from host with `--remote`:
+```bash
+npx wrangler d1 migrations apply DB --remote --env staging
+```
+
 ## Documentation
 
 | Guide | Path | Contents |

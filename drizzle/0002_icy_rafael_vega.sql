@@ -1,11 +1,14 @@
-DROP TABLE `eval_cv_results`;--> statement-breakpoint
-DROP TABLE `eval_llm_cache`;--> statement-breakpoint
-DROP TABLE `eval_prompt_coverage`;--> statement-breakpoint
-DROP TABLE `task_feedback_pairs`;--> statement-breakpoint
-DROP TABLE `task_similar_traces`;--> statement-breakpoint
-DROP TABLE `playground_steps`;--> statement-breakpoint
-DROP TABLE `prompt_best_practices`;--> statement-breakpoint
-DROP TABLE `prompt_iterations`;--> statement-breakpoint
+DROP VIEW IF EXISTS `prompt_performance_summary`;--> statement-breakpoint
+DROP VIEW IF EXISTS `current_eval_metrics`;--> statement-breakpoint
+DROP VIEW IF EXISTS `refinement_timeline`;--> statement-breakpoint
+DROP TABLE IF EXISTS `eval_cv_results`;--> statement-breakpoint
+DROP TABLE IF EXISTS `eval_llm_cache`;--> statement-breakpoint
+DROP TABLE IF EXISTS `eval_prompt_coverage`;--> statement-breakpoint
+DROP TABLE IF EXISTS `task_feedback_pairs`;--> statement-breakpoint
+DROP TABLE IF EXISTS `task_similar_traces`;--> statement-breakpoint
+DROP TABLE IF EXISTS `playground_steps`;--> statement-breakpoint
+DROP TABLE IF EXISTS `prompt_best_practices`;--> statement-breakpoint
+DROP TABLE IF EXISTS `prompt_iterations`;--> statement-breakpoint
 PRAGMA foreign_keys=OFF;--> statement-breakpoint
 CREATE TABLE `__new_traces` (
 	`id` text PRIMARY KEY NOT NULL,
