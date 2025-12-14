@@ -400,7 +400,6 @@ export class QueueConsumer {
     const tasksetRunJob = new TasksetRunJob(
       {
         jobId,
-        runId: payload.run_id,
         workspaceId,
         agentId: payload.agent_id,
         tasksetId: payload.taskset_id,

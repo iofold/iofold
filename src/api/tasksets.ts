@@ -17,7 +17,8 @@ import {
 import { QueueProducer, type Queue } from '../queue/producer';
 import { createDb } from '../db/client';
 import { eq, and, desc, sql, count, inArray } from 'drizzle-orm';
-import { tasksets, tasksetTasks, tasksetRuns } from '../db/schema/tasksets';
+import { tasksets, tasksetTasks } from '../db/schema/tasksets';
+import { jobs } from '../db/schema/jobs';
 import { agents } from '../db/schema/agents';
 import { workspaces } from '../db/schema/users';
 import { traces } from '../db/schema/traces';
@@ -695,28 +696,10 @@ export async function runTaskset(
       return createErrorResponse('VALIDATION_ERROR', 'Taskset has no tasks', 400);
     }
 
-    // Create taskset run record
-    const runId = generateId('tsr');
-    const now = new Date().toISOString();
     const modelProvider = body.model_provider || 'anthropic';
     const modelId = body.model_id || 'anthropic/claude-sonnet-4-5';
 
-    await db.insert(tasksetRuns).values({
-      id: runId,
-      workspaceId,
-      agentId,
-      tasksetId,
-      status: 'queued',
-      taskCount,
-      completedCount: 0,
-      failedCount: 0,
-      modelProvider,
-      modelId,
-      config: body.config || {},
-      createdAt: now,
-    });
-
-    // Enqueue job
+    // Enqueue job - jobs table tracks all status/progress
     if (!env.JOB_QUEUE) {
       return createErrorResponse('INTERNAL_ERROR', 'Job queue not configured', 500);
     }
@@ -727,7 +710,6 @@ export async function runTaskset(
     });
 
     const result = await producer.enqueueTasksetRunJob(
-      runId,
       workspaceId,
       agentId,
       tasksetId,
@@ -739,15 +721,6 @@ export async function runTaskset(
     );
 
     if (!result.success) {
-      // Update run status to failed
-      await db
-        .update(tasksetRuns)
-        .set({
-          status: 'failed',
-          error: result.error || 'Failed to enqueue job',
-        })
-        .where(eq(tasksetRuns.id, runId));
-
       return createErrorResponse(
         'INTERNAL_ERROR',
         result.error || 'Failed to enqueue taskset run job',
@@ -756,7 +729,7 @@ export async function runTaskset(
     }
 
     return createSuccessResponse({
-      run_id: runId,
+      job_id: result.job_id,
       status: 'queued',
       task_count: taskCount,
       model_provider: modelProvider,
@@ -773,7 +746,7 @@ export async function runTaskset(
 // ============================================================================
 
 /**
- * List all runs for a taskset.
+ * List all runs for a taskset (from jobs table).
  */
 export async function listTasksetRuns(
   request: Request,
@@ -807,36 +780,43 @@ export async function listTasksetRuns(
       return createErrorResponse('NOT_FOUND', 'Taskset not found', 404);
     }
 
-    // Get all runs for this taskset
+    // Get all taskset_run jobs for this taskset from jobs table
     const result = await db
       .select()
-      .from(tasksetRuns)
+      .from(jobs)
       .where(
         and(
-          eq(tasksetRuns.tasksetId, tasksetId),
-          eq(tasksetRuns.workspaceId, workspaceId)
+          eq(jobs.workspaceId, workspaceId),
+          eq(jobs.type, 'taskset_run'),
+          sql`json_extract(${jobs.metadata}, '$.taskset_id') = ${tasksetId}`
         )
       )
-      .orderBy(desc(tasksetRuns.createdAt));
+      .orderBy(desc(jobs.createdAt));
 
     return createSuccessResponse({
-      runs: result.map((row) => ({
-        id: row.id,
-        workspace_id: row.workspaceId,
-        agent_id: row.agentId,
-        taskset_id: row.tasksetId,
-        status: row.status,
-        task_count: row.taskCount,
-        completed_count: row.completedCount,
-        failed_count: row.failedCount,
-        model_provider: row.modelProvider,
-        model_id: row.modelId,
-        config: row.config as Record<string, unknown>,
-        created_at: row.createdAt,
-        started_at: row.startedAt,
-        completed_at: row.completedAt,
-        error: row.error,
-      })),
+      runs: result.map((row) => {
+        const metadata = (row.metadata || {}) as Record<string, unknown>;
+        const jobResult = (row.result || {}) as Record<string, unknown>;
+        return {
+          id: row.id,
+          workspace_id: row.workspaceId,
+          agent_id: metadata.agent_id as string,
+          taskset_id: metadata.taskset_id as string,
+          status: row.status,
+          progress: row.progress,
+          // Include counts from job result for backwards compatibility
+          task_count: jobResult.task_count as number ?? 0,
+          completed_count: jobResult.completed_count as number ?? 0,
+          failed_count: jobResult.failed_count as number ?? 0,
+          model_provider: metadata.model_provider as string,
+          model_id: metadata.model_id as string,
+          config: metadata.config as Record<string, unknown>,
+          created_at: row.createdAt,
+          started_at: row.startedAt,
+          completed_at: row.completedAt,
+          error: row.error,
+        };
+      }),
     });
   } catch (error: any) {
     console.error('Error listing taskset runs:', error);
@@ -849,7 +829,8 @@ export async function listTasksetRuns(
 // ============================================================================
 
 /**
- * Get specific run status with results.
+ * Get specific run status with results (from jobs table).
+ * Note: runId is now actually a jobId since we use the jobs table.
  */
 export async function getTasksetRun(
   request: Request,
@@ -867,25 +848,32 @@ export async function getTasksetRun(
 
     const db = createDb(env.DB);
 
-    // Get run
-    const run = await db
+    // Get job (runId is actually the jobId now)
+    const jobResult = await db
       .select()
-      .from(tasksetRuns)
+      .from(jobs)
       .where(
         and(
-          eq(tasksetRuns.id, runId),
-          eq(tasksetRuns.tasksetId, tasksetId),
-          eq(tasksetRuns.agentId, agentId),
-          eq(tasksetRuns.workspaceId, workspaceId)
+          eq(jobs.id, runId),
+          eq(jobs.workspaceId, workspaceId),
+          eq(jobs.type, 'taskset_run')
         )
       )
       .limit(1);
 
-    if (!run[0]) {
+    if (!jobResult[0]) {
       return createErrorResponse('NOT_FOUND', 'Run not found', 404);
     }
 
-    // Get results from traces with source='taskset' and matching runId in metadata
+    const job = jobResult[0];
+    const jobMetadata = (job.metadata || {}) as Record<string, unknown>;
+
+    // Validate taskset matches
+    if (jobMetadata.taskset_id !== tasksetId) {
+      return createErrorResponse('NOT_FOUND', 'Run not found for this taskset', 404);
+    }
+
+    // Get results from traces with source='taskset' and matching jobId in metadata
     // Traces store taskset execution results with metadata containing score, task info, etc.
     const tracesData = await db
       .select()
@@ -894,7 +882,7 @@ export async function getTasksetRun(
         and(
           eq(traces.source, 'taskset'),
           eq(traces.workspaceId, workspaceId),
-          sql`json_extract(${traces.metadata}, '$.runId') = ${runId}`
+          sql`json_extract(${traces.metadata}, '$.jobId') = ${runId}`
         )
       )
       .orderBy(traces.importedAt);
@@ -911,7 +899,7 @@ export async function getTasksetRun(
 
       return {
         id: t.id,
-        run_id: meta.runId as string,
+        job_id: meta.jobId as string,
         task_id: meta.taskId as string,
         status: t.hasErrors ? 'failed' : 'completed',
         response,
@@ -925,22 +913,28 @@ export async function getTasksetRun(
       };
     });
 
+    // Get task counts from job result if available
+    const jobResultData = job.result as Record<string, unknown> | null;
+    const completedCount = (jobResultData?.completed_count as number) ?? results.filter(r => r.status === 'completed').length;
+    const failedCount = (jobResultData?.failed_count as number) ?? results.filter(r => r.status === 'failed').length;
+
     const response = {
-      id: run[0].id,
-      workspace_id: run[0].workspaceId,
-      agent_id: run[0].agentId,
-      taskset_id: run[0].tasksetId,
-      status: run[0].status,
-      task_count: run[0].taskCount,
-      completed_count: run[0].completedCount,
-      failed_count: run[0].failedCount,
-      model_provider: run[0].modelProvider,
-      model_id: run[0].modelId,
-      config: run[0].config as Record<string, unknown>,
-      created_at: run[0].createdAt,
-      started_at: run[0].startedAt,
-      completed_at: run[0].completedAt,
-      error: run[0].error,
+      id: job.id,
+      workspace_id: job.workspaceId,
+      agent_id: jobMetadata.agent_id as string,
+      taskset_id: jobMetadata.taskset_id as string,
+      status: job.status,
+      progress: job.progress,
+      task_count: jobResultData?.task_count as number ?? results.length,
+      completed_count: completedCount,
+      failed_count: failedCount,
+      model_provider: jobMetadata.model_provider as string,
+      model_id: jobMetadata.model_id as string,
+      config: jobMetadata.config as Record<string, unknown>,
+      created_at: job.createdAt,
+      started_at: job.startedAt,
+      completed_at: job.completedAt,
+      error: job.error,
       results,
     };
 

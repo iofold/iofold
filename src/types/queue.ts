@@ -174,8 +174,6 @@ export interface GEPAOptimizationJobPayload {
  */
 export interface TasksetRunJobPayload {
   type: 'taskset_run';
-  /** Run ID in taskset_runs table */
-  run_id: string;
   /** Workspace ID */
   workspace_id: string;
   /** Agent ID to run tasks with */
