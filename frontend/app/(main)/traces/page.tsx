@@ -506,6 +506,8 @@ function TracesPageContent() {
                     <SelectItem value="langfuse">Langfuse</SelectItem>
                     <SelectItem value="langsmith">Langsmith</SelectItem>
                     <SelectItem value="openai">OpenAI</SelectItem>
+                    <SelectItem value="playground">Playground</SelectItem>
+                    <SelectItem value="taskset">Taskset</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
