@@ -17,7 +17,7 @@ import {
 import { QueueProducer, type Queue } from '../queue/producer';
 import { createDb } from '../db/client';
 import { eq, and, desc, sql, count, inArray } from 'drizzle-orm';
-import { tasksets, tasksetTasks, tasksetRuns, tasksetRunResults } from '../db/schema/tasksets';
+import { tasksets, tasksetTasks, tasksetRuns } from '../db/schema/tasksets';
 import { agents } from '../db/schema/agents';
 import { workspaces } from '../db/schema/users';
 import { traces } from '../db/schema/traces';
@@ -885,12 +885,45 @@ export async function getTasksetRun(
       return createErrorResponse('NOT_FOUND', 'Run not found', 404);
     }
 
-    // Get results for this run
-    const resultsData = await db
+    // Get results from traces with source='taskset' and matching runId in metadata
+    // Traces store taskset execution results with metadata containing score, task info, etc.
+    const tracesData = await db
       .select()
-      .from(tasksetRunResults)
-      .where(eq(tasksetRunResults.runId, runId))
-      .orderBy(tasksetRunResults.createdAt);
+      .from(traces)
+      .where(
+        and(
+          eq(traces.source, 'taskset'),
+          eq(traces.workspaceId, workspaceId),
+          sql`json_extract(${traces.metadata}, '$.runId') = ${runId}`
+        )
+      )
+      .orderBy(traces.importedAt);
+
+    // Extract results from trace metadata
+    const results = tracesData.map((t) => {
+      const meta = (t.metadata || {}) as Record<string, unknown>;
+      const steps = (t.steps || []) as Array<{ type: string; content?: string; execution_time_ms?: number }>;
+
+      // Extract response from agent_response step
+      const agentStep = steps.find(s => s.type === 'agent_response');
+      const response = agentStep?.content || '';
+      const executionTimeMs = agentStep?.execution_time_ms || null;
+
+      return {
+        id: t.id,
+        run_id: meta.runId as string,
+        task_id: meta.taskId as string,
+        status: t.hasErrors ? 'failed' : 'completed',
+        response,
+        expected_output: meta.expectedOutput as string | null,
+        score: meta.score as number,
+        score_reason: meta.scoreReason as string,
+        trace_id: t.id, // The trace IS the result now
+        execution_time_ms: executionTimeMs,
+        error: meta.error as string | undefined,
+        created_at: t.importedAt,
+      };
+    });
 
     const response = {
       id: run[0].id,
@@ -908,20 +941,7 @@ export async function getTasksetRun(
       started_at: run[0].startedAt,
       completed_at: run[0].completedAt,
       error: run[0].error,
-      results: resultsData.map((r) => ({
-        id: r.id,
-        run_id: r.runId,
-        task_id: r.taskId,
-        status: r.status,
-        response: r.response,
-        expected_output: r.expectedOutput,
-        score: r.score,
-        score_reason: r.scoreReason,
-        trace_id: r.traceId,
-        execution_time_ms: r.executionTimeMs,
-        error: r.error,
-        created_at: r.createdAt,
-      })),
+      results,
     };
 
     return createSuccessResponse(response);
