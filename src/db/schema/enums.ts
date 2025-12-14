@@ -56,7 +56,7 @@ export const functionRole = ['extractor', 'injector'] as const;
 export type FunctionRole = (typeof functionRole)[number];
 
 // Trace-related enums
-export const traceSource = ['langfuse', 'langsmith', 'openai', 'playground'] as const;
+export const traceSource = ['langfuse', 'langsmith', 'openai', 'playground', 'taskset'] as const;
 export type TraceSource = (typeof traceSource)[number];
 
 export const traceAssignmentStatus = ['unassigned', 'assigned', 'orphaned'] as const;
