@@ -325,7 +325,7 @@ export async function getComparisonMatrix(
         ee.error,
         ee.created_at as executed_at,
         ec.code as eval_name
-      FROM eval_executions ee
+      FROM eval_candidate_executions ee
       INNER JOIN eval_candidates ec ON ee.eval_candidate_id = ec.id
       WHERE ee.eval_candidate_id IN (${placeholders})
         AND ee.trace_id IN (${tracePlaceholders})
@@ -564,7 +564,7 @@ export async function getEvalExecutionDetail(
         ee.created_at as executed_at,
         f.rating as human_rating,
         f.rating_detail as human_notes
-      FROM eval_executions ee
+      FROM eval_candidate_executions ee
       LEFT JOIN feedback f ON ee.trace_id = f.trace_id
       WHERE ee.trace_id = ? AND ee.eval_candidate_id = ?
       ORDER BY ee.created_at DESC
@@ -645,7 +645,7 @@ export async function getTraceExecutions(
         ee.duration_ms as execution_time_ms,
         ee.error,
         ee.created_at as executed_at
-      FROM eval_executions ee
+      FROM eval_candidate_executions ee
       INNER JOIN eval_candidates ec ON ee.eval_candidate_id = ec.id
       WHERE ee.trace_id = ?
       ORDER BY ee.created_at DESC
@@ -737,7 +737,7 @@ export async function getEvalExecutions(
         t.imported_at as trace_timestamp,
         t.steps,
         i.platform as source
-      FROM eval_executions ee
+      FROM eval_candidate_executions ee
       INNER JOIN traces t ON ee.trace_id = t.id
       LEFT JOIN integrations i ON t.integration_id = i.id
       WHERE ${conditions.join(' AND ')}
