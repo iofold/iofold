@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
+import { LiveJobMonitor } from '@/components/jobs/live-job-monitor'
 
 interface GenerateEvalModalProps {
   children: React.ReactNode
@@ -255,27 +256,13 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
                 </div>
               </div>
 
-              {/* Progress bar */}
-              {(isGenerating || isQueued) && (
+              {/* Live Job Monitor with real-time logs */}
+              {(isGenerating || isQueued || isCompleted || isFailed) && (
                 <div className="mb-6">
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-info transition-all duration-500"
-                      style={{ width: `${jobStatus?.progress || 0}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between items-center mt-2">
-                    <p className="text-xs text-muted-foreground">
-                      Progress: {jobStatus?.progress || 0}%
-                    </p>
-                    {isStreaming && (
-                      <p className="text-xs">
-                        {isSSEActive && <span className="text-success">Real-time (SSE)</span>}
-                        {isPolling && <span className="text-warning">Polling fallback</span>}
-                        {!isSSEActive && !isPolling && <span className="text-muted-foreground">Connecting...</span>}
-                      </p>
-                    )}
-                  </div>
+                  <LiveJobMonitor
+                    jobId={jobId}
+                    jobType="generate"
+                  />
                 </div>
               )}
 

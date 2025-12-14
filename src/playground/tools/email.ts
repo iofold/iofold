@@ -49,7 +49,7 @@ export interface Email {
  */
 export interface EmailSearchParams {
   query: string;
-  inbox_id: string;
+  inbox_id?: string; // Optional - if omitted, searches all inboxes
   limit?: number;
 }
 
@@ -64,15 +64,23 @@ export interface EmailGetParams {
  * Search emails using full-text search
  *
  * Searches across email subjects and bodies using SQLite FTS5.
- * Returns matching emails with snippets for the given inbox.
+ * Returns matching emails with snippets.
+ * If inbox_id is provided, searches only that inbox; otherwise searches all inboxes.
  *
- * @param params - Search parameters (query, inbox_id, optional limit)
+ * @param params - Search parameters (query, optional inbox_id, optional limit)
  * @param context - Email tool context with BENCHMARKS_DB binding
  * @returns Promise with array of matching emails and total count
  *
  * @example
  * ```typescript
+ * // Search all inboxes
  * const result = await emailSearchHandler({
+ *   query: 'meeting schedule',
+ *   limit: 10
+ * }, { BENCHMARKS_DB: env.BENCHMARKS_DB });
+ *
+ * // Search specific inbox
+ * const result2 = await emailSearchHandler({
  *   query: 'meeting schedule',
  *   inbox_id: 'john.arnold@enron.com',
  *   limit: 10
@@ -94,8 +102,9 @@ export async function emailSearchHandler(
     throw new Error('Invalid query: must be a non-empty string');
   }
 
-  if (!inbox_id || typeof inbox_id !== 'string' || !inbox_id.trim()) {
-    throw new Error('Invalid inbox_id: must be a non-empty string');
+  // inbox_id is now optional
+  if (inbox_id !== undefined && (typeof inbox_id !== 'string' || !inbox_id.trim())) {
+    throw new Error('Invalid inbox_id: must be a non-empty string when provided');
   }
 
   if (typeof limit !== 'number' || limit < 1 || limit > 100) {
@@ -109,32 +118,59 @@ export async function emailSearchHandler(
   try {
     // Use FTS5 for full-text search
     // FTS5 snippet() function returns highlighted text snippets
-    const searchQuery = `
-      SELECT
-        e.message_id,
-        e.subject,
-        e.sender,
-        e.date,
-        snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
-        snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
-      FROM emails_fts
-      INNER JOIN emails e ON emails_fts.rowid = e.rowid
-      WHERE emails_fts MATCH ?
-        AND e.inbox = ?
-      ORDER BY rank
-      LIMIT ?
-    `;
+    // If inbox_id is provided, filter by inbox; otherwise search all inboxes
+    const searchQuery = inbox_id
+      ? `
+        SELECT
+          e.message_id,
+          e.subject,
+          e.sender,
+          e.date,
+          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
+          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
+        FROM emails_fts
+        INNER JOIN emails e ON emails_fts.rowid = e.rowid
+        WHERE emails_fts MATCH ?
+          AND e.inbox = ?
+        ORDER BY rank
+        LIMIT ?
+      `
+      : `
+        SELECT
+          e.message_id,
+          e.subject,
+          e.sender,
+          e.date,
+          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
+          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
+        FROM emails_fts
+        INNER JOIN emails e ON emails_fts.rowid = e.rowid
+        WHERE emails_fts MATCH ?
+        ORDER BY rank
+        LIMIT ?
+      `;
 
-    const results = await context.BENCHMARKS_DB.prepare(searchQuery)
-      .bind(query, inbox_id, limit)
-      .all<{
-        message_id: string;
-        subject: string | null;
-        sender: string | null;
-        date: string | null;
-        subject_snippet: string;
-        body_snippet: string;
-      }>();
+    const results = inbox_id
+      ? await context.BENCHMARKS_DB.prepare(searchQuery)
+          .bind(query, inbox_id, limit)
+          .all<{
+            message_id: string;
+            subject: string | null;
+            sender: string | null;
+            date: string | null;
+            subject_snippet: string;
+            body_snippet: string;
+          }>()
+      : await context.BENCHMARKS_DB.prepare(searchQuery)
+          .bind(query, limit)
+          .all<{
+            message_id: string;
+            subject: string | null;
+            sender: string | null;
+            date: string | null;
+            subject_snippet: string;
+            body_snippet: string;
+          }>();
 
     if (!results.success) {
       throw new Error(`Database query failed: ${results.error || 'unknown error'}`);

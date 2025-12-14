@@ -287,7 +287,6 @@ export class EvalRunner {
 
     return `import json
 import re
-import sys
 from typing import Any, Dict, Optional, Tuple
 
 # LLM Request Exception - used to signal TypeScript to process LLM call
@@ -350,7 +349,7 @@ class EvalContext:
             "max_tokens": max_tokens
         }
         print(f"[LLM_REQUEST]{json.dumps(request)}[/LLM_REQUEST]")
-        sys.exit(0)  # Clean exit - TypeScript will rerun with response
+        raise SystemExit(0)  # Clean exit - TypeScript will rerun with response
 
     def get_cost_so_far(self) -> float:
         """Get total cost incurred so far in USD"""

@@ -51,10 +51,10 @@ pnpm install
 
 ### 2. Configure Environment
 
-Create `.env` file (based on `.env.example`):
+Create `.dev.vars` file (based on `.dev.vars.example`):
 
 ```bash
-cp .env.example .env
+cp .dev.vars.example .dev.vars
 ```
 
 Fill in your API keys:
@@ -98,41 +98,53 @@ pnpm run dev
 
 The server will start at `http://localhost:8787`
 
-### Docker Development (Recommended)
+### Hybrid Development Setup (Recommended)
 
-All services run in Docker with auto-restart:
+**Backend runs on host, frontend + Python sandbox run in Docker**
+
+This avoids TLS certificate issues with workerd (Cloudflare Workers runtime) in Docker while keeping frontend and Python sandbox containerized.
+
+#### 1. Start Docker Services (Frontend + Python Sandbox)
 
 ```bash
-# Start all services
-./scripts/dev-docker.sh start
+# Start Docker services
+docker-compose -f docker-compose.dev.yml up -d
 
 # View logs
-./scripts/dev-docker.sh logs
-
-# Stop services
-./scripts/dev-docker.sh stop
-
-# Fix cache issues
-./scripts/dev-docker.sh clean && ./scripts/dev-docker.sh start
+docker-compose -f docker-compose.dev.yml logs -f
 ```
 
+#### 2. Start Backend on Host
+
+In a separate terminal:
+
+```bash
+# Set environment variable for Python sandbox
+export PYTHON_EXECUTOR_URL=http://localhost:9999
+
+# Start backend
+pnpm run dev
+```
+
+The backend will automatically load `.dev.vars` for API keys.
+
 **Services:**
-- Backend: `http://localhost:8787`
-- Frontend: `http://localhost:3000`
-- Python Sandbox: `http://localhost:9999`
+- Backend (host): `http://localhost:8787`
+- Frontend (Docker): `http://localhost:3000`
+- Python Sandbox (Docker): `http://localhost:9999`
 
-**Required:** Add `CLOUDFLARE_API_TOKEN` to `.dev.vars` with permissions:
-- Workers Scripts:Edit
-- D1:Edit
-- Workers AI:Read
+**Required in `.dev.vars`:**
+- `CF_ACCOUNT_ID` - Your Cloudflare account ID
+- `CF_AI_GATEWAY_ID` - Your AI Gateway ID (create at Cloudflare dashboard)
+- `CF_AI_GATEWAY_TOKEN` - Your AI Gateway token
+- `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` - For trace fetching
+- `LANGSMITH_API_KEY` - For LangSmith tracing (optional)
 
-**Benefits:**
-- Auto-restart on crashes
-- Isolated dependency caches
-- Consistent environment across machines
-- Secure Python sandbox (resource limits, no-new-privileges)
+**Why This Setup?**
 
-See `docs/deployment-guide.md` for detailed Docker setup and troubleshooting.
+The workerd runtime (used by `wrangler dev`) has TLS certificate validation issues when running inside Docker containers. Running the backend on the host avoids this issue entirely, while the frontend and Python sandbox remain containerized for consistency.
+
+See `docs/deployment-guide.md` for detailed setup and troubleshooting.
 
 ### API Endpoints
 

@@ -24,6 +24,7 @@
   "homepage": "https://github.com/iofold/iofold#readme",
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251111.0",
+    "@duckdb/node-api": "1.4.3-r.1",
     "@langchain/anthropic": "^1.2.3",
     "@langchain/core": "^1.1.4",
     "@langchain/google-genai": "^2.0.4",
@@ -32,6 +33,7 @@
     "@playwright/test": "^1.57.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.10.1",
+    "apache-arrow": "^21.1.0",
     "better-sqlite3": "^12.5.0",
     "deepagents": "^1.2.0",
     "dotenv": "^17.2.3",

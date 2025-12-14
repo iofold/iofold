@@ -290,7 +290,7 @@ export async function generateEvals(
       FROM traces t
       JOIN agent_versions av ON t.agent_version_id = av.id
       JOIN feedback f ON t.id = f.trace_id
-      WHERE av.agent_id = ? AND f.agent_id = ?
+      WHERE av.agent_id = ? AND (f.agent_id = ? OR f.agent_id IS NULL)
       ORDER BY t.imported_at DESC
       LIMIT 100
     `)
@@ -418,6 +418,20 @@ export async function testEvalCandidates(
       return createErrorResponse('VALIDATION_ERROR', 'candidate_ids array is required and must not be empty', 400);
     }
 
+    // Validate candidate_ids format and length
+    if (body.candidate_ids.length > 100) {
+      return createErrorResponse('VALIDATION_ERROR', 'candidate_ids array must contain at most 100 items', 400);
+    }
+
+    // Accept both standard UUIDs and candidate IDs (candidate_<variation>_<timestamp>_<random>)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const candidateIdRegex = /^candidate_[a-z_]+_\d+_[a-z0-9]+$/i;
+    for (const id of body.candidate_ids) {
+      if (typeof id !== 'string' || !(uuidRegex.test(id) || candidateIdRegex.test(id))) {
+        return createErrorResponse('VALIDATION_ERROR', 'All candidate_ids must be valid UUIDs or candidate IDs', 400);
+      }
+    }
+
     // Fetch candidates from database
     const placeholders = body.candidate_ids.map(() => '?').join(',');
     const candidatesResult = await env.DB.prepare(`
@@ -448,7 +462,7 @@ export async function testEvalCandidates(
       FROM traces t
       JOIN agent_versions av ON t.agent_version_id = av.id
       JOIN feedback f ON t.id = f.trace_id
-      WHERE av.agent_id = ? AND f.agent_id = ?
+      WHERE av.agent_id = ? AND (f.agent_id = ? OR f.agent_id IS NULL)
       ORDER BY t.imported_at DESC
       LIMIT 100
     `)
@@ -511,9 +525,9 @@ export async function testEvalCandidates(
 
     const testResults = await tester.testAndRankCandidates(candidates, labeledTraces);
 
-    // Update candidates in database with test results
-    for (const result of testResults.results) {
-      await env.DB.prepare(`
+    // Update candidates in database with test results using batch transaction
+    const updateStatements = testResults.results.map(result =>
+      env.DB.prepare(`
         UPDATE eval_candidates
         SET
           agreement_rate = ?,
@@ -523,8 +537,7 @@ export async function testEvalCandidates(
           confusion_matrix = ?,
           per_trace_results = ?,
           total_cost_usd = ?,
-          avg_duration_ms = ?,
-          status = 'tested'
+          avg_duration_ms = ?
         WHERE id = ?
       `)
         .bind(
@@ -538,8 +551,9 @@ export async function testEvalCandidates(
           result.execution_stats.avg_duration_ms,
           result.candidate_id
         )
-        .run();
-    }
+    );
+
+    await env.DB.batch(updateStatements);
 
     return createSuccessResponse({
       results: testResults.results,
@@ -604,7 +618,23 @@ export async function selectWinner(
       return createErrorResponse('VALIDATION_ERROR', 'candidate_ids array is required and must not be empty', 400);
     }
 
+    // Validate candidate_ids format and length
+    if (body.candidate_ids.length > 100) {
+      return createErrorResponse('VALIDATION_ERROR', 'candidate_ids array must contain at most 100 items', 400);
+    }
+
+    // Accept both standard UUIDs and candidate IDs (candidate_<variation>_<timestamp>_<random>)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const candidateIdRegex = /^candidate_[a-z_]+_\d+_[a-z0-9]+$/i;
+    for (const id of body.candidate_ids) {
+      if (typeof id !== 'string' || !(uuidRegex.test(id) || candidateIdRegex.test(id))) {
+        return createErrorResponse('VALIDATION_ERROR', 'All candidate_ids must be valid UUIDs or candidate IDs', 400);
+      }
+    }
+
     // Fetch candidates with test results
+    // Note: We don't filter by status='tested' since that value is not in the schema.
+    // Instead, we check for the presence of test metrics (accuracy, etc.)
     const placeholders = body.candidate_ids.map(() => '?').join(',');
     const candidatesResult = await env.DB.prepare(`
       SELECT
@@ -613,7 +643,7 @@ export async function selectWinner(
         confusion_matrix, per_trace_results,
         total_cost_usd, avg_duration_ms
       FROM eval_candidates
-      WHERE id IN (${placeholders}) AND agent_id = ? AND status = 'tested'
+      WHERE id IN (${placeholders}) AND agent_id = ? AND accuracy IS NOT NULL
     `)
       .bind(...body.candidate_ids, agentId)
       .all();
@@ -739,7 +769,7 @@ export async function activateEval(
         agreement_rate, accuracy, cohen_kappa, f1_score,
         confusion_matrix, per_trace_results
       FROM eval_candidates
-      WHERE id = ? AND agent_id = ? AND status IN ('tested', 'active')
+      WHERE id = ? AND agent_id = ? AND accuracy IS NOT NULL
     `)
       .bind(evalId, agentId)
       .first();

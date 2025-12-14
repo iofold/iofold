@@ -9,6 +9,7 @@
 
 import OpenAI from 'openai';
 import { ChatOpenAI } from '@langchain/openai';
+import { ChatAnthropic } from '@langchain/anthropic';
 import { createGatewayClient, DEFAULT_MODEL, MODELS, type GatewayEnv, type AIProvider } from '../../ai/gateway';
 import { getLangChainEnvVars, isLangSmithEnabled } from '../../ai/langsmith-tracer';
 import type { ModelProvider } from '../types';
@@ -177,23 +178,10 @@ export function hasApiKey(provider: ModelProvider, env: Env): boolean {
 export function getChatModel(config: ChatModelConfig) {
   const { provider, modelId, env, temperature = 0.7, maxTokens = 4096 } = config;
 
-  // Validate gateway is configured
-  if (!env.CF_ACCOUNT_ID || !env.CF_AI_GATEWAY_ID) {
-    throw new Error('Cloudflare AI Gateway not configured (CF_ACCOUNT_ID and CF_AI_GATEWAY_ID required)');
-  }
-
-  // Build gateway URL
-  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${env.CF_ACCOUNT_ID}/${env.CF_AI_GATEWAY_ID}`;
-
   // Construct provider-prefixed model name if not already prefixed
   let fullModelId = modelId;
   if (!modelId.includes('/')) {
     fullModelId = `${provider}/${modelId}`;
-  }
-
-  // Validate gateway token is configured
-  if (!env.CF_AI_GATEWAY_TOKEN) {
-    throw new Error('Cloudflare AI Gateway token required (CF_AI_GATEWAY_TOKEN)');
   }
 
   // Prepare LangSmith environment variables for LangChain
@@ -208,6 +196,19 @@ export function getChatModel(config: ChatModelConfig) {
     if (typeof process !== 'undefined' && process.env) {
       Object.assign(process.env, langsmithEnv);
     }
+  }
+
+  // Validate gateway is configured
+  if (!env.CF_ACCOUNT_ID || !env.CF_AI_GATEWAY_ID) {
+    throw new Error('Cloudflare AI Gateway not configured (CF_ACCOUNT_ID and CF_AI_GATEWAY_ID required)');
+  }
+
+  // Build gateway URL
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${env.CF_ACCOUNT_ID}/${env.CF_AI_GATEWAY_ID}`;
+
+  // Validate gateway token is configured
+  if (!env.CF_AI_GATEWAY_TOKEN) {
+    throw new Error('Cloudflare AI Gateway token required (CF_AI_GATEWAY_TOKEN)');
   }
 
   // Use ChatOpenAI for all providers - the gateway routes based on model prefix
