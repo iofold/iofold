@@ -2,6 +2,7 @@
   "name": "iofold-validation",
   "version": "0.1.0",
   "description": "Pre-implementation validation prototype for iofold.com",
+  "packageManager": "pnpm@9.15.0",
   "main": "src/index.ts",
   "directories": {
     "doc": "docs"
