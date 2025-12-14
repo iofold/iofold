@@ -273,12 +273,12 @@ export class EvalGenerationJob {
     evalId: string,
     results: TestCaseResult[]
   ): Promise<void> {
-    // Note: eval_executions table uses eval_candidate_id (legacy schema from GEPA phase)
+    // Store test executions in eval_candidate_executions table (GEPA flow)
     // Maps: eval_id -> eval_candidate_id, predictedScore -> score, feedback -> feedback
     const statements = results.map(result =>
       this.deps.db
         .prepare(
-          `INSERT OR REPLACE INTO eval_executions (
+          `INSERT OR REPLACE INTO eval_candidate_executions (
             id, eval_candidate_id, trace_id, score, feedback, success, duration_ms, created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
         )
