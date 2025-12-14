@@ -10,7 +10,8 @@ import { systemPrompts } from './prompts';
 export const traces = sqliteTable('traces', {
   id: text('id').primaryKey(),
   workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  integrationId: text('integration_id').notNull().references(() => integrations.id, { onDelete: 'cascade' }),
+  // Nullable for internal sources (playground, taskset) that don't have an external integration
+  integrationId: text('integration_id').references(() => integrations.id, { onDelete: 'cascade' }),
   traceId: text('trace_id').notNull(),
   source: text('source', { enum: traceSource }).notNull(),
   timestamp: text('timestamp').notNull(),
