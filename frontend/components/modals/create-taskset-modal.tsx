@@ -130,7 +130,7 @@ export function CreateTasksetModal({
           <DialogTitle>Create New Taskset</DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="empty" value={activeTab} onValueChange={(v) => setActiveTab(v as 'empty' | 'from-traces')}>
+        <Tabs defaultValue="empty" value={activeTab} onValueChange={(v) => setActiveTab(v as 'empty' | 'from-traces')} className="px-6">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="empty" className="flex items-center gap-2">
               <Plus className="w-4 h-4" />

@@ -51,7 +51,7 @@ export function FeedbackNotesDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4">
+        <div className="py-4 px-6">
           <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
