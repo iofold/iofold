@@ -65,40 +65,53 @@ export class EvalGenerationJob {
     try {
       // Update job to running
       await this.jobManager.updateJobStatus(this.config.jobId, 'running', 0);
-      this.stream?.sendLog('info', 'Starting eval generation job...', {
+      await this.log('info', '🚀 Starting eval generation job', {
         jobId: this.config.jobId,
-        agentId: this.config.agentId
+        agentId: this.config.agentId,
+        evalName: this.config.name
       });
       this.emitProgress('fetching_traces', 0);
 
       // Step 1: Fetch feedback from eval set
-      this.stream?.sendLog('info', 'Fetching labeled traces for training...');
-      const feedback = await this.fetchFeedback();
-      if (feedback.positive.length === 0 || feedback.negative.length === 0) {
+      await this.log('info', '📊 Fetching labeled traces for training...');
+      const feedbackData = await this.fetchFeedback();
+      if (feedbackData.positive.length === 0 || feedbackData.negative.length === 0) {
+        await this.log('error', '❌ Insufficient examples', {
+          positive: feedbackData.positive.length,
+          negative: feedbackData.negative.length,
+          required: 'At least 1 positive and 1 negative example'
+        });
         throw new Error('Insufficient examples: need at least 1 positive and 1 negative example');
       }
 
-      this.stream?.sendLog('info', 'Retrieved training examples', {
-        positive: feedback.positive.length,
-        negative: feedback.negative.length,
-        total: feedback.positive.length + feedback.negative.length
+      await this.log('info', '✅ Retrieved training examples', {
+        positive: feedbackData.positive.length,
+        negative: feedbackData.negative.length,
+        total: feedbackData.positive.length + feedbackData.negative.length
       });
 
       this.emitProgress('calling_llm', 20);
 
       // Step 2: Generate eval code using LLM
-      this.stream?.sendLog('info', 'Generating eval function with AI...', {
-        model: this.config.model || 'anthropic/claude-sonnet-4-5'
-      });
-      const generationResult = await this.generator.generate({
-        name: this.config.name,
-        positiveExamples: feedback.positive,
-        negativeExamples: feedback.negative
+      const modelToUse = this.config.model || 'anthropic/claude-sonnet-4-5';
+      await this.log('info', '🤖 Generating eval function with AI...', {
+        model: modelToUse,
+        positiveExamples: feedbackData.positive.length,
+        negativeExamples: feedbackData.negative.length
       });
 
-      this.stream?.sendLog('info', 'AI generation completed', {
+      await this.log('info', '📝 Analyzing trace patterns to identify quality criteria...');
+
+      const generationResult = await this.generator.generate({
+        name: this.config.name,
+        positiveExamples: feedbackData.positive,
+        negativeExamples: feedbackData.negative
+      });
+
+      await this.log('info', '✅ AI generation completed', {
         model: generationResult.metadata.model,
-        codeLength: generationResult.code.length
+        codeLength: `${generationResult.code.length} characters`,
+        tokensUsed: generationResult.metadata.tokensUsed || 'N/A'
       });
 
       this.emitProgress('validating_code', 60);
@@ -106,12 +119,13 @@ export class EvalGenerationJob {
       // Step 3: Test against training set
       // expectedScore: 1.0 = high quality (positive), 0.0 = low quality (negative)
       const testCases = [
-        ...feedback.positive.map(trace => ({ trace, expectedScore: 1.0 })),
-        ...feedback.negative.map(trace => ({ trace, expectedScore: 0.0 }))
+        ...feedbackData.positive.map(trace => ({ trace, expectedScore: 1.0 })),
+        ...feedbackData.negative.map(trace => ({ trace, expectedScore: 0.0 }))
       ];
 
-      this.stream?.sendLog('info', 'Validating generated eval code...', {
-        testCases: testCases.length
+      await this.log('info', '🧪 Validating generated eval code...', {
+        testCases: testCases.length,
+        description: 'Running eval function against labeled traces to measure accuracy'
       });
 
       this.emitProgress('testing_accuracy', 70, {
@@ -121,17 +135,24 @@ export class EvalGenerationJob {
 
       const testResult = await this.tester.test(generationResult.code, testCases);
 
-      this.stream?.sendLog('info', 'Validation completed', {
-        accuracy: `${(testResult.accuracy * 100).toFixed(1)}%`,
+      const accuracyPercent = (testResult.accuracy * 100).toFixed(1);
+      const accuracyEmoji = testResult.accuracy >= 0.8 ? '🎯' : testResult.accuracy >= 0.6 ? '📊' : '⚠️';
+      await this.log('info', `${accuracyEmoji} Validation completed`, {
+        accuracy: `${accuracyPercent}%`,
         correct: testResult.correct,
         incorrect: testResult.incorrect,
-        errors: testResult.errors
+        errors: testResult.errors,
+        total: testResult.total
       });
+
+      if (testResult.accuracy < 0.6) {
+        await this.log('warn', '⚠️ Low accuracy detected - consider adding more labeled examples');
+      }
 
       this.emitProgress('saving_eval', 90);
 
       // Step 4: Save eval to database
-      this.stream?.sendLog('info', 'Saving eval to database...');
+      await this.log('info', '💾 Saving eval to database...');
       const evalId = `eval_${crypto.randomUUID()}`;
 
       // Get next version number for this agent
@@ -185,20 +206,33 @@ export class EvalGenerationJob {
         }
       };
 
-      // Mark job as completed
-      await this.jobManager.completeJob(this.config.jobId, result);
-      this.stream?.sendLog('info', 'Eval generation completed successfully', {
+      await this.log('info', '✅ Eval saved to database', {
         evalId,
         version,
-        accuracy: `${(testResult.accuracy * 100).toFixed(1)}%`
+        name: this.config.name
       });
+
+      // Mark job as completed
+      await this.log('info', '🎉 Eval generation completed successfully!', {
+        evalId,
+        version,
+        accuracy: `${(testResult.accuracy * 100).toFixed(1)}%`,
+        testResults: {
+          correct: testResult.correct,
+          incorrect: testResult.incorrect,
+          errors: testResult.errors
+        }
+      });
+
+      await this.jobManager.completeJob(this.config.jobId, result);
       this.emitProgress('completed', 100);
 
       return result;
     } catch (error: any) {
       console.error('Eval generation job failed:', error);
-      this.stream?.sendLog('error', 'Eval generation failed', {
-        error: error.message
+      await this.log('error', '❌ Eval generation failed', {
+        error: error.message,
+        stack: error.stack?.split('\n').slice(0, 3).join('\n')
       });
       await this.jobManager.failJob(this.config.jobId, error.message);
 
@@ -208,6 +242,21 @@ export class EvalGenerationJob {
 
       throw error;
     }
+  }
+
+  /**
+   * Log a message to both SSE stream (if available) and persist to job metadata
+   */
+  private async log(
+    level: 'info' | 'warn' | 'error' | 'debug',
+    message: string,
+    data?: Record<string, any>
+  ): Promise<void> {
+    // Send to SSE stream if available
+    this.stream?.sendLog(level, message, data);
+
+    // Always persist to job metadata for LiveJobMonitor polling
+    await this.jobManager.addJobLog(this.config.jobId, level, message, data);
   }
 
   private async fetchFeedback(): Promise<{
@@ -259,7 +308,7 @@ export class EvalGenerationJob {
       const trace: Trace = {
         id: record.id,
         trace_id: record.externalTraceId,
-        source: record.source,
+        source: record.source as 'langfuse' | 'langsmith' | 'openai' | 'playground',
         steps,
         raw_data: rawData
       };

@@ -95,12 +95,77 @@ export class JobManager {
       .where(eq(jobs.id, id));
   }
 
-  async updateJobProgress(id: string, progress: number): Promise<void> {
+  async updateJobProgress(id: string, progress: number, statusMessage?: string): Promise<void> {
+    const updateData: Partial<typeof jobs.$inferInsert> = {
+      progress,
+      status: progress > 0 ? 'running' : 'queued',
+    };
+
+    // If status message provided, append to logs array in metadata
+    if (statusMessage) {
+      const existing = await this.drizzle
+        .select({ metadata: jobs.metadata })
+        .from(jobs)
+        .where(eq(jobs.id, id))
+        .limit(1);
+
+      const existingMetadata = (existing[0]?.metadata as Record<string, unknown>) || {};
+      const existingLogs = (existingMetadata.logs as Array<{timestamp: string; level: string; message: string; data?: any}>) || [];
+
+      updateData.metadata = {
+        ...existingMetadata,
+        statusMessage,
+        logs: [
+          ...existingLogs,
+          {
+            timestamp: new Date().toISOString(),
+            level: 'info',
+            message: statusMessage,
+          }
+        ],
+      };
+    }
+
+    await this.drizzle
+      .update(jobs)
+      .set(updateData)
+      .where(eq(jobs.id, id));
+  }
+
+  /**
+   * Add a log entry to a job without updating progress
+   * This persists logs to the job metadata for retrieval by LiveJobMonitor
+   */
+  async addJobLog(
+    id: string,
+    level: 'info' | 'warn' | 'error' | 'debug',
+    message: string,
+    data?: Record<string, any>
+  ): Promise<void> {
+    const existing = await this.drizzle
+      .select({ metadata: jobs.metadata })
+      .from(jobs)
+      .where(eq(jobs.id, id))
+      .limit(1);
+
+    const existingMetadata = (existing[0]?.metadata as Record<string, unknown>) || {};
+    const existingLogs = (existingMetadata.logs as Array<{timestamp: string; level: string; message: string; data?: any}>) || [];
+
     await this.drizzle
       .update(jobs)
       .set({
-        progress,
-        status: progress > 0 ? 'running' : 'queued',
+        metadata: {
+          ...existingMetadata,
+          logs: [
+            ...existingLogs,
+            {
+              timestamp: new Date().toISOString(),
+              level,
+              message,
+              ...(data ? { data } : {}),
+            }
+          ],
+        },
       })
       .where(eq(jobs.id, id));
   }
@@ -129,8 +194,16 @@ export class JobManager {
   }
 
   async cancelJob(id: string): Promise<boolean> {
-    const job = await this.getJob(id);
-    if (!job) return false;
+    // Get full job record including metadata
+    const jobRecord = await this.drizzle
+      .select()
+      .from(jobs)
+      .where(eq(jobs.id, id))
+      .limit(1);
+
+    if (jobRecord.length === 0) return false;
+
+    const job = jobRecord[0];
 
     // Can only cancel queued or running jobs
     if (job.status !== 'queued' && job.status !== 'running') {
@@ -138,6 +211,7 @@ export class JobManager {
     }
 
     await this.updateJobStatus(id, 'cancelled');
+
     return true;
   }
 
@@ -275,6 +349,7 @@ export class JobManager {
       type: record.type as JobType,
       status: record.status as JobStatus,
       progress: record.progress,
+      metadata: record.metadata as Record<string, unknown> | undefined,
       created_at: record.createdAt,
       started_at: record.startedAt ?? null,
       completed_at: record.completedAt ?? null,
