@@ -59,9 +59,11 @@ queue = "iofold-jobs-dlq"
 [[env.staging.vectorize]]
 binding = "VECTORIZE"
 index_name = "system-prompts"
+remote = true
 
 [env.staging.ai]
 binding = "AI"
+remote = true
 
 [env.staging.triggers]
 crons = ["0 */6 * * *"]
@@ -127,9 +129,11 @@ queue = "iofold-jobs-dlq"
 [[vectorize]]
 binding = "VECTORIZE"
 index_name = "system-prompts"
+remote = true
 
 [ai]
 binding = "AI"
+remote = true
 
 [triggers]
 crons = ["0 */6 * * *"]

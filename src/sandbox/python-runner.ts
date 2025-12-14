@@ -54,11 +54,18 @@ export class PythonRunner {
   private allowedImports: string[];
 
   constructor(config: PythonRunnerConfig = {}) {
+    // Wrangler can inject vars into the Worker environment (e.g. `--var PYTHON_EXECUTOR_URL:...`).
+    // We mirror that into the Node-compatible `process.env` (set in `src/index.ts`) and fall back
+    // to localhost for non-docker local dev.
+    const processEnvExecutorUrl =
+      (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env
+        ?.PYTHON_EXECUTOR_URL;
+
     this.config = {
       timeout: config.timeout || 5000,
       sandboxBinding: config.sandboxBinding,
       sandboxId: config.sandboxId || `python-eval-${Date.now()}`,
-      devExecutorUrl: config.devExecutorUrl || DEV_EXECUTOR_URL,
+      devExecutorUrl: config.devExecutorUrl || processEnvExecutorUrl || DEV_EXECUTOR_URL,
       allowedImports: config.allowedImports
     };
     this.allowedImports = config.allowedImports || DEFAULT_ALLOWED_IMPORTS;

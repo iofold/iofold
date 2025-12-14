@@ -27,6 +27,8 @@ export interface Env {
   LANGFUSE_SECRET_KEY: string;
   LANGFUSE_BASE_URL?: string;
   SANDBOX?: DurableObjectNamespace<SandboxType>;
+  /** URL for dev Python executor service (used when sandbox binding isn't available) */
+  PYTHON_EXECUTOR_URL?: string;
   /** Cloudflare Queue binding for job processing */
   JOB_QUEUE?: Queue;
   /** Dead letter queue for failed jobs */
@@ -88,6 +90,10 @@ export default {
     // Set the gateway token as OPENAI_API_KEY for ChatOpenAI compatibility
     if (env.CF_AI_GATEWAY_TOKEN) {
       globalThis.process.env.OPENAI_API_KEY = env.CF_AI_GATEWAY_TOKEN;
+    }
+    // Make PYTHON_EXECUTOR_URL available to PythonRunner via process.env (used as a default).
+    if (env.PYTHON_EXECUTOR_URL) {
+      globalThis.process.env.PYTHON_EXECUTOR_URL = env.PYTHON_EXECUTOR_URL;
     }
     // Set LangSmith env vars for LangChain tracing
     // LangChain reads these from process.env to enable automatic tracing
