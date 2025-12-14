@@ -2,11 +2,16 @@
 /**
  * Add ART-E benchmark tasks to agent via API
  *
+ * This script:
+ * 1. Creates the Email Assistant agent if it doesn't exist (or updates its prompt if empty)
+ * 2. Creates a taskset for the agent
+ * 3. Adds ART-E tasks to the taskset
+ *
  * Usage:
- *   bun scripts/add-arte-tasks-to-agent.ts --agent <agent_id> [options]
+ *   bun scripts/add-arte-tasks-to-agent.ts [options]
  *
  * Options:
- *   --agent, -a <id>     Agent ID (required)
+ *   --agent, -a <id>     Agent ID (default: agent_email_assistant)
  *   --count, -c <num>    Number of tasks to add (default: 50)
  *   --split <split>      Dataset split: train or test (default: test)
  *   --workspace <id>     Workspace ID (default: from WORKSPACE_ID env)
@@ -15,20 +20,71 @@
  *   --help, -h           Show help
  *
  * Examples:
- *   # Add 50 test tasks to agent
- *   bun scripts/add-arte-tasks-to-agent.ts --agent agent_email_assistant
+ *   # Add 50 test tasks (creates Email Assistant if needed)
+ *   bun scripts/add-arte-tasks-to-agent.ts
  *
  *   # Add 100 train tasks
- *   bun scripts/add-arte-tasks-to-agent.ts --agent agent_email_assistant --count 100 --split train
+ *   bun scripts/add-arte-tasks-to-agent.ts --count 100 --split train
  *
  *   # Use JSON API for quick testing
- *   bun scripts/add-arte-tasks-to-agent.ts --agent agent_email_assistant --count 20 --use-json
+ *   bun scripts/add-arte-tasks-to-agent.ts --count 20 --use-json
  */
 
 import { loadArtEDataset } from '../src/benchmark/art-e-loader';
 
+// =============================================================================
+// Email Assistant Configuration
+// =============================================================================
+
+const EMAIL_ASSISTANT_ID = 'agent_email_assistant';
+
+const EMAIL_ASSISTANT_CONFIG = {
+  name: 'Email Assistant',
+  description: 'AI assistant for searching and answering questions about emails. Uses the Enron email dataset for ART-E benchmark tasks.',
+  promptTemplate: `You are an email assistant helping users find and understand their emails.
+
+**Current Context:**
+- Today's date: {{query_date}}
+- User's inbox: {{inbox_address}}
+
+**Your Capabilities:**
+You have access to email search and retrieval tools:
+- \`email_search\`: Search emails by keywords. Provide a query string to find relevant emails.
+- \`email_get\`: Retrieve full email content by message_id.
+
+**Instructions:**
+1. When asked about emails, use the email_search tool to find relevant messages
+2. Search the user's inbox ({{inbox_address}}) for relevant emails
+3. Use email_get to read the full content of specific emails when needed
+4. Provide clear, accurate answers based on the email content
+5. If no relevant emails are found, say so clearly
+
+**Important:**
+- Always search the correct inbox ({{inbox_address}})
+- Consider the query date ({{query_date}}) when interpreting time-relative questions
+- Quote relevant parts of emails in your answers when helpful
+- If asked about attachments, note that attachment content is not available
+
+Answer the user's question based on the emails you find.`,
+};
+
 const API_BASE = process.env.API_URL || 'http://localhost:8787';
 const WORKSPACE_ID = process.env.WORKSPACE_ID || 'workspace_default';
+
+interface AgentResponse {
+  id: string;
+  name: string;
+  description: string;
+  active_version_id: string | null;
+}
+
+interface AgentVersionResponse {
+  id: string;
+  agent_id: string;
+  version: number;
+  prompt_template: string;
+  status: string;
+}
 
 interface TasksetResponse {
   id: string;
@@ -40,6 +96,211 @@ interface AddTasksResponse {
   inserted: number;
   skipped: number;
   total: number;
+}
+
+/**
+ * Get agent by ID, returns null if not found
+ */
+async function getAgent(
+  agentId: string,
+  workspaceId: string,
+  apiBase: string
+): Promise<AgentResponse | null> {
+  const response = await fetch(`${apiBase}/api/agents/${agentId}`, {
+    method: 'GET',
+    headers: {
+      'X-Workspace-Id': workspaceId,
+    },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to get agent: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Create a new agent
+ */
+async function createAgent(
+  agentId: string,
+  name: string,
+  description: string,
+  workspaceId: string,
+  apiBase: string
+): Promise<AgentResponse> {
+  const response = await fetch(`${apiBase}/api/agents`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Workspace-Id': workspaceId,
+    },
+    body: JSON.stringify({ id: agentId, name, description }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to create agent: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get the active version for an agent
+ */
+async function getActiveVersion(
+  agentId: string,
+  workspaceId: string,
+  apiBase: string
+): Promise<AgentVersionResponse | null> {
+  const response = await fetch(`${apiBase}/api/agents/${agentId}/versions`, {
+    method: 'GET',
+    headers: {
+      'X-Workspace-Id': workspaceId,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to get versions: ${response.status} - ${errorText}`);
+  }
+
+  const versions: AgentVersionResponse[] = await response.json();
+  // Find active version
+  return versions.find(v => v.status === 'active') || versions[0] || null;
+}
+
+/**
+ * Create a new agent version with a prompt template
+ */
+async function createAgentVersion(
+  agentId: string,
+  promptTemplate: string,
+  workspaceId: string,
+  apiBase: string
+): Promise<AgentVersionResponse> {
+  const response = await fetch(`${apiBase}/api/agents/${agentId}/versions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Workspace-Id': workspaceId,
+    },
+    body: JSON.stringify({
+      prompt_template: promptTemplate,
+      source: 'manual',
+      status: 'active',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to create version: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Update an agent version's prompt template
+ */
+async function updateAgentVersion(
+  agentId: string,
+  versionId: string,
+  promptTemplate: string,
+  workspaceId: string,
+  apiBase: string
+): Promise<AgentVersionResponse> {
+  const response = await fetch(`${apiBase}/api/agents/${agentId}/versions/${versionId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Workspace-Id': workspaceId,
+    },
+    body: JSON.stringify({
+      prompt_template: promptTemplate,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to update version: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Ensure Email Assistant agent exists with proper prompt template
+ */
+async function ensureEmailAssistant(
+  agentId: string,
+  workspaceId: string,
+  apiBase: string
+): Promise<{ agent: AgentResponse; version: AgentVersionResponse; created: boolean; updated: boolean }> {
+  let created = false;
+  let updated = false;
+
+  // Check if agent exists
+  let agent = await getAgent(agentId, workspaceId, apiBase);
+
+  if (!agent) {
+    // Create the agent
+    console.log(`  Creating Email Assistant agent (${agentId})...`);
+    agent = await createAgent(
+      agentId,
+      EMAIL_ASSISTANT_CONFIG.name,
+      EMAIL_ASSISTANT_CONFIG.description,
+      workspaceId,
+      apiBase
+    );
+    created = true;
+  }
+
+  // Check if agent has a version with a proper prompt
+  let version = await getActiveVersion(agentId, workspaceId, apiBase);
+
+  if (!version) {
+    // Create a new version with the prompt
+    console.log(`  Creating agent version with Email Assistant prompt...`);
+    version = await createAgentVersion(
+      agentId,
+      EMAIL_ASSISTANT_CONFIG.promptTemplate,
+      workspaceId,
+      apiBase
+    );
+    updated = true;
+  } else if (!version.prompt_template || version.prompt_template.trim() === '') {
+    // Update existing version with proper prompt
+    console.log(`  Updating agent version with Email Assistant prompt...`);
+    version = await updateAgentVersion(
+      agentId,
+      version.id,
+      EMAIL_ASSISTANT_CONFIG.promptTemplate,
+      workspaceId,
+      apiBase
+    );
+    updated = true;
+  } else if (!version.prompt_template.includes('{{inbox_address}}')) {
+    // Prompt exists but doesn't have the required variables - update it
+    console.log(`  Updating agent prompt to include required variables...`);
+    version = await updateAgentVersion(
+      agentId,
+      version.id,
+      EMAIL_ASSISTANT_CONFIG.promptTemplate,
+      workspaceId,
+      apiBase
+    );
+    updated = true;
+  }
+
+  return { agent, version, created, updated };
 }
 
 /**
@@ -106,7 +367,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   // Parse CLI arguments
-  let agentId: string | null = null;
+  let agentId: string = EMAIL_ASSISTANT_ID; // Default to Email Assistant
   let count = 50;
   let split: 'train' | 'test' = 'test';
   let workspaceId = WORKSPACE_ID;
@@ -158,13 +419,6 @@ async function main(): Promise<void> {
     }
   }
 
-  // Validate required arguments
-  if (!agentId) {
-    console.error('Error: --agent is required');
-    printHelp();
-    process.exit(1);
-  }
-
   try {
     console.log('\n' + '═'.repeat(80));
     console.log('Add ART-E Tasks to Agent via API');
@@ -177,8 +431,25 @@ async function main(): Promise<void> {
     console.log(`Format:      ${useJson ? 'json' : 'parquet'}`);
     console.log('─'.repeat(80));
 
+    // Step 0: Ensure Email Assistant agent exists with proper prompt
+    console.log(`\nStep 0/4: Ensuring Email Assistant agent exists...`);
+    const { agent, version, created, updated } = await ensureEmailAssistant(
+      agentId,
+      workspaceId,
+      apiBaseUrl
+    );
+
+    if (created) {
+      console.log(`✓ Created new agent: ${agent.name} (${agent.id})`);
+    } else if (updated) {
+      console.log(`✓ Updated agent prompt template`);
+    } else {
+      console.log(`✓ Agent exists with proper prompt`);
+    }
+    console.log(`  Active version: ${version.id}`);
+
     // Load ART-E tasks
-    console.log(`\nStep 1/3: Loading ${count} ART-E tasks from ${split} split...`);
+    console.log(`\nStep 1/4: Loading ${count} ART-E tasks from ${split} split...`);
     const tasks = await loadArtEDataset(split, count, useJson);
 
     if (tasks.length === 0) {
@@ -189,7 +460,7 @@ async function main(): Promise<void> {
     console.log(`✓ Loaded ${tasks.length} tasks`);
 
     // Create taskset
-    console.log(`\nStep 2/3: Creating taskset for agent ${agentId}...`);
+    console.log(`\nStep 2/4: Creating taskset for agent ${agentId}...`);
     const taskset = await createTaskset(
       agentId,
       `ART-E ${split.charAt(0).toUpperCase() + split.slice(1)} Tasks`,
@@ -201,7 +472,7 @@ async function main(): Promise<void> {
     console.log(`✓ Created taskset: ${taskset.id}`);
 
     // Add tasks in batches
-    console.log(`\nStep 3/3: Adding tasks to taskset...`);
+    console.log(`\nStep 3/4: Adding tasks to taskset...`);
     const batchSize = 10;
     let totalInserted = 0;
     let totalSkipped = 0;
@@ -256,10 +527,11 @@ async function main(): Promise<void> {
     console.log('═'.repeat(80));
 
     console.log('\n📝 Next Steps:');
-    console.log('  1. Run benchmark against these tasks:');
-    console.log(`     bun scripts/run-art-e-benchmark.ts --agent ${agentId} --limit ${count}`);
-    console.log('\n  2. View taskset in UI:');
+    console.log('  1. View taskset in UI:');
     console.log(`     http://localhost:3000/agents/${agentId}/tasksets`);
+    console.log('\n  2. Run taskset via API:');
+    console.log(`     curl -X POST ${apiBaseUrl}/api/agents/${agentId}/tasksets/${taskset.id}/runs \\`);
+    console.log(`       -H "X-Workspace-Id: ${workspaceId}" -H "Content-Type: application/json"`);
     console.log('\n  3. Run GEPA optimization using this taskset:');
     console.log(`     # Use taskset ID: ${taskset.id}`);
     console.log('');
@@ -276,11 +548,21 @@ function printHelp(): void {
   console.log(`
 Add ART-E Tasks to Agent via API
 
+This script:
+1. Creates the Email Assistant agent if it doesn't exist (with proper prompt template)
+2. Updates the agent's prompt if it's empty or missing required variables
+3. Creates a taskset for the agent
+4. Adds ART-E benchmark tasks to the taskset
+
+The Email Assistant prompt includes:
+- {{inbox_address}} - The user's email inbox (from task metadata)
+- {{query_date}} - The context date for the query (from task metadata)
+
 Usage:
   bun scripts/add-arte-tasks-to-agent.ts [options]
 
 Options:
-  --agent, -a <id>     Agent ID (required)
+  --agent, -a <id>     Agent ID (default: agent_email_assistant)
   --count, -c <num>    Number of tasks to add (default: 50)
   --split <split>      Dataset split: train or test (default: test)
   --workspace <id>     Workspace ID (default: from WORKSPACE_ID env)
@@ -289,14 +571,14 @@ Options:
   --help, -h           Show this help
 
 Examples:
-  # Add 50 test tasks to agent
-  bun scripts/add-arte-tasks-to-agent.ts --agent agent_email_assistant
+  # Add 50 test tasks (auto-creates Email Assistant agent)
+  bun scripts/add-arte-tasks-to-agent.ts
 
   # Add 100 train tasks
-  bun scripts/add-arte-tasks-to-agent.ts --agent agent_email_assistant --count 100 --split train
+  bun scripts/add-arte-tasks-to-agent.ts --count 100 --split train
 
   # Use JSON API for quick testing (no parquetjs needed)
-  bun scripts/add-arte-tasks-to-agent.ts --agent agent_email_assistant --count 20 --use-json
+  bun scripts/add-arte-tasks-to-agent.ts --count 20 --use-json
 
 Environment:
   API_URL         API base URL (default: http://localhost:8787)
