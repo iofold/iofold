@@ -139,7 +139,7 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
 
         {/* Show LiveJobMonitor if generation started */}
         {jobId && jobStatus && (
-          <div className="my-4">
+          <div className="my-4 mx-6">
             <LiveJobMonitor
               jobId={jobId}
               jobType="generate"
@@ -151,7 +151,7 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
 
         {/* Show success message when completed */}
         {jobId && jobStatus === 'completed' && (
-          <div className="my-4 p-4 rounded-lg border bg-success/10 border-success/30">
+          <div className="my-4 mx-6 p-4 rounded-lg border bg-success/10 border-success/30">
             <div className="flex items-center gap-2 mb-3">
               <CheckCircle2 className="h-5 w-5 text-success" />
               <span className="font-medium text-success">Eval Generated Successfully!</span>
@@ -164,7 +164,7 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
 
         {/* Show error message when failed */}
         {jobId && jobStatus === 'failed' && (
-          <div className="my-4 p-4 rounded-lg border bg-destructive/10 border-destructive/30">
+          <div className="my-4 mx-6 p-4 rounded-lg border bg-destructive/10 border-destructive/30">
             <div className="flex items-center gap-2 mb-3">
               <AlertCircle className="h-5 w-5 text-destructive" />
               <span className="font-medium text-destructive">Generation Failed</span>
@@ -177,7 +177,7 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
 
         {/* Generation form - hide if job is running/completed */}
         {!jobId && (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4 px-6 pb-2">
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
               <Input

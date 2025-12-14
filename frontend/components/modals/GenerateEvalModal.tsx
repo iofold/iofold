@@ -34,7 +34,7 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
   const [formData, setFormData] = useState<GenerateEvalRequest>({
     name: '',
     description: '',
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'anthropic/claude-sonnet-4-5',
     custom_instructions: '',
   })
   const [error, setError] = useState<string | null>(null)
@@ -84,7 +84,7 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
     setFormData({
       name: '',
       description: '',
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'anthropic/claude-sonnet-4-5',
       custom_instructions: '',
     })
     setError(null)
@@ -180,8 +180,9 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
                     <SelectValue placeholder="Select model..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</SelectItem>
-                    <SelectItem value="gpt-4">GPT-4</SelectItem>
+                    <SelectItem value="anthropic/claude-sonnet-4-5">Claude Sonnet 4.5</SelectItem>
+                    <SelectItem value="anthropic/claude-opus-4-5">Claude Opus 4.5</SelectItem>
+                    <SelectItem value="google-vertex-ai/google/gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
