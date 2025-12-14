@@ -47,3 +47,6 @@ notebooks/.ipynb_checkpoints/
 **/.ipynb_checkpoints/
 *.pyc
 __pycache__/
+
+# Drizzle generated migrations (tracked separately)
+src/db/drizzle-migrations/
