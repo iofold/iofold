@@ -203,7 +203,7 @@ export class EvalExecutionJob {
     return results.map(record => ({
       id: record.id,
       trace_id: record.traceId,
-      source: record.source,
+      source: record.source as 'langfuse' | 'langsmith' | 'openai' | 'playground',
       steps: typeof record.steps === 'string' ? JSON.parse(record.steps) : record.steps,
       raw_data: typeof record.rawData === 'string' ? JSON.parse(record.rawData as string) : record.rawData
     }));

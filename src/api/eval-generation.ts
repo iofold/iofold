@@ -62,6 +62,9 @@ export async function extractTasks(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing workspace ID', 400);
+    }
 
     const drizzle = createDb(env.DB);
 
@@ -182,6 +185,9 @@ export async function listTasks(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing workspace ID', 400);
+    }
 
     const drizzle = createDb(env.DB);
 
@@ -265,6 +271,9 @@ export async function generateEvals(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing workspace ID', 400);
+    }
 
     const drizzle = createDb(env.DB);
 
@@ -321,7 +330,7 @@ export async function generateEvals(
 
     // Transform to LabeledTrace format
     const labeledTraces: LabeledTrace[] = labeledTracesResult.map((row) => {
-      const steps = row.steps || [];
+      const steps = (row.steps || []) as any[];
 
       // Extract user message from first step
       let userMessage = '';
@@ -412,6 +421,9 @@ export async function testEvalCandidates(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing workspace ID', 400);
+    }
 
     const drizzle = createDb(env.DB);
 
@@ -494,7 +506,7 @@ export async function testEvalCandidates(
 
     // Transform to LabeledTrace format
     const labeledTraces: LabeledTrace[] = labeledTracesResult.map((row) => {
-      const steps = row.steps || [];
+      const steps = (row.steps || []) as any[];
 
       let userMessage = '';
       for (const step of steps) {
@@ -528,15 +540,17 @@ export async function testEvalCandidates(
     const { EvalRunner } = await import('../services/eval/eval-runner');
     const { PythonRunner } = await import('../sandbox/python-runner');
 
+    // Don't pass sandboxBinding in local dev - containers aren't enabled
+    // The PythonRunner will automatically fall back to HTTP executor service
     const pythonRunner = new PythonRunner({
-      sandboxBinding: env.SANDBOX,
       timeout: 30000
+      // sandboxBinding intentionally omitted for local dev
     });
     const evalRunner = new EvalRunner({
       cfAccountId: env.CF_ACCOUNT_ID || '',
       cfGatewayId: env.CF_AI_GATEWAY_ID || '',
       cfGatewayToken: env.CF_AI_GATEWAY_TOKEN,
-      sandboxBinding: env.SANDBOX,
+      // sandboxBinding intentionally omitted for local dev
       maxBudgetUsd: 0.05,
       timeoutMs: 30000
     });
@@ -601,6 +615,9 @@ export async function selectWinner(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing workspace ID', 400);
+    }
 
     const drizzle = createDb(env.DB);
 
@@ -766,6 +783,9 @@ export async function activateEval(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing workspace ID', 400);
+    }
 
     const drizzle = createDb(env.DB);
 
@@ -871,6 +891,9 @@ export async function getActiveEval(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing workspace ID', 400);
+    }
 
     const drizzle = createDb(env.DB);
 

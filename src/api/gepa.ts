@@ -106,6 +106,11 @@ export async function startGEPAOptimization(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // After validation, workspaceId is guaranteed to be non-null
+    if (!workspaceId) {
+      throw new Error('Missing X-Workspace-Id header');
+    }
+
     const drizzle = createDb(env.DB);
     const body = await parseJsonBody<StartGEPARequest>(request);
 
@@ -228,7 +233,7 @@ export async function startGEPAOptimization(
 
       // Extract user messages from trace steps
       for (const row of tracesResult) {
-        const steps = row.steps || [];
+        const steps = (row.steps || []) as Array<{ messages_added?: Array<{ role?: string; content?: string }> }>;
 
         for (const step of steps) {
           const messages = step.messages_added || [];
@@ -409,6 +414,11 @@ export async function listGEPARuns(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // After validation, workspaceId is guaranteed to be non-null
+    if (!workspaceId) {
+      throw new Error('Missing X-Workspace-Id header');
+    }
+
     const drizzle = createDb(env.DB);
 
     // 1. Validate agent exists and user has access
@@ -492,6 +502,11 @@ export async function getGEPARunStatus(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+
+    // After validation, workspaceId is guaranteed to be non-null
+    if (!workspaceId) {
+      throw new Error('Missing X-Workspace-Id header');
+    }
 
     const drizzle = createDb(env.DB);
 
@@ -602,6 +617,11 @@ export async function streamGEPAProgress(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+
+    // After validation, workspaceId is guaranteed to be non-null
+    if (!workspaceId) {
+      throw new Error('Missing X-Workspace-Id header');
+    }
 
     const drizzle = createDb(env.DB);
 

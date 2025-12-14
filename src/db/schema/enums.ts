@@ -63,7 +63,7 @@ export const traceAssignmentStatus = ['unassigned', 'assigned', 'orphaned'] as c
 export type TraceAssignmentStatus = (typeof traceAssignmentStatus)[number];
 
 // Integration-related enums
-export const integrationPlatform = ['langfuse', 'langsmith', 'openai'] as const;
+export const integrationPlatform = ['langfuse', 'langsmith', 'openai', 'playground', 'taskset'] as const;
 export type IntegrationPlatform = (typeof integrationPlatform)[number];
 
 export const integrationStatus = ['active', 'error'] as const;

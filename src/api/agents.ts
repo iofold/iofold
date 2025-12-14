@@ -57,6 +57,8 @@ export async function createAgent(request: Request, env: Env): Promise<Response>
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    // After validation, workspaceId is guaranteed to be non-null
+    const validWorkspaceId = workspaceId!;
 
     const body = await parseJsonBody<CreateAgentRequest>(request);
 
@@ -76,7 +78,7 @@ export async function createAgent(request: Request, env: Env): Promise<Response>
       .from(agents)
       .where(
         and(
-          eq(agents.workspaceId, workspaceId),
+          eq(agents.workspaceId, validWorkspaceId),
           eq(agents.name, body.name.trim()),
           ne(agents.status, 'archived')
         )
@@ -97,7 +99,7 @@ export async function createAgent(request: Request, env: Env): Promise<Response>
 
     await drizzle.insert(agents).values({
       id: agentId,
-      workspaceId: workspaceId,
+      workspaceId: validWorkspaceId,
       name: body.name.trim(),
       description: body.description || null,
       status: 'confirmed',
@@ -108,7 +110,7 @@ export async function createAgent(request: Request, env: Env): Promise<Response>
     return createSuccessResponse(
       {
         id: agentId,
-        workspace_id: workspaceId,
+        workspace_id: validWorkspaceId,
         name: body.name.trim(),
         description: body.description || null,
         status: 'confirmed',
@@ -144,6 +146,8 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    // After validation, workspaceId is guaranteed to be non-null
+    const validWorkspaceId = workspaceId!;
 
     // Parse query parameters
     const url = new URL(request.url);
@@ -187,7 +191,7 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
 
     // Get agents with active versions
     const agentsResult = await env.DB.prepare(query)
-      .bind(workspaceId, 'archived')
+      .bind(validWorkspaceId, 'archived')
       .all();
 
     // Count pending discoveries
@@ -196,7 +200,7 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
       .from(agents)
       .where(
         and(
-          eq(agents.workspaceId, workspaceId),
+          eq(agents.workspaceId, validWorkspaceId),
           eq(agents.status, 'discovered')
         )
       );
@@ -258,6 +262,8 @@ export async function getAgentById(request: Request, env: Env, agentId: string):
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    // After validation, workspaceId is guaranteed to be non-null
+    const validWorkspaceId = workspaceId!;
 
     const drizzle = createDb(env.DB);
 
@@ -287,7 +293,7 @@ export async function getAgentById(request: Request, env: Env, agentId: string):
       .where(
         and(
           eq(agents.id, agentId),
-          eq(agents.workspaceId, workspaceId)
+          eq(agents.workspaceId, validWorkspaceId)
         )
       )
       .limit(1);
@@ -399,7 +405,7 @@ export async function getAgentById(request: Request, env: Env, agentId: string):
         agent_id: agent.id,
         version: agent.versionNumber!,
         prompt_template: agent.promptTemplate!,
-        variables: agent.variables as any[] || [],
+        variables: (Array.isArray(agent.variables) ? agent.variables : []) as any[],
         source: agent.source as any,
         parent_version_id: agent.parentVersionId,
         accuracy: agent.accuracy,
@@ -480,6 +486,8 @@ export async function confirmAgent(request: Request, env: Env, agentId: string):
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    // After validation, workspaceId is guaranteed to be non-null
+    const validWorkspaceId = workspaceId!;
 
     const body = await parseJsonBody<ConfirmAgentRequest>(request);
 
@@ -496,7 +504,7 @@ export async function confirmAgent(request: Request, env: Env, agentId: string):
       .where(
         and(
           eq(agents.id, agentId),
-          eq(agents.workspaceId, workspaceId)
+          eq(agents.workspaceId, validWorkspaceId)
         )
       )
       .limit(1);
@@ -526,7 +534,7 @@ export async function confirmAgent(request: Request, env: Env, agentId: string):
         .from(agents)
         .where(
           and(
-            eq(agents.workspaceId, workspaceId),
+            eq(agents.workspaceId, validWorkspaceId),
             eq(agents.name, body.name.trim()),
             ne(agents.id, agentId),
             ne(agents.status, 'archived')
@@ -573,6 +581,8 @@ export async function deleteAgent(request: Request, env: Env, agentId: string): 
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    // After validation, workspaceId is guaranteed to be non-null
+    const validWorkspaceId = workspaceId!;
 
     const drizzle = createDb(env.DB);
 
@@ -583,7 +593,7 @@ export async function deleteAgent(request: Request, env: Env, agentId: string): 
       .where(
         and(
           eq(agents.id, agentId),
-          eq(agents.workspaceId, workspaceId)
+          eq(agents.workspaceId, validWorkspaceId)
         )
       )
       .limit(1);
@@ -624,6 +634,8 @@ export async function getAgentPrompt(request: Request, env: Env, agentId: string
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    // After validation, workspaceId is guaranteed to be non-null
+    const validWorkspaceId = workspaceId!;
 
     const drizzle = createDb(env.DB);
 
@@ -641,7 +653,7 @@ export async function getAgentPrompt(request: Request, env: Env, agentId: string
       .where(
         and(
           eq(agents.id, agentId),
-          eq(agents.workspaceId, workspaceId)
+          eq(agents.workspaceId, validWorkspaceId)
         )
       )
       .limit(1);
@@ -672,7 +684,7 @@ export async function getAgentPrompt(request: Request, env: Env, agentId: string
       template: row.promptTemplate,
       version: row.version,
       version_id: row.versionId,
-      variables: row.variables || [],
+      variables: (Array.isArray(row.variables) ? row.variables : []) as string[],
       updated_at: row.updatedAt,
     };
 
@@ -706,6 +718,8 @@ export async function updateAgent(request: Request, env: Env, agentId: string): 
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    // After validation, workspaceId is guaranteed to be non-null
+    const validWorkspaceId = workspaceId!;
 
     const body = await parseJsonBody<{ name?: string; description?: string }>(request);
 
@@ -740,7 +754,7 @@ export async function updateAgent(request: Request, env: Env, agentId: string): 
       .where(
         and(
           eq(agents.id, agentId),
-          eq(agents.workspaceId, workspaceId)
+          eq(agents.workspaceId, validWorkspaceId)
         )
       )
       .limit(1);
@@ -762,7 +776,7 @@ export async function updateAgent(request: Request, env: Env, agentId: string): 
         .from(agents)
         .where(
           and(
-            eq(agents.workspaceId, workspaceId),
+            eq(agents.workspaceId, validWorkspaceId),
             eq(agents.name, body.name.trim()),
             ne(agents.id, agentId),
             ne(agents.status, 'archived')
@@ -819,6 +833,8 @@ export async function discoverAgents(request: Request, env: Env): Promise<Respon
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    // After validation, workspaceId is guaranteed to be non-null
+    const validWorkspaceId = workspaceId!;
 
     // Parse optional configuration
     let config: {
@@ -872,7 +888,7 @@ export async function discoverAgents(request: Request, env: Env): Promise<Respon
       .from(traces)
       .where(
         and(
-          eq(traces.workspaceId, workspaceId),
+          eq(traces.workspaceId, validWorkspaceId),
           eq(traces.assignmentStatus, 'unassigned')
         )
       );
@@ -901,7 +917,7 @@ export async function discoverAgents(request: Request, env: Env): Promise<Respon
       db: env.DB
     });
 
-    const result = await producer.enqueueAgentDiscoveryJob(workspaceId ?? 'workspace_default', {
+    const result = await producer.enqueueAgentDiscoveryJob(validWorkspaceId, {
       similarityThreshold: config.similarity_threshold,
       minClusterSize: config.min_cluster_size,
       maxTraces: config.max_traces
@@ -951,6 +967,8 @@ export async function improveAgent(request: Request, env: Env, agentId: string):
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    // After validation, workspaceId is guaranteed to be non-null
+    const validWorkspaceId = workspaceId!;
 
     // Parse optional request body
     let customInstructions: string | undefined;
@@ -976,7 +994,7 @@ export async function improveAgent(request: Request, env: Env, agentId: string):
       .where(
         and(
           eq(agents.id, agentId),
-          eq(agents.workspaceId, workspaceId)
+          eq(agents.workspaceId, validWorkspaceId)
         )
       )
       .limit(1);

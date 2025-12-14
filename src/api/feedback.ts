@@ -35,6 +35,11 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // Ensure workspaceId is not null for TypeScript
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const body = await parseJsonBody<{
       trace_id: string;
       agent_id?: string;  // Now optional
@@ -169,6 +174,11 @@ export async function updateFeedback(request: Request, env: Env, feedbackId: str
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // Ensure workspaceId is not null for TypeScript
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const body = await parseJsonBody<{
       rating?: 'positive' | 'negative' | 'neutral';
       notes?: string;
@@ -282,6 +292,11 @@ export async function deleteFeedback(request: Request, env: Env, feedbackId: str
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // Ensure workspaceId is not null for TypeScript
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const db = createDb(env.DB);
 
     // Verify feedback exists and belongs to workspace
@@ -321,6 +336,11 @@ export async function listFeedback(request: Request, env: Env): Promise<Response
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+
+    // Ensure workspaceId is not null for TypeScript
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
 
     const url = new URL(request.url);
     const trace_id = url.searchParams.get('trace_id');

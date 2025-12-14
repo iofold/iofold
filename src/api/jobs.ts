@@ -301,6 +301,7 @@ export class JobsAPI {
     const maxPolls = 120; // 2 minutes max to allow time for LLM calls
     const STALE_QUEUED_THRESHOLD_MS = 30000; // 30 seconds for queued jobs
     let polls = 0;
+    let lastLogCount = 0; // Track how many logs we've sent
 
     const interval = setInterval(async () => {
       try {
@@ -320,6 +321,18 @@ export class JobsAPI {
           status: job.status,
           progress: job.progress
         });
+
+        // Send any new logs from metadata
+        const metadata = job.metadata as Record<string, unknown> | null;
+        const logs = (metadata?.logs as Array<{timestamp: string; level: string; message: string}>) || [];
+        if (logs.length > lastLogCount) {
+          // Send only new logs
+          for (let i = lastLogCount; i < logs.length; i++) {
+            const log = logs[i];
+            stream.sendLog(log.level as 'info' | 'warn' | 'error', log.message);
+          }
+          lastLogCount = logs.length;
+        }
 
         // Check if job is done
         if (job.status === 'completed') {

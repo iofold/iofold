@@ -64,9 +64,9 @@ describe('Matrix API', () => {
       traceId: 'ext_trace_1',
       source: 'langfuse',
       timestamp: '2025-11-12T10:00:00Z',
-      steps: JSON.stringify([
+      steps: [
         { input: 'Test input 1', output: 'Test output 1' }
-      ]),
+      ],
       importedAt: '2025-11-12T10:00:00Z'
     }).run();
 
@@ -77,9 +77,9 @@ describe('Matrix API', () => {
       traceId: 'ext_trace_2',
       source: 'langfuse',
       timestamp: '2025-11-12T11:00:00Z',
-      steps: JSON.stringify([
+      steps: [
         { input: 'Test input 2', output: 'Test output 2' }
-      ]),
+      ],
       importedAt: '2025-11-12T11:00:00Z'
     }).run();
 
@@ -382,7 +382,7 @@ describe('Matrix API', () => {
         traceId: 'ext_trace_noexec',
         source: 'langfuse',
         timestamp: '2025-11-12T12:00:00Z',
-        steps: JSON.stringify([{ input: 'test', output: 'test' }]),
+        steps: [{ input: 'test', output: 'test' }],
         importedAt: '2025-11-12T12:00:00Z'
       }).run();
 
@@ -481,7 +481,7 @@ describe('Matrix API', () => {
         traceId: 'ext_trace_error',
         source: 'langfuse',
         timestamp: '2025-11-12T13:00:00Z',
-        steps: JSON.stringify([{ input: 'test', output: 'test' }]),
+        steps: [{ input: 'test', output: 'test' }],
         importedAt: '2025-11-12T13:00:00Z'
       }).run();
 

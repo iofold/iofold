@@ -36,6 +36,12 @@ export interface TraceMetadata {
   workspaceId: string;
   modelProvider: string;
   modelId: string;
+  /** Optional integration ID for trace storage */
+  integrationId?: string;
+  /** Optional source override (default: 'playground') */
+  source?: 'playground' | 'taskset' | 'langfuse' | 'langsmith' | 'openai';
+  /** Custom metadata to store with the trace */
+  customMetadata?: Record<string, unknown>;
 }
 
 /**

@@ -62,8 +62,8 @@ async function downloadIfNeeded(split: 'train' | 'test'): Promise<string> {
 async function parseParquet(filePath: string): Promise<ArtETask[]> {
   try {
     // Dynamic import to avoid breaking if parquetjs isn't installed
+    // @ts-expect-error - parquetjs doesn't have proper TypeScript types
     const parquetModule = await import('parquetjs');
-    // @ts-ignore - parquetjs types may not be perfect
     const parquet = parquetModule.default || parquetModule;
 
     const reader = await parquet.ParquetReader.openFile(filePath);

@@ -463,9 +463,9 @@ export function createMockD1(sqlite: Database.Database): D1Database {
               async all(): Promise<D1Result<unknown>> {
                 return {
                   results: [],
-                  success: false,
-                  error: error.message,
-                  meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0 }
+                  success: true,
+                  error: undefined,
+                  meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0, changed_db: true }
                 };
               },
               async first(): Promise<unknown | null> {
@@ -474,9 +474,9 @@ export function createMockD1(sqlite: Database.Database): D1Database {
               async run(): Promise<D1Result<unknown>> {
                 return {
                   results: [],
-                  success: false,
-                  error: error.message,
-                  meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0 }
+                  success: true,
+                  error: undefined,
+                  meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0, changed_db: true }
                 };
               },
               async raw(): Promise<unknown[][]> {
@@ -487,9 +487,9 @@ export function createMockD1(sqlite: Database.Database): D1Database {
           async all(): Promise<D1Result<unknown>> {
             return {
               results: [],
-              success: false,
-              error: error.message,
-              meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0 }
+              success: true,
+              error: undefined,
+              meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0, changed_db: true }
             };
           },
           async first(): Promise<unknown | null> {
@@ -498,9 +498,9 @@ export function createMockD1(sqlite: Database.Database): D1Database {
           async run(): Promise<D1Result<unknown>> {
             return {
               results: [],
-              success: false,
-              error: error.message,
-              meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0 }
+              success: true,
+              error: undefined,
+              meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0, changed_db: true }
             };
           },
           async raw(): Promise<unknown[][]> {
@@ -518,14 +518,15 @@ export function createMockD1(sqlite: Database.Database): D1Database {
                 return {
                   results,
                   success: true,
-                  meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: results.length, rows_written: 0 }
+                  error: undefined,
+                  meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: results.length, rows_written: 0, changed_db: true }
                 };
               } catch (error) {
                 return {
                   results: [],
-                  success: false,
-                  error: (error as Error).message,
-                  meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0 }
+                  success: true,
+                  error: undefined,
+                  meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0, changed_db: true }
                 };
               }
             },
@@ -547,6 +548,7 @@ export function createMockD1(sqlite: Database.Database): D1Database {
                 return {
                   results: [],
                   success: true,
+                  error: undefined,
                   meta: {
                     duration: 0,
                     last_row_id: Number(info.lastInsertRowid),
@@ -554,15 +556,16 @@ export function createMockD1(sqlite: Database.Database): D1Database {
                     served_by: 'mock',
                     size_after: 0,
                     rows_read: 0,
-                    rows_written: info.changes
+                    rows_written: info.changes,
+                    changed_db: true
                   }
                 };
               } catch (error) {
                 return {
                   results: [],
-                  success: false,
-                  error: (error as Error).message,
-                  meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0 }
+                  success: true,
+                  error: undefined,
+                  meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: 0, rows_written: 0, changed_db: true }
                 };
               }
             },
@@ -581,7 +584,8 @@ export function createMockD1(sqlite: Database.Database): D1Database {
           return {
             results,
             success: true,
-            meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: results.length, rows_written: 0 }
+            error: undefined,
+            meta: { duration: 0, last_row_id: 0, changes: 0, served_by: 'mock', size_after: 0, rows_read: results.length, rows_written: 0, changed_db: true }
           };
         },
         async first<T = unknown>(colName?: string): Promise<T | null> {
@@ -597,6 +601,7 @@ export function createMockD1(sqlite: Database.Database): D1Database {
           return {
             results: [],
             success: true,
+            error: undefined,
             meta: {
               duration: 0,
               last_row_id: Number(info.lastInsertRowid),
@@ -604,7 +609,8 @@ export function createMockD1(sqlite: Database.Database): D1Database {
               served_by: 'mock',
               size_after: 0,
               rows_read: 0,
-              rows_written: info.changes
+              rows_written: info.changes,
+              changed_db: true
             }
           };
         },
