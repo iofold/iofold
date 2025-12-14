@@ -4,7 +4,7 @@
 
 import { createDb, type Database } from '../db/client';
 import { eq } from 'drizzle-orm';
-import { jobs } from '../db/schema';
+import { jobs as jobsTable } from '../db/schema';
 import type {
   QueueMessage,
   JobPayload,
@@ -135,7 +135,6 @@ export class QueueProducer {
    * Enqueue a taskset run job
    */
   async enqueueTasksetRunJob(
-    runId: string,
     workspaceId: string,
     agentId: string,
     tasksetId: string,
@@ -150,7 +149,6 @@ export class QueueProducer {
   ): Promise<EnqueueResult> {
     const payload: TasksetRunJobPayload = {
       type: 'taskset_run',
-      run_id: runId,
       workspace_id: workspaceId,
       agent_id: agentId,
       taskset_id: tasksetId,
@@ -175,7 +173,7 @@ export class QueueProducer {
 
     try {
       // Create job record in database first
-      await this.drizzle.insert(jobs).values({
+      await this.drizzle.insert(jobsTable).values({
         id: jobId,
         workspaceId,
         type,
@@ -211,13 +209,13 @@ export class QueueProducer {
       // Try to mark the job as failed if it was created
       try {
         await this.drizzle
-          .update(jobs)
+          .update(jobsTable)
           .set({
             status: 'failed',
             error: errorMessage,
             completedAt: now
           })
-          .where(eq(jobs.id, jobId));
+          .where(eq(jobsTable.id, jobId));
       } catch {
         // Ignore cleanup errors
       }
@@ -277,14 +275,14 @@ export class QueueProducer {
       const jobValues = jobRecords.map(record => ({
         id: record.id,
         workspaceId: record.workspaceId,
-        type: record.type,
+        type: record.type as JobType,
         status: 'queued' as const,
         progress: 0,
         createdAt: now,
         metadata: JSON.parse(record.metadata)
       }));
 
-      await this.drizzle.insert(jobs).values(jobValues);
+      await this.drizzle.insert(jobsTable).values(jobValues);
 
       // Send all messages to queue
       await this.queue.sendBatch(messages);

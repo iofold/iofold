@@ -5,11 +5,11 @@ import { SSEStream } from '../utils/sse';
 import { createGatewayClient, chatCompletion, DEFAULT_MODEL } from '../ai/gateway';
 import { createDb, type Database } from '../db/client';
 import { eq, and, asc, sql } from 'drizzle-orm';
-import { tasksetRuns, tasksetTasks, traces, agents, agentVersions } from '../db/schema';
+import { tasksetTasks, traces, agents, agentVersions, integrations } from '../db/schema';
+import { D1TraceCollector } from '../playground/tracing/d1-collector';
 
 export interface TasksetRunJobConfig {
   jobId: string;
-  runId: string;
   workspaceId: string;
   agentId: string;
   tasksetId: string;
@@ -31,7 +31,7 @@ export interface TasksetRunJobDeps {
 }
 
 export interface TasksetRunJobResult {
-  run_id: string;
+  job_id: string;
   status: 'completed' | 'partial' | 'failed';
   task_count: number;
   completed_count: number;
@@ -52,8 +52,8 @@ export interface TasksetRunJobResult {
  *    - Contains expected (substring) = 0.8
  *    - Otherwise, use LLM comparison
  * 5. Create a trace with source='taskset' and metadata containing:
- *    - taskId, tasksetId, runId, expectedOutput, score, scoreReason
- * 6. Update taskset_runs progress (stats computed from traces)
+ *    - taskId, tasksetId, jobId, expectedOutput, score, scoreReason
+ * 6. Update job progress (stats stored in job result)
  */
 export class TasksetRunJob {
   private jobManager: JobManager;
@@ -74,18 +74,9 @@ export class TasksetRunJob {
     try {
       // Update job to running
       await this.jobManager.updateJobStatus(this.config.jobId, 'running', 0);
-      this.emitProgress('initializing', 0);
+      await this.emitProgress('initializing', 0);
 
-      // Step 1: Update run status to 'running' and set started_at
-      await this.drizzle
-        .update(tasksetRuns)
-        .set({
-          status: 'running',
-          startedAt: new Date().toISOString()
-        })
-        .where(eq(tasksetRuns.id, this.config.runId));
-
-      this.emitProgress('fetching_agent', 5);
+      await this.emitProgress('fetching_agent', 5);
 
       // Step 2: Fetch agent details
       const agent = await this.fetchAgent();
@@ -93,7 +84,7 @@ export class TasksetRunJob {
         throw new Error(`Agent ${this.config.agentId} not found`);
       }
 
-      this.emitProgress('fetching_tasks', 10);
+      await this.emitProgress('fetching_tasks', 10);
 
       // Step 3: Fetch all tasks from taskset
       const tasks = await this.fetchTasks();
@@ -101,7 +92,7 @@ export class TasksetRunJob {
         throw new Error(`No tasks found in taskset ${this.config.tasksetId}`);
       }
 
-      this.emitProgress('executing_tasks', 15, {
+      await this.emitProgress('executing_tasks', 15, {
         total_tasks: tasks.length
       });
 
@@ -115,7 +106,7 @@ export class TasksetRunJob {
         const task = tasks[i];
         const progress = 15 + ((i / tasks.length) * 75);
 
-        this.emitProgress('executing_task', progress, {
+        await this.emitProgress('executing_task', progress, {
           current_task: i + 1,
           total_tasks: tasks.length,
           task_id: task.id
@@ -127,12 +118,6 @@ export class TasksetRunJob {
           completedCount++;
           totalScore += result.score;
           totalExecutionTime += result.execution_time_ms;
-
-          // Update run progress
-          await this.drizzle
-            .update(tasksetRuns)
-            .set({ completedCount })
-            .where(eq(tasksetRuns.id, this.config.runId));
         } catch (error: any) {
           console.error(`[TasksetRunJob] Task ${task.id} failed:`, error);
 
@@ -140,34 +125,20 @@ export class TasksetRunJob {
 
           // Record failed result as trace with error
           await this.recordFailedResult(task.id, error.message, task, agent.active_version_id);
-
-          // Update run progress
-          await this.drizzle
-            .update(tasksetRuns)
-            .set({ failedCount })
-            .where(eq(tasksetRuns.id, this.config.runId));
         }
       }
 
-      this.emitProgress('finalizing', 95);
+      await this.emitProgress('finalizing', 95);
 
       // Step 5: Calculate final metrics
       const averageScore = completedCount > 0 ? totalScore / completedCount : 0;
       const averageExecutionTime = completedCount > 0 ? totalExecutionTime / completedCount : 0;
 
-      // Step 6: Update run status to final state
+      // Step 6: Determine final status
       const finalStatus = failedCount === 0 ? 'completed' : failedCount < tasks.length ? 'partial' : 'failed';
 
-      await this.drizzle
-        .update(tasksetRuns)
-        .set({
-          status: finalStatus,
-          completedAt: new Date().toISOString()
-        })
-        .where(eq(tasksetRuns.id, this.config.runId));
-
       const result: TasksetRunJobResult = {
-        run_id: this.config.runId,
+        job_id: this.config.jobId,
         status: finalStatus,
         task_count: tasks.length,
         completed_count: completedCount,
@@ -176,23 +147,13 @@ export class TasksetRunJob {
         average_execution_time_ms: averageExecutionTime
       };
 
-      // Mark job as completed
+      // Mark job as completed (stores result in jobs table)
       await this.jobManager.completeJob(this.config.jobId, result);
-      this.emitProgress('completed', 100);
+      await this.emitProgress('completed', 100);
 
       return result;
     } catch (error: any) {
       console.error('[TasksetRunJob] Job failed:', error);
-
-      // Update run status to failed
-      await this.drizzle
-        .update(tasksetRuns)
-        .set({
-          status: 'failed',
-          error: error.message,
-          completedAt: new Date().toISOString()
-        })
-        .where(eq(tasksetRuns.id, this.config.runId));
 
       await this.jobManager.failJob(this.config.jobId, error.message);
 
@@ -272,7 +233,38 @@ export class TasksetRunJob {
   }
 
   /**
+   * Get or create a taskset integration for this workspace
+   * This ensures taskset traces have a proper integration reference
+   */
+  private async getOrCreateTasksetIntegration(): Promise<string> {
+    const existing = await this.drizzle
+      .select({ id: integrations.id })
+      .from(integrations)
+      .where(and(
+        eq(integrations.workspaceId, this.config.workspaceId),
+        eq(integrations.platform, 'taskset')
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return existing[0].id;
+    }
+
+    const integrationId = `int_taskset_${crypto.randomUUID()}`;
+    await this.drizzle.insert(integrations).values({
+      id: integrationId,
+      workspaceId: this.config.workspaceId,
+      name: 'Taskset Runs',
+      platform: 'taskset',
+      apiKeyEncrypted: 'none',
+      status: 'active',
+    });
+    return integrationId;
+  }
+
+  /**
    * Execute a single task and create a trace with the results
+   * Uses D1TraceCollector to create traces in the same format as playground
    */
   private async executeTask(
     task: {
@@ -293,7 +285,7 @@ export class TasksetRunJob {
     execution_time_ms: number;
   }> {
     const startTime = Date.now();
-    const sessionId = `taskset-run-${this.config.runId}-${task.id}`;
+    const sessionId = `taskset-run-${this.config.jobId}-${task.id}`;
 
     // Import createPlaygroundDeepAgent dynamically
     const { createPlaygroundDeepAgent } = await import('../playground/agent-deepagents');
@@ -322,72 +314,159 @@ export class TasksetRunJob {
       agentId: agent.id,
     });
 
-    // Execute agent with timeout (2 minutes default - email tools may take longer)
-    const timeoutMs = this.config.config?.timeout_per_task_ms || 120000;
-    const messages = [{ role: 'user' as const, content: task.user_message }];
+    // Get or create taskset integration
+    const integrationId = await this.getOrCreateTasksetIntegration();
 
-    const response = await Promise.race([
-      playgroundAgent.invoke(messages),
-      new Promise<never>((_, reject) =>
+    // Generate trace ID early so we can track everything
+    const traceId = `trace_${crypto.randomUUID()}`;
+
+    // Custom metadata object (will be updated with score after execution)
+    const tasksetMetadata: Record<string, unknown> = {
+      tasksetSource: true,
+      taskId: task.id,
+      tasksetId: this.config.tasksetId,
+      jobId: this.config.jobId,
+      expectedOutput: task.expected_output,
+      taskSource: task.source,
+      taskMetadata: task.metadata,
+    };
+
+    // Initialize trace collector (same as playground but with taskset source)
+    const collector = new D1TraceCollector(this.deps.db);
+    collector.startTrace(traceId, {
+      workspaceId: this.config.workspaceId,
+      sessionId,
+      agentId: agent.id,
+      agentVersionId: agent.active_version_id || '',
+      modelProvider: (this.config.modelProvider as any) || 'anthropic',
+      modelId: this.config.modelId || 'claude-sonnet-4-5',
+      integrationId,
+      source: 'taskset',  // Use taskset as source (not playground)
+      customMetadata: tasksetMetadata,
+    });
+
+    // Track active tool call spans
+    const toolSpans = new Map<string, string>();
+    let response = '';
+
+    // Create main LLM generation span
+    const agentMessages = [{ role: 'user' as const, content: task.user_message }];
+    const mainSpanId = collector.startSpan({
+      traceId,
+      name: 'LLM Generation',
+      input: {
+        messages: agentMessages,
+        model: this.config.modelId || 'claude-sonnet-4-5',
+        provider: this.config.modelProvider || 'anthropic',
+      },
+    });
+    collector.logGeneration({
+      traceId,
+      spanId: mainSpanId,
+      name: 'LLM Generation',
+      input: { messages: agentMessages },
+    });
+
+    // Execute agent with timeout using streaming (to capture spans properly)
+    const timeoutMs = this.config.config?.timeout_per_task_ms || 120000;
+    let hasError = false;
+    let errorMessage: string | undefined;
+
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Task timeout')), timeoutMs)
-      ),
-    ]);
+      );
+
+      // Stream events from the agent (like playground does)
+      const streamPromise = (async () => {
+        for await (const event of playgroundAgent.stream(agentMessages)) {
+          // Track text for response
+          if (event.type === 'text-delta' && event.text) {
+            response += event.text;
+          }
+
+          // Track tool calls in collector
+          if (event.type === 'tool-call-start' && event.toolCallId && event.toolName) {
+            const spanId = collector.startSpan({
+              traceId,
+              parentSpanId: mainSpanId,
+              name: event.toolName,
+              input: { toolName: event.toolName },
+            });
+            toolSpans.set(event.toolCallId, spanId);
+          } else if (event.type === 'tool-call-args' && event.toolCallId && event.args) {
+            const spanId = toolSpans.get(event.toolCallId);
+            if (spanId) {
+              try {
+                const parsedArgs = JSON.parse(event.args);
+                collector.logToolCall({
+                  traceId,
+                  spanId,
+                  toolName: 'tool',
+                  input: parsedArgs,
+                });
+              } catch {
+                collector.logToolCall({
+                  traceId,
+                  spanId,
+                  toolName: 'tool',
+                  input: { raw: event.args },
+                });
+              }
+            }
+          } else if (event.type === 'tool-result' && event.toolCallId && event.result) {
+            const spanId = toolSpans.get(event.toolCallId);
+            if (spanId) {
+              let resultData: unknown;
+              try {
+                resultData = JSON.parse(event.result);
+              } catch {
+                resultData = event.result;
+              }
+              collector.logToolResult(spanId, resultData);
+              collector.endSpan(spanId);
+            }
+          } else if (event.type === 'error') {
+            hasError = true;
+            errorMessage = typeof event.error === 'string'
+              ? event.error
+              : (event.error as any)?.message || 'Unknown error';
+          }
+        }
+        return response;
+      })();
+
+      response = await Promise.race([streamPromise, timeoutPromise]);
+    } catch (error: any) {
+      hasError = true;
+      errorMessage = error.message || 'Task execution failed';
+      response = `Error: ${errorMessage}`;
+    }
 
     const executionTimeMs = Date.now() - startTime;
-    const now = new Date().toISOString();
+
+    // End main span with output
+    collector.endSpan(mainSpanId, {
+      output: response,
+      usage: { totalTokens: 0 }, // We don't have token counts here
+    });
 
     // Compare response with expected output
     const { score, scoreReason } = await this.compareOutput(response, task.expected_output);
 
-    // Create trace with taskset source and metadata containing task info
-    const traceId = this.generateId('trc');
-    const hasErrors = score < 0.7;
+    // Update custom metadata with score results before ending trace
+    // Since tasksetMetadata is passed by reference, updating it here will
+    // be reflected when the trace is flushed
+    tasksetMetadata.score = score;
+    tasksetMetadata.scoreReason = scoreReason;
+    tasksetMetadata.executionTimeMs = executionTimeMs;
+    tasksetMetadata.hasErrors = hasError || score < 0.7;
+    if (errorMessage) {
+      tasksetMetadata.error = errorMessage;
+    }
 
-    // Build steps array representing the agent execution
-    const steps: unknown[] = [
-      {
-        type: 'user_message',
-        content: task.user_message,
-        timestamp: now,
-      },
-      {
-        type: 'agent_response',
-        content: response,
-        timestamp: now,
-        execution_time_ms: executionTimeMs,
-      },
-    ];
-
-    // Store trace with taskset metadata
-    await this.drizzle
-      .insert(traces)
-      .values({
-        id: traceId,
-        workspaceId: this.config.workspaceId,
-        integrationId: null, // Internal source, no external integration
-        traceId: `taskset-${this.config.runId}-${task.id}`,
-        source: 'taskset',
-        timestamp: now,
-        metadata: {
-          tasksetSource: true,
-          taskId: task.id,
-          tasksetId: this.config.tasksetId,
-          runId: this.config.runId,
-          expectedOutput: task.expected_output,
-          score,
-          scoreReason,
-          taskSource: task.source,
-          taskMetadata: task.metadata,
-        },
-        steps,
-        inputPreview: task.user_message.substring(0, 200),
-        outputPreview: response.substring(0, 200),
-        stepCount: steps.length,
-        hasErrors,
-        agentVersionId: agent.active_version_id,
-        assignmentStatus: 'assigned', // Auto-assigned to agent
-        importedAt: now,
-      });
+    // End trace (will flush to DB with proper LangGraphExecutionStep format)
+    await collector.endTrace(traceId, response);
 
     return { score, execution_time_ms: executionTimeMs };
   }
@@ -567,14 +646,14 @@ Respond with JSON only:
         id: traceId,
         workspaceId: this.config.workspaceId,
         integrationId: null,
-        traceId: `taskset-${this.config.runId}-${taskId}`,
+        traceId: `taskset-${this.config.jobId}-${taskId}`,
         source: 'taskset',
         timestamp: now,
         metadata: {
           tasksetSource: true,
           taskId,
           tasksetId: this.config.tasksetId,
-          runId: this.config.runId,
+          jobId: this.config.jobId,
           expectedOutput: task?.expected_output ?? null,
           score: 0.0,
           scoreReason: `Error: ${errorMessage}`,
@@ -601,11 +680,43 @@ Respond with JSON only:
   }
 
   /**
-   * Emit progress event to stream
+   * Emit progress event to stream and update database
    */
-  private emitProgress(status: string, progress: number, extra?: any) {
+  private async emitProgress(status: string, progress: number, extra?: any) {
+    // Build human-readable message from status and extra data
+    const message = this.buildStatusMessage(status, extra);
+
+    // Update progress in database with log message (for SSE polling)
+    await this.jobManager.updateJobProgress(this.config.jobId, Math.round(progress), message);
+
+    // Also send to direct SSE stream if available
     if (this.stream) {
       this.stream.sendProgress({ status, progress, ...extra });
+      this.stream.sendLog('info', message);
+    }
+  }
+
+  /**
+   * Build human-readable status message
+   */
+  private buildStatusMessage(status: string, extra?: any): string {
+    switch (status) {
+      case 'initializing':
+        return 'Initializing taskset run...';
+      case 'fetching_agent':
+        return 'Fetching agent configuration...';
+      case 'fetching_tasks':
+        return 'Loading tasks from taskset...';
+      case 'executing_tasks':
+        return `Starting execution of ${extra?.total_tasks || 0} tasks`;
+      case 'executing_task':
+        return `Executing task ${extra?.current_task || 0}/${extra?.total_tasks || 0}`;
+      case 'finalizing':
+        return 'Finalizing results...';
+      case 'completed':
+        return 'Taskset run completed successfully';
+      default:
+        return status;
     }
   }
 }

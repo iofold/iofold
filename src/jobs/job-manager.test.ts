@@ -32,7 +32,7 @@ describe('JobManager retry tracking', () => {
   describe('createJob', () => {
     it('should create job with retry configuration', async () => {
       const job = await jobManager.createJob(
-        'eval_execution',
+        'execute',
         'workspace_test',
         {
           maxRetries: 3,
@@ -43,7 +43,7 @@ describe('JobManager retry tracking', () => {
 
       expect(job.id).toMatch(/^job_/);
       expect(job.workspace_id).toBe('workspace_test');
-      expect(job.type).toBe('eval_execution');
+      expect(job.type).toBe('execute');
       expect(job.status).toBe('queued');
       expect(job.progress).toBe(0);
 
@@ -65,7 +65,7 @@ describe('JobManager retry tracking', () => {
 
     it('should create job with default retry configuration', async () => {
       const job = await jobManager.createJob(
-        'trace_import',
+        'import',
         'workspace_test',
         {}
       );
@@ -89,7 +89,7 @@ describe('JobManager retry tracking', () => {
   describe('getJobRetryHistory', () => {
     it('should get job retry history', async () => {
       // Create a job
-      const job = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job = await jobManager.createJob('execute', 'workspace_test');
 
       // Insert retry history entries
       const now = new Date().toISOString();
@@ -133,7 +133,7 @@ describe('JobManager retry tracking', () => {
     });
 
     it('should return empty array for job with no retry history', async () => {
-      const job = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job = await jobManager.createJob('execute', 'workspace_test');
       const history = await jobManager.getJobRetryHistory(job.id);
 
       expect(history).toEqual([]);
@@ -156,7 +156,7 @@ describe('JobManager retry tracking', () => {
       const future = new Date(now.getTime() + 60000).toISOString().replace('T', ' ').substring(0, 19);
 
       // Create jobs with various retry states
-      const job1 = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job1 = await jobManager.createJob('execute', 'workspace_test');
       await db.update(schema.jobs)
         .set({
           status: 'queued',
@@ -165,7 +165,7 @@ describe('JobManager retry tracking', () => {
         .where(eq(schema.jobs.id, job1.id))
         .run();
 
-      const job2 = await jobManager.createJob('eval_generation', 'workspace_test');
+      const job2 = await jobManager.createJob('generate', 'workspace_test');
       await db.update(schema.jobs)
         .set({
           status: 'queued',
@@ -174,7 +174,7 @@ describe('JobManager retry tracking', () => {
         .where(eq(schema.jobs.id, job2.id))
         .run();
 
-      const job3 = await jobManager.createJob('trace_import', 'workspace_test');
+      const job3 = await jobManager.createJob('import', 'workspace_test');
       await db.update(schema.jobs)
         .set({
           status: 'failed',
@@ -196,7 +196,7 @@ describe('JobManager retry tracking', () => {
 
       // Create multiple jobs ready for retry
       for (let i = 0; i < 5; i++) {
-        const job = await jobManager.createJob('eval_execution', 'workspace_test');
+        const job = await jobManager.createJob('execute', 'workspace_test');
         await db.update(schema.jobs)
           .set({
             status: 'queued',
@@ -232,14 +232,14 @@ describe('JobManager retry tracking', () => {
       const past = new Date(Date.now() - 60000).toISOString().replace('T', ' ').substring(0, 19);
 
       // Create job in test workspace
-      const job1 = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job1 = await jobManager.createJob('execute', 'workspace_test');
       await db.update(schema.jobs)
         .set({ status: 'queued', nextRetryAt: past })
         .where(eq(schema.jobs.id, job1.id))
         .run();
 
       // Create job in other workspace
-      const job2 = await jobManager.createJob('eval_execution', 'workspace_other');
+      const job2 = await jobManager.createJob('execute', 'workspace_other');
       await db.update(schema.jobs)
         .set({ status: 'queued', nextRetryAt: past })
         .where(eq(schema.jobs.id, job2.id))
@@ -255,7 +255,7 @@ describe('JobManager retry tracking', () => {
 
   describe('updateJobErrorCategory', () => {
     it('should update job error category', async () => {
-      const job = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job = await jobManager.createJob('execute', 'workspace_test');
 
       // Update error category
       await jobManager.updateJobErrorCategory(job.id, 'transient_network');
@@ -272,7 +272,7 @@ describe('JobManager retry tracking', () => {
     });
 
     it('should handle permanent error categories', async () => {
-      const job = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job = await jobManager.createJob('execute', 'workspace_test');
 
       await jobManager.updateJobErrorCategory(job.id, 'permanent_validation');
 
@@ -286,7 +286,7 @@ describe('JobManager retry tracking', () => {
     });
 
     it('should handle unknown error category', async () => {
-      const job = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job = await jobManager.createJob('execute', 'workspace_test');
 
       await jobManager.updateJobErrorCategory(job.id, 'unknown');
 
@@ -303,13 +303,13 @@ describe('JobManager retry tracking', () => {
   describe('getJobsByErrorCategory', () => {
     it('should get jobs by error category', async () => {
       // Create jobs with different error categories
-      const job1 = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job1 = await jobManager.createJob('execute', 'workspace_test');
       await jobManager.updateJobErrorCategory(job1.id, 'transient_network');
 
-      const job2 = await jobManager.createJob('eval_generation', 'workspace_test');
+      const job2 = await jobManager.createJob('generate', 'workspace_test');
       await jobManager.updateJobErrorCategory(job2.id, 'transient_network');
 
-      const job3 = await jobManager.createJob('trace_import', 'workspace_test');
+      const job3 = await jobManager.createJob('import', 'workspace_test');
       await jobManager.updateJobErrorCategory(job3.id, 'permanent_validation');
 
       // Get jobs by category
@@ -326,7 +326,7 @@ describe('JobManager retry tracking', () => {
       // Create multiple jobs with same error category
       const jobIds: string[] = [];
       for (let i = 0; i < 5; i++) {
-        const job = await jobManager.createJob('eval_execution', 'workspace_test');
+        const job = await jobManager.createJob('execute', 'workspace_test');
         await jobManager.updateJobErrorCategory(job.id, 'transient_rate_limit');
         jobIds.push(job.id);
       }
@@ -342,7 +342,7 @@ describe('JobManager retry tracking', () => {
     });
 
     it('should return empty array when no jobs match category', async () => {
-      const job = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job = await jobManager.createJob('execute', 'workspace_test');
       await jobManager.updateJobErrorCategory(job.id, 'transient_network');
 
       const jobs = await jobManager.getJobsByErrorCategory(
@@ -362,11 +362,11 @@ describe('JobManager retry tracking', () => {
       }).run();
 
       // Create job in test workspace
-      const job1 = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job1 = await jobManager.createJob('execute', 'workspace_test');
       await jobManager.updateJobErrorCategory(job1.id, 'transient_network');
 
       // Create job in other workspace with same error category
-      const job2 = await jobManager.createJob('eval_execution', 'workspace_other');
+      const job2 = await jobManager.createJob('execute', 'workspace_other');
       await jobManager.updateJobErrorCategory(job2.id, 'transient_network');
 
       // Should only return job from test workspace
@@ -381,18 +381,18 @@ describe('JobManager retry tracking', () => {
 
     it('should order jobs by created_at descending', async () => {
       // Create jobs with slight time differences
-      const job1 = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job1 = await jobManager.createJob('execute', 'workspace_test');
       await jobManager.updateJobErrorCategory(job1.id, 'transient_server');
 
       // Wait a tiny bit to ensure different timestamps
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      const job2 = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job2 = await jobManager.createJob('execute', 'workspace_test');
       await jobManager.updateJobErrorCategory(job2.id, 'transient_server');
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      const job3 = await jobManager.createJob('eval_execution', 'workspace_test');
+      const job3 = await jobManager.createJob('execute', 'workspace_test');
       await jobManager.updateJobErrorCategory(job3.id, 'transient_server');
 
       // Get jobs - should be in reverse chronological order
