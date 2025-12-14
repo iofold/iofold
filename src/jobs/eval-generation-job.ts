@@ -60,21 +60,40 @@ export class EvalGenerationJob {
     try {
       // Update job to running
       await this.jobManager.updateJobStatus(this.config.jobId, 'running', 0);
+      this.stream?.sendLog('info', 'Starting eval generation job...', {
+        jobId: this.config.jobId,
+        agentId: this.config.agentId
+      });
       this.emitProgress('fetching_traces', 0);
 
       // Step 1: Fetch feedback from eval set
+      this.stream?.sendLog('info', 'Fetching labeled traces for training...');
       const feedback = await this.fetchFeedback();
       if (feedback.positive.length === 0 || feedback.negative.length === 0) {
         throw new Error('Insufficient examples: need at least 1 positive and 1 negative example');
       }
 
+      this.stream?.sendLog('info', 'Retrieved training examples', {
+        positive: feedback.positive.length,
+        negative: feedback.negative.length,
+        total: feedback.positive.length + feedback.negative.length
+      });
+
       this.emitProgress('calling_llm', 20);
 
       // Step 2: Generate eval code using LLM
+      this.stream?.sendLog('info', 'Generating eval function with AI...', {
+        model: this.config.model || 'anthropic/claude-sonnet-4-5'
+      });
       const generationResult = await this.generator.generate({
         name: this.config.name,
         positiveExamples: feedback.positive,
         negativeExamples: feedback.negative
+      });
+
+      this.stream?.sendLog('info', 'AI generation completed', {
+        model: generationResult.metadata.model,
+        codeLength: generationResult.code.length
       });
 
       this.emitProgress('validating_code', 60);
@@ -86,6 +105,10 @@ export class EvalGenerationJob {
         ...feedback.negative.map(trace => ({ trace, expectedScore: 0.0 }))
       ];
 
+      this.stream?.sendLog('info', 'Validating generated eval code...', {
+        testCases: testCases.length
+      });
+
       this.emitProgress('testing_accuracy', 70, {
         tested: 0,
         total: testCases.length
@@ -93,9 +116,17 @@ export class EvalGenerationJob {
 
       const testResult = await this.tester.test(generationResult.code, testCases);
 
+      this.stream?.sendLog('info', 'Validation completed', {
+        accuracy: `${(testResult.accuracy * 100).toFixed(1)}%`,
+        correct: testResult.correct,
+        incorrect: testResult.incorrect,
+        errors: testResult.errors
+      });
+
       this.emitProgress('saving_eval', 90);
 
       // Step 4: Save eval to database
+      this.stream?.sendLog('info', 'Saving eval to database...');
       const evalId = `eval_${crypto.randomUUID()}`;
 
       // Get next version number for this agent
@@ -156,11 +187,19 @@ export class EvalGenerationJob {
 
       // Mark job as completed
       await this.jobManager.completeJob(this.config.jobId, result);
+      this.stream?.sendLog('info', 'Eval generation completed successfully', {
+        evalId,
+        version,
+        accuracy: `${(testResult.accuracy * 100).toFixed(1)}%`
+      });
       this.emitProgress('completed', 100);
 
       return result;
     } catch (error: any) {
       console.error('Eval generation job failed:', error);
+      this.stream?.sendLog('error', 'Eval generation failed', {
+        error: error.message
+      });
       await this.jobManager.failJob(this.config.jobId, error.message);
 
       if (this.stream) {
