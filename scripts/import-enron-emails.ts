@@ -58,7 +58,15 @@ interface Config {
   parquetPath?: string;
 }
 
-const HUGGINGFACE_URL = 'https://huggingface.co/datasets/corbt/enron-emails/resolve/main/train.parquet';
+// HuggingFace parquet API endpoint for corbt/enron-emails dataset
+// Dataset: https://huggingface.co/datasets/corbt/enron-emails (~517k emails)
+// Schema: message_id, subject, from, to[], cc[], bcc[], date, body, file_name
+const HUGGINGFACE_PARQUET_FILES = [
+  'https://huggingface.co/api/datasets/corbt/enron-emails/parquet/default/train/0.parquet',
+  'https://huggingface.co/api/datasets/corbt/enron-emails/parquet/default/train/1.parquet',
+  'https://huggingface.co/api/datasets/corbt/enron-emails/parquet/default/train/2.parquet',
+];
+const HUGGINGFACE_URL = HUGGINGFACE_PARQUET_FILES[0]; // Default to first shard
 const TEMP_DIR = path.join(process.cwd(), '.tmp');
 const DEFAULT_PARQUET_PATH = path.join(TEMP_DIR, 'enron-emails.parquet');
 
