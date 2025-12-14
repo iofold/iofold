@@ -58,6 +58,11 @@ export async function createBatchRollout(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // Null check after validation to satisfy TypeScript
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const body = await parseJsonBody<BatchRolloutRequest>(request);
 
     // Validate required fields
@@ -167,6 +172,12 @@ export async function listRolloutBatches(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+
+    // Null check after validation to satisfy TypeScript
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const drizzle = createDb(env.DB);
 
     const url = new URL(request.url);
@@ -258,6 +269,12 @@ export async function getBatchStatus(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+
+    // Null check after validation to satisfy TypeScript
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const drizzle = createDb(env.DB);
 
     // 1. Get batch record
@@ -320,8 +337,8 @@ export async function getBatchStatus(
       results: results.map((r) => ({
         task_id: r.taskId,
         status: r.status,
-        trace: r.trace,
-        execution_time_ms: r.executionTimeMs,
+        trace: r.trace || undefined,
+        execution_time_ms: r.executionTimeMs || undefined,
         error: r.error || undefined,
       })),
       created_at: batch.createdAt,

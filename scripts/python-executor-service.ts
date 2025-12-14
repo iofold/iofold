@@ -11,7 +11,8 @@ import { spawn } from 'node:child_process';
 const PORT = 9999;
 const DEFAULT_TIMEOUT = 5000;
 
-const ALLOWED_IMPORTS = ['json', 're', 'typing'];
+// Match python-runner.ts DEFAULT_ALLOWED_IMPORTS
+const ALLOWED_IMPORTS = ['json', 're', 'typing', 'math', 'datetime', 'difflib'];
 const BLOCKED_IMPORTS = [
   'os', 'sys', 'subprocess', 'socket', 'urllib',
   'requests', 'http', 'ftplib', 'smtplib',

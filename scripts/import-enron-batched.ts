@@ -123,7 +123,7 @@ print(f'Exported {len(records)} records', file=sys.stderr)
 }
 
 function executeWrangler(sql: string, remote: boolean): void {
-  const remoteFlag = remote ? '--remote' : '--local';
+  const remoteFlag = remote ? '--remote --env staging' : '--local';
 
   // Write SQL to temp file
   const sqlFile = path.join(TEMP_DIR, 'batch.sql');
@@ -131,7 +131,7 @@ function executeWrangler(sql: string, remote: boolean): void {
 
   const cmd = remote
     ? `npx wrangler d1 execute BENCHMARKS_DB ${remoteFlag} --file=${sqlFile}`
-    : `docker exec iofold-backend npx wrangler d1 execute BENCHMARKS_DB ${remoteFlag} --file=/app/.tmp/batch.sql`;
+    : `docker exec iofold-backend npx wrangler d1 execute BENCHMARKS_DB --local --file=/app/.tmp/batch.sql`;
 
   try {
     execSync(cmd, { stdio: 'pipe', timeout: 60000 });
