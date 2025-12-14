@@ -49,7 +49,7 @@ queue = "iofold-jobs"
 [[env.staging.queues.consumers]]
 queue = "iofold-jobs"
 max_batch_size = 10
-max_batch_timeout = 30
+max_batch_timeout = 5
 max_retries = 3
 dead_letter_queue = "iofold-jobs-dlq"
 
@@ -120,7 +120,7 @@ queue = "iofold-jobs"
 [[queues.consumers]]
 queue = "iofold-jobs"
 max_batch_size = 10
-max_batch_timeout = 30
+max_batch_timeout = 5
 max_retries = 3
 dead_letter_queue = "iofold-jobs-dlq"
 
