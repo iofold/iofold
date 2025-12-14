@@ -41,6 +41,8 @@ const EMAIL_ASSISTANT_ID = 'agent_email_assistant';
 const EMAIL_ASSISTANT_CONFIG = {
   name: 'Email Assistant',
   description: 'AI assistant for searching and answering questions about emails. Uses the Enron email dataset for ART-E benchmark tasks.',
+  variables: ['inbox_address', 'query_date'],
+  tools: ['email_search', 'email_get'],
   promptTemplate: `You are an email assistant helping users find and understand their emails.
 
 **Current Context:**
@@ -201,11 +203,12 @@ async function getActiveVersion(
 }
 
 /**
- * Create a new agent version with a prompt template
+ * Create a new agent version with a prompt template and variables
  */
 async function createAgentVersion(
   agentId: string,
   promptTemplate: string,
+  variables: string[],
   workspaceId: string,
   apiBase: string
 ): Promise<AgentVersionResponse> {
@@ -217,6 +220,7 @@ async function createAgentVersion(
     },
     body: JSON.stringify({
       prompt_template: promptTemplate,
+      variables,
       source: 'manual',
       status: 'active',
     }),
@@ -231,12 +235,13 @@ async function createAgentVersion(
 }
 
 /**
- * Update an agent version's prompt template
+ * Update an agent version's prompt template and variables
  */
 async function updateAgentVersion(
   agentId: string,
   versionId: string,
   promptTemplate: string,
+  variables: string[],
   workspaceId: string,
   apiBase: string
 ): Promise<AgentVersionResponse> {
@@ -248,6 +253,7 @@ async function updateAgentVersion(
     },
     body: JSON.stringify({
       prompt_template: promptTemplate,
+      variables,
     }),
   });
 
@@ -257,6 +263,61 @@ async function updateAgentVersion(
   }
 
   return response.json();
+}
+
+/**
+ * Attach a tool to an agent (idempotent - ignores if already attached)
+ */
+async function attachTool(
+  agentId: string,
+  toolId: string,
+  workspaceId: string,
+  apiBase: string
+): Promise<boolean> {
+  const response = await fetch(`${apiBase}/api/agents/${agentId}/tools`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Workspace-Id': workspaceId,
+    },
+    body: JSON.stringify({ tool_id: toolId }),
+  });
+
+  if (response.status === 409) {
+    // Already attached - that's fine
+    return false;
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to attach tool ${toolId}: ${response.status} - ${errorText}`);
+  }
+
+  return true;
+}
+
+/**
+ * Ensure all required tools are attached to the agent
+ */
+async function ensureToolsAttached(
+  agentId: string,
+  toolIds: string[],
+  workspaceId: string,
+  apiBase: string
+): Promise<{ attached: string[]; existing: string[] }> {
+  const attached: string[] = [];
+  const existing: string[] = [];
+
+  for (const toolId of toolIds) {
+    const wasAttached = await attachTool(agentId, toolId, workspaceId, apiBase);
+    if (wasAttached) {
+      attached.push(toolId);
+    } else {
+      existing.push(toolId);
+    }
+  }
+
+  return { attached, existing };
 }
 
 /**
@@ -304,22 +365,24 @@ async function ensureEmailAssistant(
   let version = await getActiveVersion(agent.id, workspaceId, apiBase);
 
   if (!version) {
-    // Create a new version with the prompt
+    // Create a new version with the prompt and variables
     console.log(`  Creating agent version with Email Assistant prompt...`);
     version = await createAgentVersion(
       agent.id,
       EMAIL_ASSISTANT_CONFIG.promptTemplate,
+      EMAIL_ASSISTANT_CONFIG.variables,
       workspaceId,
       apiBase
     );
     updated = true;
   } else if (!version.prompt_template || version.prompt_template.trim() === '') {
-    // Update existing version with proper prompt
+    // Update existing version with proper prompt and variables
     console.log(`  Updating agent version with Email Assistant prompt...`);
     version = await updateAgentVersion(
       agent.id,
       version.id,
       EMAIL_ASSISTANT_CONFIG.promptTemplate,
+      EMAIL_ASSISTANT_CONFIG.variables,
       workspaceId,
       apiBase
     );
@@ -331,6 +394,7 @@ async function ensureEmailAssistant(
       agent.id,
       version.id,
       EMAIL_ASSISTANT_CONFIG.promptTemplate,
+      EMAIL_ASSISTANT_CONFIG.variables,
       workspaceId,
       apiBase
     );
@@ -488,6 +552,21 @@ async function main(): Promise<void> {
 
     // Use the actual agent ID from here on
     const actualAgentId = agent.id;
+
+    // Attach required tools
+    console.log(`\nStep 0b/4: Ensuring tools are attached...`);
+    const { attached, existing } = await ensureToolsAttached(
+      actualAgentId,
+      EMAIL_ASSISTANT_CONFIG.tools,
+      workspaceId,
+      apiBaseUrl
+    );
+    if (attached.length > 0) {
+      console.log(`✓ Attached tools: ${attached.join(', ')}`);
+    }
+    if (existing.length > 0) {
+      console.log(`  Already attached: ${existing.join(', ')}`);
+    }
 
     // Load ART-E tasks
     console.log(`\nStep 1/4: Loading ${count} ART-E tasks from ${split} split...`);
