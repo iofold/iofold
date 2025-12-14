@@ -76,11 +76,34 @@ docker exec iofold-backend npx wrangler d1 execute BENCHMARKS_DB --local --comma
 | Module Overview | `docs/MODULE_OVERVIEW.md` | Code walkthrough |
 
 ## Development Rules
-1. **pnpm only** - Never npm/yarn
-2. **Consult design docs** - Architecture is documented
-3. **Langfuse only (MVP)** - No scope creep
-4. **User-triggered** - No auto-magic for eval gen
-5. **Accuracy > speed** - Quality paramount
+1. **Docker for development** - Always use Docker containers for backend/frontend dev servers
+2. **pnpm only** - Never npm/yarn
+3. **Consult design docs** - Architecture is documented
+4. **Langfuse only (MVP)** - No scope creep
+5. **User-triggered** - No auto-magic for eval gen
+6. **Accuracy > speed** - Quality paramount
+
+## Docker Development
+
+**Start all services:**
+```bash
+docker compose up -d
+```
+
+**Backend logs:**
+```bash
+docker logs -f iofold-backend
+```
+
+**Frontend logs:**
+```bash
+docker logs -f iofold-frontend
+```
+
+**Run commands inside backend container:**
+```bash
+docker exec iofold-backend <command>
+```
 
 ## Security: Python Sandbox
 Evals run in container with: `json`, `re`, `typing` only | 5s timeout | 50MB RAM | No network/filesystem
