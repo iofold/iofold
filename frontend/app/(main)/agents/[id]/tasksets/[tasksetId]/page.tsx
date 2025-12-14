@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatRelativeTime, formatPercentage } from '@/lib/utils'
+import { LiveJobMonitor } from '@/components/jobs/live-job-monitor'
 import type { TasksetRun } from '@/types/taskset'
 
 type RunStatus = 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
@@ -69,6 +70,7 @@ export default function TasksetDetailPage() {
   const agentId = params.id as string
   const tasksetId = params.tasksetId as string
   const [runModalOpen, setRunModalOpen] = useState(false)
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
 
   // Fetch agent
   const { data: agent, isLoading: agentLoading } = useQuery({
@@ -82,12 +84,14 @@ export default function TasksetDetailPage() {
     queryFn: () => apiClient.getTaskset(agentId, tasksetId),
   })
 
-  // Fetch runs with polling for active runs
+  // Fetch runs - LiveJobMonitor handles SSE when active, fallback to polling otherwise
   const { data: runsData, isLoading: runsLoading, refetch: refetchRuns } = useQuery({
     queryKey: ['taskset-runs', agentId, tasksetId],
     queryFn: () => apiClient.listTasksetRuns(agentId, tasksetId),
     refetchInterval: (query) => {
-      // Poll every 3 seconds if there are running or queued runs
+      // Don't poll if LiveJobMonitor is showing (it handles SSE)
+      if (activeJobId) return false
+      // Poll every 3 seconds if there are running or queued runs (fallback for page refresh)
       const data = query.state.data
       const hasActiveRuns = data?.runs?.some(
         (r: TasksetRun) => r.status === 'running' || r.status === 'queued'
@@ -104,6 +108,8 @@ export default function TasksetDetailPage() {
     }),
     onSuccess: (data) => {
       toast.success('Taskset run started!')
+      // Set job ID for SSE live updates
+      setActiveJobId(data.job_id)
       queryClient.invalidateQueries({ queryKey: ['taskset-runs', agentId, tasksetId] })
       setRunModalOpen(false)
     },
@@ -189,6 +195,24 @@ export default function TasksetDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* Live Job Monitor - shows when a run is active */}
+      {activeJobId && (
+        <div className="mb-8">
+          <LiveJobMonitor
+            jobId={activeJobId}
+            jobType="taskset_run"
+            onComplete={() => {
+              queryClient.invalidateQueries({ queryKey: ['taskset-runs', agentId, tasksetId] })
+              setActiveJobId(null)
+            }}
+            onFail={() => {
+              queryClient.invalidateQueries({ queryKey: ['taskset-runs', agentId, tasksetId] })
+              setActiveJobId(null)
+            }}
+          />
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
