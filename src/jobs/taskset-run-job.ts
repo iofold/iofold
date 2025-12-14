@@ -4,8 +4,8 @@ import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
 import { createGatewayClient, chatCompletion, DEFAULT_MODEL } from '../ai/gateway';
 import { createDb, type Database } from '../db/client';
-import { eq, and, asc } from 'drizzle-orm';
-import { tasksetRuns, tasksetTasks, tasksetRunResults, agents, agentVersions } from '../db/schema';
+import { eq, and, asc, sql } from 'drizzle-orm';
+import { tasksetRuns, tasksetTasks, traces, agents, agentVersions } from '../db/schema';
 
 export interface TasksetRunJobConfig {
   jobId: string;
@@ -46,13 +46,14 @@ export interface TasksetRunJobResult {
  * For each task:
  * 1. Load task from taskset_tasks
  * 2. Call playground agent with task user_message
- * 3. Capture response
+ * 3. Capture response and agent steps
  * 4. Compare with expected_output using simple scoring:
  *    - Exact match = 1.0
  *    - Contains expected (substring) = 0.8
  *    - Otherwise, use LLM comparison
- * 5. Insert result to taskset_run_results (trace_id is optional/null)
- * 6. Update taskset_runs progress
+ * 5. Create a trace with source='taskset' and metadata containing:
+ *    - taskId, tasksetId, runId, expectedOutput, score, scoreReason
+ * 6. Update taskset_runs progress (stats computed from traces)
  */
 export class TasksetRunJob {
   private jobManager: JobManager;
@@ -137,8 +138,8 @@ export class TasksetRunJob {
 
           failedCount++;
 
-          // Record failed result
-          await this.recordFailedResult(task.id, error.message);
+          // Record failed result as trace with error
+          await this.recordFailedResult(task.id, error.message, task, agent.active_version_id);
 
           // Update run progress
           await this.drizzle
@@ -271,7 +272,7 @@ export class TasksetRunJob {
   }
 
   /**
-   * Execute a single task
+   * Execute a single task and create a trace with the results
    */
   private async executeTask(
     task: {
@@ -333,34 +334,59 @@ export class TasksetRunJob {
     ]);
 
     const executionTimeMs = Date.now() - startTime;
-
-    // Trace creation is optional for taskset runs. The traces table requires an
-    // integration_id (FK to integrations table), but taskset runs are standalone
-    // executions without a trace integration. All execution data is stored in
-    // taskset_run_results instead, including response, score, and execution time.
-    const traceId: string | null = null;
+    const now = new Date().toISOString();
 
     // Compare response with expected output
     const { score, scoreReason } = await this.compareOutput(response, task.expected_output);
 
-    // Store result
-    const resultId = this.generateId('trr');
-    const status = score >= 0.7 ? 'completed' : 'failed';
+    // Create trace with taskset source and metadata containing task info
+    const traceId = this.generateId('trc');
+    const hasErrors = score < 0.7;
 
+    // Build steps array representing the agent execution
+    const steps: unknown[] = [
+      {
+        type: 'user_message',
+        content: task.user_message,
+        timestamp: now,
+      },
+      {
+        type: 'agent_response',
+        content: response,
+        timestamp: now,
+        execution_time_ms: executionTimeMs,
+      },
+    ];
+
+    // Store trace with taskset metadata
     await this.drizzle
-      .insert(tasksetRunResults)
+      .insert(traces)
       .values({
-        id: resultId,
-        runId: this.config.runId,
-        taskId: task.id,
-        status,
-        response,
-        expectedOutput: task.expected_output,
-        score,
-        scoreReason,
-        traceId,
-        executionTimeMs,
-        createdAt: new Date().toISOString()
+        id: traceId,
+        workspaceId: this.config.workspaceId,
+        integrationId: null, // Internal source, no external integration
+        traceId: `taskset-${this.config.runId}-${task.id}`,
+        source: 'taskset',
+        timestamp: now,
+        metadata: {
+          tasksetSource: true,
+          taskId: task.id,
+          tasksetId: this.config.tasksetId,
+          runId: this.config.runId,
+          expectedOutput: task.expected_output,
+          score,
+          scoreReason,
+          taskSource: task.source,
+          taskMetadata: task.metadata,
+        },
+        steps,
+        inputPreview: task.user_message.substring(0, 200),
+        outputPreview: response.substring(0, 200),
+        stepCount: steps.length,
+        hasErrors,
+        agentVersionId: agent.active_version_id,
+        assignmentStatus: 'assigned', // Auto-assigned to agent
+        importedAt: now,
       });
 
     return { score, execution_time_ms: executionTimeMs };
@@ -499,21 +525,71 @@ Respond with JSON only:
   }
 
   /**
-   * Record a failed task result
+   * Record a failed task as a trace with error information
    */
-  private async recordFailedResult(taskId: string, errorMessage: string): Promise<void> {
-    const resultId = this.generateId('trr');
+  private async recordFailedResult(
+    taskId: string,
+    errorMessage: string,
+    task?: {
+      user_message: string;
+      expected_output: string | null;
+      source: string;
+      metadata: any;
+    },
+    agentVersionId?: string | null
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const traceId = this.generateId('trc');
+
+    // Build steps with error
+    const steps: unknown[] = task ? [
+      {
+        type: 'user_message',
+        content: task.user_message,
+        timestamp: now,
+      },
+      {
+        type: 'error',
+        error: errorMessage,
+        timestamp: now,
+      },
+    ] : [
+      {
+        type: 'error',
+        error: errorMessage,
+        timestamp: now,
+      },
+    ];
 
     await this.drizzle
-      .insert(tasksetRunResults)
+      .insert(traces)
       .values({
-        id: resultId,
-        runId: this.config.runId,
-        taskId,
-        status: 'failed',
-        error: errorMessage,
-        score: 0.0,
-        createdAt: new Date().toISOString()
+        id: traceId,
+        workspaceId: this.config.workspaceId,
+        integrationId: null,
+        traceId: `taskset-${this.config.runId}-${taskId}`,
+        source: 'taskset',
+        timestamp: now,
+        metadata: {
+          tasksetSource: true,
+          taskId,
+          tasksetId: this.config.tasksetId,
+          runId: this.config.runId,
+          expectedOutput: task?.expected_output ?? null,
+          score: 0.0,
+          scoreReason: `Error: ${errorMessage}`,
+          taskSource: task?.source,
+          taskMetadata: task?.metadata,
+          error: errorMessage,
+        },
+        steps,
+        inputPreview: task?.user_message?.substring(0, 200) ?? '',
+        outputPreview: `Error: ${errorMessage.substring(0, 180)}`,
+        stepCount: steps.length,
+        hasErrors: true,
+        agentVersionId: agentVersionId ?? null,
+        assignmentStatus: 'assigned',
+        importedAt: now,
       });
   }
 
