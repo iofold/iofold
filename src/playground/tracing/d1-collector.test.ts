@@ -2,47 +2,63 @@
  * Tests for D1TraceCollector
  *
  * Tests event buffering, conversion to LangGraphExecutionStep format,
- * and D1 database insertion.
+ * and D1 database insertion using real in-memory SQLite.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { D1TraceCollector } from './d1-collector';
 import type { TraceMetadata } from './types';
+import { createTestDb, createMockD1, schema } from '../../../tests/utils/test-db';
 
-// Mock D1 result structure
-const createMockD1Result = (results: any[] = []) => ({
-  results,
-  success: true,
-  meta: { changes: results.length },
-});
-
-// Mock D1 prepared statement
-const createMockPreparedStatement = () => ({
-  bind: vi.fn().mockReturnThis(),
-  all: vi.fn().mockResolvedValue(createMockD1Result([])),
-  first: vi.fn().mockResolvedValue(null),
-  run: vi.fn().mockResolvedValue({ success: true, meta: {} }),
-  raw: vi.fn().mockResolvedValue([]),
-});
-
-// TODO: Rewrite these tests for Drizzle ORM
-// These tests were written for raw D1 SQL (.prepare/.bind/.run pattern)
-// and need to be updated to work with Drizzle's query builder API.
-// For now, skipping these implementation-detail tests.
-describe.skip('D1TraceCollector (needs Drizzle mock rewrite)', () => {
+describe('D1TraceCollector', () => {
   let mockDb: D1Database;
   let collector: D1TraceCollector;
   let traceMetadata: TraceMetadata;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Create fresh in-memory database with schema
+    const { db, sqlite } = createTestDb();
 
-    // Create mock database
-    mockDb = {
-      prepare: vi.fn(() => createMockPreparedStatement()),
-      batch: vi.fn().mockResolvedValue([]),
-    } as any;
+    // Seed required data
+    db.insert(schema.users).values({
+      id: 'user_test',
+      email: 'test@example.com',
+    }).run();
 
+    db.insert(schema.workspaces).values({
+      id: 'ws_123',
+      userId: 'user_test',
+      name: 'Test Workspace',
+    }).run();
+
+    db.insert(schema.agents).values({
+      id: 'agent_123',
+      workspaceId: 'ws_123',
+      name: 'Test Agent',
+      status: 'confirmed',
+    }).run();
+
+    db.insert(schema.agentVersions).values({
+      id: 'av_123',
+      agentId: 'agent_123',
+      version: 1,
+      promptTemplate: 'Test prompt',
+      source: 'manual',
+      status: 'active',
+    }).run();
+
+    // Create an integration with ID 'playground' to satisfy foreign key constraint
+    db.insert(schema.integrations).values({
+      id: 'playground',
+      workspaceId: 'ws_123',
+      name: 'Playground',
+      platform: 'internal',
+      apiKeyEncrypted: 'n/a',
+      status: 'active',
+    }).run();
+
+    // Create mock D1 interface from SQLite
+    mockDb = createMockD1(sqlite);
     collector = new D1TraceCollector(mockDb);
 
     traceMetadata = {
@@ -171,9 +187,6 @@ describe.skip('D1TraceCollector (needs Drizzle mock rewrite)', () => {
 
   describe('Flush and DB insertion', () => {
     it('should insert trace into traces table', async () => {
-      const prepareStub = vi.fn(() => createMockPreparedStatement());
-      mockDb.prepare = prepareStub;
-
       collector.startTrace('trace_1', traceMetadata);
 
       const spanId = collector.startSpan({
@@ -186,29 +199,18 @@ describe.skip('D1TraceCollector (needs Drizzle mock rewrite)', () => {
 
       await collector.endTrace('trace_1');
 
-      // Verify traces table insert
-      const tracesInsertCall = prepareStub.mock.calls.find((call: any[]) =>
-        call[0].includes('INSERT INTO traces')
-      ) as any[];
+      // Verify trace was inserted
+      const result = await mockDb.prepare(
+        'SELECT * FROM traces WHERE trace_id = ?'
+      ).bind('trace_1').first();
 
-      expect(tracesInsertCall).toBeDefined();
-      expect(tracesInsertCall[0]).toContain('workspace_id');
-      expect(tracesInsertCall[0]).toContain('integration_id');
-      expect(tracesInsertCall[0]).toContain('source');
+      expect(result).toBeDefined();
+      expect((result as any).workspace_id).toBe('ws_123');
+      expect((result as any).source).toBe('playground');
+      expect((result as any).agent_version_id).toBe('av_123');
     });
 
     it('should convert spans to LangGraphExecutionStep format', async () => {
-      const bindMock = vi.fn().mockReturnThis();
-      const runMock = vi.fn().mockResolvedValue({ success: true, meta: {} });
-
-      mockDb.prepare = vi.fn(() => ({
-        bind: bindMock,
-        all: vi.fn().mockResolvedValue(createMockD1Result([])),
-        first: vi.fn().mockResolvedValue(null),
-        run: runMock,
-        raw: vi.fn().mockResolvedValue([]),
-      })) as any;
-
       collector.startTrace('trace_1', traceMetadata);
 
       // Create LLM call span
@@ -248,16 +250,13 @@ describe.skip('D1TraceCollector (needs Drizzle mock rewrite)', () => {
 
       await collector.endTrace('trace_1');
 
-      // Find the traces insert call
-      const tracesInsertIndex = bindMock.mock.calls.findIndex(
-        (call) => call.length > 5 && call[4] === 'playground'
-      );
+      // Verify steps were inserted correctly
+      const result = await mockDb.prepare(
+        'SELECT steps FROM traces WHERE trace_id = ?'
+      ).bind('trace_1').first();
 
-      expect(tracesInsertIndex).toBeGreaterThanOrEqual(0);
-
-      // Get the steps JSON (7th parameter)
-      const stepsJson = bindMock.mock.calls[tracesInsertIndex][6];
-      const steps = JSON.parse(stepsJson);
+      expect(result).toBeDefined();
+      const steps = JSON.parse((result as any).steps);
 
       expect(Array.isArray(steps)).toBe(true);
       expect(steps.length).toBe(2);
@@ -279,17 +278,6 @@ describe.skip('D1TraceCollector (needs Drizzle mock rewrite)', () => {
     });
 
     it('should generate input and output previews', async () => {
-      const bindMock = vi.fn().mockReturnThis();
-      const runMock = vi.fn().mockResolvedValue({ success: true, meta: {} });
-
-      mockDb.prepare = vi.fn(() => ({
-        bind: bindMock,
-        all: vi.fn().mockResolvedValue(createMockD1Result([])),
-        first: vi.fn().mockResolvedValue(null),
-        run: runMock,
-        raw: vi.fn().mockResolvedValue([]),
-      })) as any;
-
       collector.startTrace('trace_1', traceMetadata);
 
       const spanId = collector.startSpan({
@@ -302,14 +290,14 @@ describe.skip('D1TraceCollector (needs Drizzle mock rewrite)', () => {
 
       await collector.endTrace('trace_1');
 
-      // Find the traces insert call
-      const tracesInsertIndex = bindMock.mock.calls.findIndex(
-        (call) => call.length > 5 && call[4] === 'playground'
-      );
+      // Verify previews were generated
+      const result = await mockDb.prepare(
+        'SELECT input_preview, output_preview FROM traces WHERE trace_id = ?'
+      ).bind('trace_1').first();
 
-      // Get preview parameters (7th and 8th)
-      const inputPreview = bindMock.mock.calls[tracesInsertIndex][7];
-      const outputPreview = bindMock.mock.calls[tracesInsertIndex][8];
+      expect(result).toBeDefined();
+      const inputPreview = (result as any).input_preview;
+      const outputPreview = (result as any).output_preview;
 
       expect(inputPreview).toBeTruthy();
       expect(outputPreview).toBeTruthy();
@@ -318,17 +306,6 @@ describe.skip('D1TraceCollector (needs Drizzle mock rewrite)', () => {
     });
 
     it('should detect errors in steps', async () => {
-      const bindMock = vi.fn().mockReturnThis();
-      const runMock = vi.fn().mockResolvedValue({ success: true, meta: {} });
-
-      mockDb.prepare = vi.fn(() => ({
-        bind: bindMock,
-        all: vi.fn().mockResolvedValue(createMockD1Result([])),
-        first: vi.fn().mockResolvedValue(null),
-        run: runMock,
-        raw: vi.fn().mockResolvedValue([]),
-      })) as any;
-
       collector.startTrace('trace_1', traceMetadata);
 
       const spanId = collector.startSpan({
@@ -341,15 +318,13 @@ describe.skip('D1TraceCollector (needs Drizzle mock rewrite)', () => {
 
       await collector.endTrace('trace_1');
 
-      // Find the traces insert call
-      const tracesInsertIndex = bindMock.mock.calls.findIndex(
-        (call) => call.length > 5 && call[4] === 'playground'
-      );
+      // Verify has_errors flag was set
+      const result = await mockDb.prepare(
+        'SELECT has_errors FROM traces WHERE trace_id = ?'
+      ).bind('trace_1').first();
 
-      // Get has_errors flag (10th parameter)
-      const hasErrors = bindMock.mock.calls[tracesInsertIndex][10];
-
-      expect(hasErrors).toBe(1); // true as integer
+      expect(result).toBeDefined();
+      expect((result as any).has_errors).toBe(1); // true as integer
     });
   });
 
@@ -401,10 +376,7 @@ describe.skip('D1TraceCollector (needs Drizzle mock rewrite)', () => {
   });
 
   describe('Playground steps table insertion', () => {
-    it('should insert granular steps into playground_steps table', async () => {
-      const prepareStub = vi.fn(() => createMockPreparedStatement());
-      mockDb.prepare = prepareStub;
-
+    it('should attempt to insert granular steps into playground_steps table', async () => {
       collector.startTrace('trace_1', traceMetadata);
 
       const spanId = collector.startSpan({
@@ -415,20 +387,16 @@ describe.skip('D1TraceCollector (needs Drizzle mock rewrite)', () => {
 
       collector.endSpan(spanId, 'output');
 
-      await collector.endTrace('trace_1');
+      // This should not throw even though playground_steps table doesn't exist
+      // The collector handles missing table gracefully
+      await expect(collector.endTrace('trace_1')).resolves.not.toThrow();
 
-      // Verify playground_steps table insert was attempted
-      const playgroundStepsInsert = prepareStub.mock.calls.find((call: any[]) =>
-        call[0].includes('INSERT INTO playground_steps')
-      ) as any[] | undefined;
+      // Verify trace was still inserted into traces table
+      const result = await mockDb.prepare(
+        'SELECT * FROM traces WHERE trace_id = ?'
+      ).bind('trace_1').first();
 
-      // This may or may not exist depending on whether the table is created
-      // The implementation handles this gracefully with a catch block
-      if (playgroundStepsInsert) {
-        expect(playgroundStepsInsert[0]).toContain('session_id');
-        expect(playgroundStepsInsert[0]).toContain('trace_id');
-        expect(playgroundStepsInsert[0]).toContain('step_type');
-      }
+      expect(result).toBeDefined();
     });
   });
 });
