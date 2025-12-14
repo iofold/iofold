@@ -10,7 +10,7 @@ import * as path from 'path';
 import type { ArtETask } from './art-e-types';
 
 const CACHE_DIR = path.join(process.cwd(), '.tmp', 'art-e-cache');
-const HUGGINGFACE_BASE = 'https://huggingface.co/datasets/corbt/enron_emails_sample_questions/resolve/main';
+const HUGGINGFACE_BASE = 'https://huggingface.co/datasets/corbt/enron_emails_sample_questions/resolve/refs%2Fconvert%2Fparquet/default';
 
 /**
  * Ensure cache directory exists
@@ -37,7 +37,8 @@ async function downloadIfNeeded(split: 'train' | 'test'): Promise<string> {
   }
 
   // Download from HuggingFace
-  const url = `${HUGGINGFACE_BASE}/${filename}`;
+  // The parquet files are stored as /split/0000.parquet in the convert/parquet branch
+  const url = `${HUGGINGFACE_BASE}/${split}/0000.parquet`;
   console.log(`Downloading dataset from: ${url}`);
 
   const response = await fetch(url);
@@ -61,8 +62,9 @@ async function downloadIfNeeded(split: 'train' | 'test'): Promise<string> {
 async function parseParquet(filePath: string): Promise<ArtETask[]> {
   try {
     // Dynamic import to avoid breaking if parquetjs isn't installed
-    // @ts-ignore - parquetjs may not be installed
-    const parquet = await import('parquetjs') as any;
+    const parquetModule = await import('parquetjs');
+    // @ts-ignore - parquetjs types may not be perfect
+    const parquet = parquetModule.default || parquetModule;
 
     const reader = await parquet.ParquetReader.openFile(filePath);
     const cursor = reader.getCursor();

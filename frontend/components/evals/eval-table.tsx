@@ -38,6 +38,8 @@ export function EvalTable({ evals, selectedId, onSelect, isLoading }: EvalTableP
             <th className="text-left px-4 py-3 text-sm font-medium">Name</th>
             <th className="text-left px-4 py-3 text-sm font-medium">Agent</th>
             <th className="text-right px-4 py-3 text-sm font-medium">Accuracy</th>
+            <th className="text-right px-4 py-3 text-sm font-medium" title="Cohen's Kappa: Agreement accounting for chance">Kappa</th>
+            <th className="text-right px-4 py-3 text-sm font-medium" title="F1 Score: Harmonic mean of precision and recall">F1</th>
             <th className="text-right px-4 py-3 text-sm font-medium">Executions</th>
             <th className="text-right px-4 py-3 text-sm font-medium">Contradictions</th>
             <th className="text-right px-4 py-3 text-sm font-medium">Last Run</th>
@@ -76,6 +78,42 @@ export function EvalTable({ evals, selectedId, onSelect, isLoading }: EvalTableP
                 >
                   {formatPercentage(evalItem.accuracy)}
                 </span>
+              </td>
+              <td className="px-4 py-3 text-right">
+                {evalItem.cohen_kappa !== null && evalItem.cohen_kappa !== undefined ? (
+                  <span
+                    className={cn(
+                      'font-medium text-sm',
+                      evalItem.cohen_kappa >= 0.6
+                        ? 'text-green-600'
+                        : evalItem.cohen_kappa >= 0.4
+                        ? 'text-yellow-600'
+                        : 'text-red-600'
+                    )}
+                  >
+                    {evalItem.cohen_kappa.toFixed(2)}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground text-sm">-</span>
+                )}
+              </td>
+              <td className="px-4 py-3 text-right">
+                {evalItem.f1_score !== null && evalItem.f1_score !== undefined ? (
+                  <span
+                    className={cn(
+                      'font-medium text-sm',
+                      evalItem.f1_score >= 0.8
+                        ? 'text-green-600'
+                        : evalItem.f1_score >= 0.6
+                        ? 'text-yellow-600'
+                        : 'text-red-600'
+                    )}
+                  >
+                    {formatPercentage(evalItem.f1_score)}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground text-sm">-</span>
+                )}
               </td>
               <td className="px-4 py-3 text-right text-muted-foreground">
                 {evalItem.execution_count}

@@ -124,6 +124,63 @@ export function EvalSideSheet({
                 </Card>
               </div>
 
+              {/* Advanced Metrics */}
+              {(evalItem.cohen_kappa !== null && evalItem.cohen_kappa !== undefined) ||
+               (evalItem.f1_score !== null && evalItem.f1_score !== undefined) ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {evalItem.cohen_kappa !== null && evalItem.cohen_kappa !== undefined && (
+                    <Card className="p-3 text-center">
+                      <div
+                        className={cn(
+                          'text-xl font-bold',
+                          evalItem.cohen_kappa >= 0.6
+                            ? 'text-green-600'
+                            : evalItem.cohen_kappa >= 0.4
+                            ? 'text-yellow-600'
+                            : 'text-red-600'
+                        )}
+                      >
+                        {evalItem.cohen_kappa.toFixed(3)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Cohen&apos;s Kappa</div>
+                    </Card>
+                  )}
+                  {evalItem.f1_score !== null && evalItem.f1_score !== undefined && (
+                    <Card className="p-3 text-center">
+                      <div
+                        className={cn(
+                          'text-xl font-bold',
+                          evalItem.f1_score >= 0.8
+                            ? 'text-green-600'
+                            : evalItem.f1_score >= 0.6
+                            ? 'text-yellow-600'
+                            : 'text-red-600'
+                        )}
+                      >
+                        {formatPercentage(evalItem.f1_score)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">F1 Score</div>
+                    </Card>
+                  )}
+                  {evalItem.precision !== null && evalItem.precision !== undefined && (
+                    <Card className="p-3 text-center">
+                      <div className="text-xl font-bold">
+                        {formatPercentage(evalItem.precision)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Precision</div>
+                    </Card>
+                  )}
+                  {evalItem.recall !== null && evalItem.recall !== undefined && (
+                    <Card className="p-3 text-center">
+                      <div className="text-xl font-bold">
+                        {formatPercentage(evalItem.recall)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Recall</div>
+                    </Card>
+                  )}
+                </div>
+              ) : null}
+
               {/* Description */}
               {evalItem.description && (
                 <div>

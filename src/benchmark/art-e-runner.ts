@@ -86,7 +86,7 @@ async function runTask(
           messages: [
             {
               role: 'system',
-              content: `You are an email assistant. Today's date is ${task.query_date}. The user's inbox address is ${task.inbox_address}. You can search emails to answer questions.`,
+              content: `You are an email assistant with access to the Enron email database. Today's date is ${task.query_date}. You can search emails across all inboxes to answer questions. Use the email_search tool without specifying an inbox_id to search all inboxes, or specify an inbox_id if you need to search a specific inbox.`,
             },
             {
               role: 'user',

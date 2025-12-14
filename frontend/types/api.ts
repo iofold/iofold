@@ -69,6 +69,10 @@ export interface EvalSummary {
   id: string;
   name: string;
   accuracy: number;
+  cohen_kappa?: number | null;  // Agreement accounting for chance (0-1)
+  f1_score?: number | null;     // Harmonic mean of precision and recall (0-1)
+  precision?: number | null;    // True positives / (TP + FP) (0-1)
+  recall?: number | null;       // True positives / (TP + FN) (0-1)
   created_at: string;
 }
 
@@ -95,6 +99,10 @@ export interface Eval {
   code: string;
   model_used: string;
   accuracy: number;
+  cohen_kappa?: number | null;  // Agreement accounting for chance (0-1)
+  f1_score?: number | null;     // Harmonic mean of precision and recall (0-1)
+  precision?: number | null;    // True positives / (TP + FP) (0-1)
+  recall?: number | null;       // True positives / (TP + FN) (0-1)
   test_results: TestResults;
   execution_count: number;
   contradiction_count: number;

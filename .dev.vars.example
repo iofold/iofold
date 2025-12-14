@@ -1,3 +1,7 @@
+# Cloudflare API Token (required for Docker dev)
+# Permissions: Workers Scripts:Edit, D1:Edit, Workers AI:Read
+CLOUDFLARE_API_TOKEN=your_token_here
+
 # Langfuse Integration (user traces)
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
@@ -7,13 +11,11 @@ LANGFUSE_BASE_URL=https://cloud.langfuse.com
 TAVILY_API_KEY=tvly-...
 
 # Cloudflare AI Gateway (routes all LLM calls)
-CF_ACCOUNT_ID=b..
-CF_AI_GATEWAY_TOKEN=M...
-CF_AI_GATEWAY_ID=io..
+CF_ACCOUNT_ID=your_account_id
+CF_AI_GATEWAY_TOKEN=your_gateway_token
+CF_AI_GATEWAY_ID=your_gateway_id
 
 # LangSmith Tracing (iofold's own LLM calls)
-# Set LANGSMITH_TRACING_V2=true to enable automatic tracing of all LLM calls
-# Traces OpenAI SDK calls (via wrapOpenAI) and LangChain models
 LANGSMITH_API_KEY=your_langsmith_api_key_here
 LANGSMITH_TRACING_V2=true
 LANGSMITH_PROJECT=iofold-development

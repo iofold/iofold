@@ -40,3 +40,10 @@ file*.txt
 test-coverage-summary.txt
 *-coverage-summary.txt
 bun.lock
+
+# Jupyter notebooks
+notebooks/.venv/
+notebooks/.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+*.pyc
+__pycache__/
