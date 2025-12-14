@@ -10,6 +10,8 @@ import { apiClient } from '@/lib/api-client';
 interface LiveJobMonitorProps {
   jobId: string;
   jobType: 'import' | 'generate' | 'execute';
+  onComplete?: (result: any) => void;
+  onFail?: (error: string) => void;
 }
 
 interface LogEntry {
@@ -35,7 +37,7 @@ function getJobTypeLabel(jobType: string): string {
  * LiveJobMonitor component displays real-time progress and logs for a background job
  * Uses Server-Sent Events (SSE) to stream updates from the backend
  */
-export function LiveJobMonitor({ jobId, jobType }: LiveJobMonitorProps) {
+export function LiveJobMonitor({ jobId, jobType, onComplete, onFail }: LiveJobMonitorProps) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState<'running' | 'completed' | 'failed'>('running');
@@ -71,21 +73,41 @@ export function LiveJobMonitor({ jobId, jobType }: LiveJobMonitorProps) {
     });
 
     // Handle completion events
-    eventSource.addEventListener('completed', () => {
-      setStatus('completed');
-      eventSource.close();
+    eventSource.addEventListener('completed', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setStatus('completed');
+        if (onComplete) {
+          onComplete(data.result);
+        }
+        eventSource.close();
+      } catch (err) {
+        setStatus('completed');
+        if (onComplete) {
+          onComplete(null);
+        }
+        eventSource.close();
+      }
     });
 
     // Handle failure events
     eventSource.addEventListener('failed', (event) => {
       try {
         const data = JSON.parse(event.data);
+        const errorMessage = data.error || 'Job failed';
         setStatus('failed');
-        setError(data.error || 'Job failed');
+        setError(errorMessage);
+        if (onFail) {
+          onFail(errorMessage);
+        }
         eventSource.close();
       } catch (err) {
+        const errorMessage = 'Job failed';
         setStatus('failed');
-        setError('Job failed');
+        setError(errorMessage);
+        if (onFail) {
+          onFail(errorMessage);
+        }
         eventSource.close();
       }
     });
