@@ -52,6 +52,27 @@ npx wrangler d1 migrations apply DB --remote --env staging
 | Deployment | `docs/deployment-guide.md` | Envs, secrets, gotchas |
 | Tool Registry | `docs/tool-registry.md` | DB schema, API, handlers |
 | ART-E Benchmark | `docs/art-e-benchmark.md` | CLI, scoring, Enron DB |
+
+## Enron Email Setup (ART-E Benchmark)
+
+The ART-E benchmark requires Enron emails in BENCHMARKS_DB.
+
+**1. Create schema (if not exists):**
+```bash
+docker exec iofold-backend npx wrangler d1 execute BENCHMARKS_DB --local --file=/app/scripts/setup-enron-db.sql
+```
+
+**2. Import emails (downloads from HuggingFace `corbt/enron-emails`):**
+```bash
+bun scripts/import-enron-batched.ts --limit 10000  # Local
+bun scripts/import-enron-batched.ts --limit 10000 --remote  # Staging
+```
+
+**3. Verify:**
+```bash
+docker exec iofold-backend npx wrangler d1 execute BENCHMARKS_DB --local --command="SELECT COUNT(*) FROM emails;"
+```
+
 | Module Overview | `docs/MODULE_OVERVIEW.md` | Code walkthrough |
 
 ## Development Rules
