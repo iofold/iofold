@@ -119,15 +119,19 @@ export async function extractTasks(
       if (trace) {
         const taskId = `task_${crypto.randomUUID()}`;
         await env.DB.prepare(`
-          INSERT INTO task_metadata (
+          INSERT OR REPLACE INTO task_metadata (
             id, trace_id, user_message,
             task_type, difficulty, domain,
             custom_metadata, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+          ) VALUES (
+            COALESCE((SELECT id FROM task_metadata WHERE trace_id = ?), ?),
+            ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now')
+          )
         `)
           .bind(
-            taskId,
-            trace.id,
+            trace.id,  // for COALESCE subquery WHERE trace_id = ?
+            taskId,    // for COALESCE fallback (new id if not exists)
+            trace.id,  // trace_id column
             dataInst.task.user_message,
             null, // task_type (enrichment phase)
             null, // difficulty (enrichment phase)
