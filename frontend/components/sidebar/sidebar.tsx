@@ -11,7 +11,7 @@ import {
   Search,
   BarChart3,
   Activity,
-  DollarSign,
+  Briefcase,
   HelpCircle,
   Zap,
   Grid3X3,
@@ -67,7 +67,7 @@ const navSections: NavSection[] = [
     defaultExpanded: true,
     items: [
       { href: '/system', label: 'Monitoring', icon: Activity },
-      { href: '/resources', label: 'Resources', icon: DollarSign },
+      { href: '/resources', label: 'Jobs', icon: Briefcase },
     ],
   },
 ]
