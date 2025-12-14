@@ -155,6 +155,8 @@ function ReviewPageContent() {
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [displayedTrace, setDisplayedTrace] = useState<TraceData | null>(null)
   const [showToolCalls, setShowToolCalls] = useState(false)
+  // Track reviewed trace IDs locally to filter them out immediately
+  const [reviewedTraceIds, setReviewedTraceIds] = useState<Set<string>>(new Set())
 
   const autoAdvanceTimerRef = useRef<NodeJS.Timeout | null>(null)
   const sessionStartTimeRef = useRef<Date | null>(null)
@@ -184,19 +186,33 @@ function ReviewPageContent() {
   })
 
   // Use mock data or real data - map TraceSummary to TraceData format
+  // Filter out traces that have been reviewed in this session (to prevent seeing them again)
   const traces: TraceData[] = useMockData
-    ? MOCK_TRACES
-    : (tracesData?.traces || []).map((trace: any) => ({
-        id: trace.id,
-        // Use trace's agent_id (from agent_version), or fallback to feedback's agent_id
-        agent_id: trace.agent_id || trace.feedback?.agent_id || null,
-        input: extractUserInput(trace.summary?.input_preview || ''),
-        output: trace.summary?.output_preview || '',
-        score: trace.feedback?.rating === 'positive' ? 1 : trace.feedback?.rating === 'negative' ? -1 : 0,
-        timestamp: trace.timestamp,
-        duration_ms: 0,
-        metadata: { step_count: trace.step_count, has_errors: trace.summary?.has_errors, source: trace.source }
-      }))
+    ? MOCK_TRACES.filter(t => !reviewedTraceIds.has(t.id))
+    : (tracesData?.traces || [])
+        .filter((trace: any) => !reviewedTraceIds.has(trace.id))
+        .map((trace: any) => {
+          const inputPreview = trace.summary?.input_preview || '';
+          const outputPreview = trace.summary?.output_preview || '';
+          return {
+            id: trace.id,
+            // Use trace's agent_id (from agent_version), or fallback to feedback's agent_id
+            agent_id: trace.agent_id || trace.feedback?.agent_id || null,
+            input: extractUserInput(inputPreview) || '(No input available)',
+            output: outputPreview || '(No output available)',
+            score: trace.feedback?.rating === 'positive' ? 1 : trace.feedback?.rating === 'negative' ? -1 : 0,
+            timestamp: trace.timestamp,
+            duration_ms: 0,
+            metadata: { step_count: trace.step_count, has_errors: trace.summary?.has_errors, source: trace.source }
+          };
+        })
+
+  // Reset currentIndex if it goes out of bounds (e.g., after filtering out reviewed traces)
+  useEffect(() => {
+    if (traces.length > 0 && currentIndex >= traces.length) {
+      setCurrentIndex(Math.max(0, traces.length - 1))
+    }
+  }, [traces.length, currentIndex])
 
   const currentTraceId = traces[currentIndex]?.id
 
@@ -215,8 +231,9 @@ function ReviewPageContent() {
     let output = '';
     const toolCalls: TraceData['toolCalls'] = [];
 
-    // Find output from GENERATION type observations
+    // Find output from various observation types
     for (const obs of observations) {
+      // Try GENERATION type first
       if (obs.type === 'GENERATION' && obs.output) {
         const content = typeof obs.output === 'object' && 'content' in obs.output
           ? obs.output.content
@@ -225,12 +242,26 @@ function ReviewPageContent() {
           output = content;
         }
       }
+      // Also try extracting from agent_response steps
+      if (obs.type === 'agent_response' && obs.content) {
+        if (!output) {
+          output = typeof obs.content === 'string' ? obs.content : JSON.stringify(obs.content);
+        }
+      }
       // Extract tool calls from SPAN type
       if (obs.type === 'SPAN' && obs.input?.toolName) {
         toolCalls.push({
           name: obs.input.toolName,
           args: JSON.stringify(obs.input, null, 2),
           result: obs.output ? JSON.stringify(obs.output, null, 2) : undefined
+        });
+      }
+      // Also check for tool_calls in step format
+      if (obs.type === 'tool_call' && obs.tool_name) {
+        toolCalls.push({
+          name: obs.tool_name,
+          args: obs.arguments ? JSON.stringify(obs.arguments, null, 2) : '{}',
+          result: obs.result ? JSON.stringify(obs.result, null, 2) : undefined
         });
       }
     }
@@ -246,12 +277,43 @@ function ReviewPageContent() {
     // If we have trace details, use the extracted output and tool calls
     // Cast to any since API returns more fields than type defines
     const details = traceDetails as any;
-    if (details?.observations) {
-      const { output, toolCalls } = extractFromObservations(details.observations);
+    if (details) {
+      let enhancedOutput = baseTrace.output;
+      let enhancedInput = baseTrace.input;
+      let toolCalls: TraceData['toolCalls'] = undefined;
+
+      // Extract from observations if available
+      if (details.observations) {
+        const extracted = extractFromObservations(details.observations);
+        if (extracted.output) enhancedOutput = extracted.output;
+        if (extracted.toolCalls?.length) toolCalls = extracted.toolCalls;
+      }
+
+      // Also try steps if observations didn't yield output
+      if (enhancedOutput === '(No output available)' && details.steps?.length) {
+        const extracted = extractFromObservations(details.steps);
+        if (extracted.output) enhancedOutput = extracted.output;
+        if (!toolCalls?.length && extracted.toolCalls?.length) toolCalls = extracted.toolCalls;
+      }
+
+      // Try to get input from trace details if missing
+      if (enhancedInput === '(No input available)') {
+        if (details.steps?.[0]?.input) {
+          const stepInput = details.steps[0].input;
+          if (typeof stepInput === 'string') {
+            enhancedInput = stepInput;
+          } else if (stepInput?.messages) {
+            const userMsg = stepInput.messages.find((m: any) => m.role === 'user');
+            if (userMsg?.content) enhancedInput = userMsg.content;
+          }
+        }
+      }
+
       return {
         ...baseTrace,
-        output: output || baseTrace.output,
-        toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined
+        input: enhancedInput,
+        output: enhancedOutput,
+        toolCalls
       };
     }
 
@@ -303,11 +365,16 @@ function ReviewPageContent() {
   const handleFeedback = useCallback((rating: 'good' | 'okay' | 'bad') => {
     if (!currentTrace) return
 
+    const traceId = currentTrace.id
+
     // Update counts
     setFeedbackCounts(prev => ({
       ...prev,
       [rating]: prev[rating] + 1,
     }))
+
+    // Add to reviewed set immediately to remove from display
+    setReviewedTraceIds(prev => new Set(prev).add(traceId))
 
     // Submit to API if using real data
     // Use trace's agent_id (from agent_version), fallback to URL param, or omit if neither available
@@ -315,7 +382,7 @@ function ReviewPageContent() {
     if (!useMockData) {
       const apiRating = rating === 'good' ? 'positive' : rating === 'bad' ? 'negative' : 'neutral'
       submitFeedbackMutation.mutate({
-        trace_id: currentTrace.id,
+        trace_id: traceId,
         rating: apiRating,
         agent_id: effectiveAgentId,  // Optional - will be undefined if no agent
         notes: notes.trim() || undefined,
@@ -333,16 +400,15 @@ function ReviewPageContent() {
     setIsTransitioning(true)
 
     setTimeout(() => {
-      // Move to next card
-      if (currentIndex < totalTraces - 1) {
-        setCurrentIndex(prev => prev + 1)
-      }
+      // Don't increment currentIndex - the trace is removed from the filtered list,
+      // so the next trace will automatically appear at the current index.
+      // Only adjust if currentIndex is now out of bounds (will be handled by the filtered list)
       // Trigger enter animation
       setTimeout(() => {
         setIsTransitioning(false)
       }, 50)
     }, 250)
-  }, [currentTrace, currentIndex, totalTraces, notes, useMockData, agentId, submitFeedbackMutation])
+  }, [currentTrace, notes, useMockData, agentId, submitFeedbackMutation])
 
   const toggleAutoMode = useCallback(() => {
     setIsAutoMode(prev => {
