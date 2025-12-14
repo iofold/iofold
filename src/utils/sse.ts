@@ -53,6 +53,18 @@ export class SSEStream {
     this.sendEvent({ type: 'failed', data: { status: 'failed', error, details } });
   }
 
+  sendLog(level: 'info' | 'warn' | 'error', message: string, metadata?: object) {
+    this.sendEvent({
+      type: 'log',
+      data: {
+        timestamp: new Date().toISOString(),
+        level,
+        message,
+        ...metadata
+      }
+    });
+  }
+
   private sendHeartbeat() {
     this.sendEvent({ type: 'heartbeat' });
   }

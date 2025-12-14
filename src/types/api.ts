@@ -101,6 +101,10 @@ export interface Eval {
   code: string;
   model_used: string;
   accuracy: number;
+  cohen_kappa?: number | null;  // Agreement accounting for chance (0-1)
+  f1_score?: number | null;     // Harmonic mean of precision and recall (0-1)
+  precision?: number | null;    // True positives / (TP + FP) (0-1)
+  recall?: number | null;       // True positives / (TP + FN) (0-1)
   test_results: TestResults;
   execution_count: number;
   contradiction_count: number;
@@ -114,6 +118,10 @@ export interface EvalSummary {
   description: string | null;
   agent_id: string;
   accuracy: number;
+  cohen_kappa?: number | null;  // Agreement accounting for chance (0-1)
+  f1_score?: number | null;     // Harmonic mean of precision and recall (0-1)
+  precision?: number | null;    // True positives / (TP + FP) (0-1)
+  recall?: number | null;       // True positives / (TP + FN) (0-1)
   execution_count: number;
   contradiction_count: number;
   created_at: string;
@@ -131,6 +139,7 @@ export type SSEEvent =
   | { type: 'progress'; data: JobProgressData }
   | { type: 'completed'; data: JobCompletedData }
   | { type: 'failed'; data: JobFailedData }
+  | { type: 'log'; data: JobLogData }
   | { type: 'heartbeat' };
 
 export interface JobProgressData {
@@ -148,6 +157,13 @@ export interface JobFailedData {
   status: 'failed';
   error: string;
   details?: string;
+}
+
+export interface JobLogData {
+  timestamp: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  [key: string]: any; // Additional metadata fields
 }
 
 // Rollout Types for GEPA Integration
