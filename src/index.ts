@@ -44,6 +44,14 @@ export interface Env {
   CF_AI_GATEWAY_ID: string;
   /** Optional AI Gateway authentication token */
   CF_AI_GATEWAY_TOKEN?: string;
+  /** LangSmith API key for tracing (optional) */
+  LANGSMITH_API_KEY?: string;
+  /** LangSmith tracing flag (optional) */
+  LANGSMITH_TRACING_V2?: string;
+  /** LangSmith project name (optional) */
+  LANGSMITH_PROJECT?: string;
+  /** Benchmarks database for ART-E and other benchmarks (optional) */
+  BENCHMARKS_DB?: D1Database;
 }
 
 const FetchTracesRequestSchema = z.object({

@@ -74,7 +74,7 @@ export async function listTools(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const category = url.searchParams.get('category');
 
-    let query = db
+    const baseQuery = db
       .select({
         id: tools.id,
         name: tools.name,
@@ -86,11 +86,11 @@ export async function listTools(request: Request, env: Env): Promise<Response> {
       })
       .from(tools);
 
-    if (category) {
-      query = query.where(eq(tools.category, category as any));
-    }
-
-    const results = await query.orderBy(asc(tools.category), asc(tools.name));
+    const results = category
+      ? await baseQuery
+          .where(eq(tools.category, category as any))
+          .orderBy(asc(tools.category), asc(tools.name))
+      : await baseQuery.orderBy(asc(tools.category), asc(tools.name));
 
     const toolsList: Tool[] = results.map((row) => ({
       id: row.id,
@@ -180,6 +180,10 @@ export async function getAgentTools(request: Request, env: Env, agentId: string)
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const db = createDb(env.DB);
 
     // Verify agent exists and belongs to workspace
@@ -244,6 +248,10 @@ export async function attachToolToAgent(request: Request, env: Env, agentId: str
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
 
     const body = await parseJsonBody<AttachToolRequest>(request);
 
@@ -354,6 +362,10 @@ export async function detachToolFromAgent(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
 
     const db = createDb(env.DB);
 

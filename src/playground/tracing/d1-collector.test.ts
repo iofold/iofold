@@ -5,7 +5,7 @@
  * and D1 database insertion using real in-memory SQLite.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { D1TraceCollector } from './d1-collector';
 import type { TraceMetadata } from './types';
 import { createTestDb, createMockD1, schema } from '../../../tests/utils/test-db';
@@ -52,7 +52,7 @@ describe('D1TraceCollector', () => {
       id: 'playground',
       workspaceId: 'ws_123',
       name: 'Playground',
-      platform: 'internal',
+      platform: 'playground',
       apiKeyEncrypted: 'n/a',
       status: 'active',
     }).run();

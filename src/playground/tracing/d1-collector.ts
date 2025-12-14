@@ -211,17 +211,18 @@ export class D1TraceCollector implements TraceCollector {
     const traceData = {
       id: this.traceId,
       workspaceId: this.metadata.workspaceId,
-      integrationId: (this.metadata as any).integrationId || 'playground', // Use provided integration ID or default
+      integrationId: this.metadata.integrationId || 'playground', // Use provided integration ID or default
       traceId: this.traceId,
-      source: 'playground' as const,
+      source: this.metadata.source || 'playground', // Use provided source or default to 'playground'
       timestamp: new Date().toISOString(),
       steps: JSON.stringify(steps),
+      metadata: this.metadata.customMetadata ? JSON.stringify(this.metadata.customMetadata) : null,
       inputPreview: this.generateInputPreview(),
       outputPreview: this.generateOutputPreview(),
       stepCount: steps.length,
       hasErrors: steps.some((s) => !!s.error),
       // Include agent version info from metadata for proper trace-agent linking
-      agentVersionId: (this.metadata as any).agentVersionId || null,
+      agentVersionId: this.metadata.agentVersionId || null,
     };
 
     try {
@@ -230,9 +231,9 @@ export class D1TraceCollector implements TraceCollector {
         .prepare(
           `INSERT INTO traces (
           id, workspace_id, integration_id, trace_id, source, timestamp,
-          steps, input_preview, output_preview, step_count, has_errors, imported_at,
+          steps, metadata, input_preview, output_preview, step_count, has_errors, imported_at,
           agent_version_id, assignment_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           traceData.id,
@@ -242,6 +243,7 @@ export class D1TraceCollector implements TraceCollector {
           traceData.source,
           traceData.timestamp,
           traceData.steps,
+          traceData.metadata,
           traceData.inputPreview,
           traceData.outputPreview,
           traceData.stepCount,

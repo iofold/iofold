@@ -48,7 +48,7 @@ export async function listAgentVersions(request: Request, env: Env, agentId: str
     const agent = await db
       .select({ id: agents.id })
       .from(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId!)))
       .limit(1)
       .then(r => r[0] ?? null);
 
@@ -111,7 +111,7 @@ export async function getAgentVersion(
     const agent = await db
       .select({ id: agents.id })
       .from(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId!)))
       .limit(1)
       .then(r => r[0] ?? null);
 
@@ -193,7 +193,7 @@ export async function createAgentVersion(
     const agent = await db
       .select({ id: agents.id, activeVersionId: agents.activeVersionId })
       .from(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId!)))
       .limit(1)
       .then(r => r[0] ?? null);
 
@@ -281,7 +281,7 @@ export async function promoteAgentVersion(
     const agent = await db
       .select({ id: agents.id, activeVersionId: agents.activeVersionId })
       .from(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId!)))
       .limit(1)
       .then(r => r[0] ?? null);
 
@@ -383,7 +383,7 @@ export async function rejectAgentVersion(
     const agent = await db
       .select({ id: agents.id })
       .from(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId!)))
       .limit(1)
       .then(r => r[0] ?? null);
 

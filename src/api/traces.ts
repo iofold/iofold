@@ -240,6 +240,11 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // Ensure workspaceId is not null after validation
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const url = new URL(request.url);
     const { cursor, limit } = parsePaginationParams(url, 50, 200);
 
@@ -267,7 +272,7 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
     }
 
     if (source) {
-      conditions.push(eq(integrations.platform, source as any));
+      conditions.push(eq(traces.source, source as any));  // Filter by traces.source, not integrations.platform
     }
 
     if (ratingFilter) {
@@ -312,7 +317,7 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
       .select({
         id: traces.id,
         traceId: traces.traceId,
-        source: integrations.platform,
+        source: traces.source,  // Use traces.source directly (works for taskset/playground)
         timestamp: traces.timestamp,
         importedAt: traces.importedAt,
         inputPreview: traces.inputPreview,
@@ -368,7 +373,8 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
     // Get total count with same filters (cached, expensive query)
     // TODO: Implement caching layer
     // Build count conditions (same as main query but without cursor)
-    const countConditions: any[] = [eq(traces.workspaceId, workspaceId)];
+    // workspaceId is guaranteed to be non-null at this point
+    const countConditions: any[] = [eq(traces.workspaceId, workspaceId!)];
 
     if (agentId) {
       countConditions.push(
@@ -379,7 +385,7 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
       );
     }
     if (source) {
-      countConditions.push(eq(integrations.platform, source as any));
+      countConditions.push(eq(traces.source, source as any));  // Filter by traces.source
     }
     if (ratingFilter) {
       const ratings = ratingFilter.split(',');
@@ -467,16 +473,22 @@ export async function getTraceById(request: Request, env: Env, traceId: string):
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // Ensure workspaceId is not null after validation
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const drizzle = createDb(env.DB);
 
     const result = await drizzle
       .select({
         id: traces.id,
         traceId: traces.traceId,
-        source: integrations.platform,
+        source: traces.source,  // Use traces.source directly (works for taskset/playground)
         timestamp: traces.timestamp,
         steps: traces.steps,
         rawData: traces.rawData,
+        metadata: traces.metadata,  // Include metadata for taskset info
         feedbackId: feedback.id,
         rating: feedback.rating,
         notes: feedback.ratingDetail,
@@ -503,8 +515,8 @@ export async function getTraceById(request: Request, env: Env, traceId: string):
     // Parse the steps JSON column
     const steps = row.steps || [];
 
-    // Parse raw_data if it exists
-    const rawData = row.rawData || null;
+    // Parse raw_data if it exists (typed as any to access its properties)
+    const rawData = row.rawData as any || null;
 
     // Get observations from raw_data or convert steps to observations
     const observations = rawData?.observations || stepsToObservations(steps as any[]);
@@ -517,6 +529,7 @@ export async function getTraceById(request: Request, env: Env, traceId: string):
       steps: steps,
       observations: observations,
       raw_data: rawData,
+      metadata: row.metadata || {},  // Include metadata (taskset info, scores, etc.)
     };
 
     // Add feedback if exists
@@ -661,6 +674,11 @@ export async function deleteTrace(request: Request, env: Env, traceId: string): 
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // Ensure workspaceId is not null after validation
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const drizzle = createDb(env.DB);
 
     // Verify trace exists and belongs to workspace
@@ -707,6 +725,11 @@ export async function deleteTraces(request: Request, env: Env): Promise<Response
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // Ensure workspaceId is not null after validation
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const body = await parseJsonBody<{ trace_ids: string[] }>(request);
 
     if (!body.trace_ids || !Array.isArray(body.trace_ids) || body.trace_ids.length === 0) {
@@ -728,8 +751,19 @@ export async function deleteTraces(request: Request, env: Env): Promise<Response
 
     const drizzle = createDb(env.DB);
 
+    // First, count the traces that match before deleting
+    const tracesToDelete = await drizzle
+      .select({ id: traces.id })
+      .from(traces)
+      .where(
+        and(
+          inArray(traces.id, body.trace_ids),
+          eq(traces.workspaceId, workspaceId)
+        )
+      );
+
     // Delete only traces belonging to this workspace
-    const result = await drizzle
+    await drizzle
       .delete(traces)
       .where(
         and(
@@ -739,7 +773,7 @@ export async function deleteTraces(request: Request, env: Env): Promise<Response
       );
 
     return createSuccessResponse({
-      deleted_count: result.rowsAffected || 0
+      deleted_count: tracesToDelete.length
     });
   } catch (error: any) {
     if (error.message === 'Missing X-Workspace-Id header') {

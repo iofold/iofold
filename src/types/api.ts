@@ -19,6 +19,7 @@ export interface Job {
   type: JobType;
   status: JobStatus;
   progress: number; // 0-100
+  metadata?: Record<string, unknown>;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;

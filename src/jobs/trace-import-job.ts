@@ -123,11 +123,11 @@ export class TraceImportJob {
         throw new Error('Invalid Langfuse API key format. Expected "publicKey:secretKey"');
       }
 
-      const config = integration.config || {};
+      const config = integration.config as Record<string, any> || {};
       const adapter = new LangfuseAdapter({
         publicKey,
         secretKey,
-        baseUrl: config.base_url
+        baseUrl: config.base_url as string | undefined
       });
 
       // Step 3: Fetch traces from Langfuse

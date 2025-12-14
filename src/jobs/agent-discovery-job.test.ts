@@ -99,7 +99,7 @@ describe('AgentDiscoveryJob', () => {
 
       // Insert traces into database
       for (const trace of [...customerSupportTraces, ...codeReviewerTraces]) {
-        testDb.insert(schema.traces).values(trace).run();
+        testDb.insert(schema.traces).values(trace as any).run();
       }
 
       // Mock Workers AI - return different embeddings for different prompt types
@@ -273,7 +273,7 @@ describe('AgentDiscoveryJob', () => {
       }));
 
       for (const trace of traces) {
-        testDb.insert(schema.traces).values(trace).run();
+        testDb.insert(schema.traces).values(trace as any).run();
       }
 
       mockAi = {
@@ -339,7 +339,7 @@ describe('AgentDiscoveryJob', () => {
       }));
 
       for (const trace of traces) {
-        testDb.insert(schema.traces).values(trace).run();
+        testDb.insert(schema.traces).values(trace as any).run();
       }
 
       mockAi = {
@@ -447,7 +447,7 @@ describe('AgentDiscoveryJob', () => {
         assignmentStatus: 'unassigned',
       }];
 
-      testDb.insert(schema.traces).values(traces[0]).run();
+      testDb.insert(schema.traces).values(traces[0] as any).run();
 
       // Create the job record first (simulating what the job queue would do)
       testDb.insert(schema.jobs).values({
@@ -512,7 +512,7 @@ describe('AgentDiscoveryJob', () => {
       }));
 
       for (const trace of traces) {
-        testDb.insert(schema.traces).values(trace).run();
+        testDb.insert(schema.traces).values(trace as any).run();
       }
 
       mockAi = {
@@ -655,7 +655,7 @@ describe('AgentDiscoveryJob', () => {
       ];
 
       for (const trace of traces) {
-        testDb.insert(schema.traces).values(trace).run();
+        testDb.insert(schema.traces).values(trace as any).run();
       }
 
       mockAi = { run: vi.fn() } as any;
@@ -708,7 +708,7 @@ describe('AgentDiscoveryJob', () => {
         }
       ];
 
-      testDb.insert(schema.traces).values(traces[0]).run();
+      testDb.insert(schema.traces).values(traces[0] as any).run();
 
       mockAi = { run: vi.fn() } as any;
       mockVectorize = { upsert: vi.fn(), query: vi.fn(), getByIds: vi.fn(), deleteByIds: vi.fn() } as any;
@@ -750,7 +750,7 @@ describe('AgentDiscoveryJob', () => {
         }
       ];
 
-      testDb.insert(schema.traces).values(traces[0]).run();
+      testDb.insert(schema.traces).values(traces[0] as any).run();
 
       mockAi = { run: vi.fn() } as any;
       mockVectorize = { upsert: vi.fn(), query: vi.fn(), getByIds: vi.fn(), deleteByIds: vi.fn() } as any;
@@ -803,7 +803,7 @@ describe('AgentDiscoveryJob', () => {
       }));
 
       for (const trace of traces) {
-        testDb.insert(schema.traces).values(trace).run();
+        testDb.insert(schema.traces).values(trace as any).run();
       }
 
       mockAi = {
@@ -904,7 +904,7 @@ describe('AgentDiscoveryJob', () => {
       }));
 
       for (const trace of traces) {
-        testDb.insert(schema.traces).values(trace).run();
+        testDb.insert(schema.traces).values(trace as any).run();
       }
 
       mockAi = {

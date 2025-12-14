@@ -50,6 +50,11 @@ export async function createIntegration(request: Request, env: Env): Promise<Res
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // TypeScript null check after validation
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const body = await parseJsonBody<{
       platform: 'langfuse' | 'langsmith' | 'openai';
       api_key: string;
@@ -157,6 +162,11 @@ export async function listIntegrations(request: Request, env: Env): Promise<Resp
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    // TypeScript null check after validation
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
+
     const drizzle = createDb(env.DB);
     const result = await drizzle
       .select({
@@ -209,6 +219,11 @@ export async function getIntegrationById(request: Request, env: Env, integration
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+
+    // TypeScript null check after validation
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
 
     const drizzle = createDb(env.DB);
     const result = await drizzle
@@ -268,6 +283,11 @@ export async function updateIntegration(request: Request, env: Env, integrationI
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+
+    // TypeScript null check after validation
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
 
     const drizzle = createDb(env.DB);
 
@@ -381,6 +401,11 @@ export async function testIntegration(request: Request, env: Env, integrationId:
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+
+    // TypeScript null check after validation
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
 
     const drizzle = createDb(env.DB);
 
@@ -504,6 +529,11 @@ export async function deleteIntegration(request: Request, env: Env, integrationI
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+
+    // TypeScript null check after validation
+    if (!workspaceId) {
+      return createErrorResponse('VALIDATION_ERROR', 'Missing X-Workspace-Id header', 400);
+    }
 
     const drizzle = createDb(env.DB);
 
