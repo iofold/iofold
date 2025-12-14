@@ -14,8 +14,7 @@ export type AgentVersionSource = (typeof agentVersionSource)[number];
 // Job-related enums
 export const jobType = [
   'import', 'generate', 'execute', 'monitor', 'auto_refine',
-  'agent_discovery', 'prompt_improvement', 'prompt_evaluation',
-  'template_drift', 'eval_revalidation', 'taskset_run'
+  'agent_discovery', 'taskset_run'
 ] as const;
 export type JobType = (typeof jobType)[number];
 

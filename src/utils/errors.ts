@@ -1,4 +1,5 @@
 import type { APIError } from '../types/api';
+import { logger, type LogContext } from './logger';
 
 export class AppError extends Error {
   constructor(
@@ -34,45 +35,62 @@ export function createAPIError(
   });
 }
 
-export function handleError(error: any): Response {
-  console.error('API Error:', error);
+export function handleError(error: any, request?: Request, additionalContext?: LogContext): Response {
+  // Determine error classification
+  let code = 'INTERNAL_ERROR';
+  let message = error.message || 'An unexpected error occurred';
+  let status = 500;
+  let details: any = undefined;
 
   // Handle our custom AppError
   if (error instanceof AppError) {
-    return createAPIError(error.code, error.message, error.status, error.details);
+    code = error.code;
+    message = error.message;
+    status = error.status;
+    details = error.details;
   }
-
   // Handle Zod validation errors
-  if (error.name === 'ZodError') {
-    return createAPIError('VALIDATION_ERROR', 'Invalid request parameters', 400, error.errors);
+  else if (error.name === 'ZodError') {
+    code = 'VALIDATION_ERROR';
+    message = 'Invalid request parameters';
+    status = 400;
+    details = error.errors;
   }
-
   // Handle not found errors
-  if (error.message?.includes('not found')) {
-    return createAPIError('NOT_FOUND', error.message, 404);
+  else if (error.message?.includes('not found')) {
+    code = 'NOT_FOUND';
+    status = 404;
   }
-
   // Handle database errors
-  if (error.message?.includes('D1') || error.message?.includes('database')) {
-    return createAPIError('DATABASE_ERROR', 'Database error occurred', 500, error.message);
+  else if (error.message?.includes('D1') || error.message?.includes('database') || error.message?.includes('SQLITE')) {
+    code = 'DATABASE_ERROR';
+    message = 'Database error occurred';
+    status = 500;
+    details = error.message;
   }
-
   // Handle external API errors (Claude, etc)
-  if (error.status || error.type === 'api_error') {
-    return createAPIError(
-      'EXTERNAL_API_ERROR',
-      'External service error',
-      503,
-      error.message
-    );
+  else if (error.status || error.type === 'api_error') {
+    code = 'EXTERNAL_API_ERROR';
+    message = 'External service error';
+    status = 503;
+    details = error.message;
   }
 
-  // Generic error
-  return createAPIError(
-    'INTERNAL_ERROR',
-    error.message || 'An unexpected error occurred',
-    500
-  );
+  // Log with full context
+  const context: LogContext = {
+    errorCode: code,
+    errorStatus: status,
+    ...additionalContext,
+  };
+
+  if (request) {
+    logger.apiError(error, request, context);
+  } else {
+    // Fallback logging without request context
+    logger.error(`API Error: ${code}`, context, error);
+  }
+
+  return createAPIError(code, message, status, details);
 }
 
 // Specific error helpers

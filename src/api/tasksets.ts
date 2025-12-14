@@ -15,6 +15,14 @@ import {
 } from './utils';
 
 import { QueueProducer, type Queue } from '../queue/producer';
+import { createDb } from '../db/client';
+import { eq, and, desc, sql, count, inArray } from 'drizzle-orm';
+import { tasksets, tasksetTasks, tasksetRuns, tasksetRunResults } from '../db/schema/tasksets';
+import { agents } from '../db/schema/agents';
+import { workspaces } from '../db/schema/users';
+import { traces } from '../db/schema/traces';
+import { feedback } from '../db/schema/feedback';
+import { agentVersions } from '../db/schema/agents';
 
 export interface Env {
   DB: D1Database;
@@ -115,29 +123,29 @@ export async function createTaskset(
     }
 
     // Validate agent exists
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    ).bind(agentId, workspaceId).first();
+    const db = createDb(env.DB);
+    const agent = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
 
-    if (!agent) {
+    if (!agent[0]) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     const tasksetId = generateId('tsk');
     const now = new Date().toISOString();
 
-    await env.DB.prepare(
-      `INSERT INTO tasksets (id, workspace_id, agent_id, name, description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
-      tasksetId,
+    await db.insert(tasksets).values({
+      id: tasksetId,
       workspaceId,
       agentId,
-      body.name.trim(),
-      body.description || null,
-      now,
-      now
-    ).run();
+      name: body.name.trim(),
+      description: body.description || null,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     const taskset: TasksetResponse = {
       id: tasksetId,
@@ -184,11 +192,14 @@ export async function createTasksetFromTraces(
     }
 
     // Validate agent exists
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    ).bind(agentId, workspaceId).first();
+    const db = createDb(env.DB);
+    const agent = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
 
-    if (!agent) {
+    if (!agent[0]) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
@@ -196,29 +207,32 @@ export async function createTasksetFromTraces(
     const ratingFilter = body.filter?.rating || 'any';
     const limit = Math.min(body.filter?.limit || 100, 500);
 
-    let ratingCondition = '';
+    // Build dynamic where conditions
+    const conditions = [
+      eq(agentVersions.agentId, agentId),
+      sql`${feedback.rating} IS NOT NULL`
+    ];
+
     if (ratingFilter === 'positive') {
-      ratingCondition = "AND f.rating = 'positive'";
+      conditions.push(eq(feedback.rating, 'positive'));
     } else if (ratingFilter === 'negative') {
-      ratingCondition = "AND f.rating = 'negative'";
+      conditions.push(eq(feedback.rating, 'negative'));
     }
 
-    const tracesResult = await env.DB.prepare(`
-      SELECT DISTINCT
-        t.id as trace_id,
-        t.steps,
-        f.rating
-      FROM traces t
-      JOIN feedback f ON t.id = f.trace_id
-      JOIN agent_versions av ON t.agent_version_id = av.id
-      WHERE av.agent_id = ?
-        AND f.rating IS NOT NULL
-        ${ratingCondition}
-      ORDER BY t.imported_at DESC
-      LIMIT ?
-    `).bind(agentId, limit).all();
+    const tracesResult = await db
+      .selectDistinct({
+        traceId: traces.id,
+        steps: traces.steps,
+        rating: feedback.rating,
+      })
+      .from(traces)
+      .innerJoin(feedback, eq(traces.id, feedback.traceId))
+      .innerJoin(agentVersions, eq(traces.agentVersionId, agentVersions.id))
+      .where(and(...conditions))
+      .orderBy(desc(traces.importedAt))
+      .limit(limit);
 
-    if (!tracesResult.results || tracesResult.results.length === 0) {
+    if (!tracesResult || tracesResult.length === 0) {
       return createErrorResponse(
         'VALIDATION_ERROR',
         'No labeled traces found for this agent',
@@ -230,25 +244,22 @@ export async function createTasksetFromTraces(
     const tasksetId = generateId('tsk');
     const now = new Date().toISOString();
 
-    await env.DB.prepare(
-      `INSERT INTO tasksets (id, workspace_id, agent_id, name, description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
-      tasksetId,
+    await db.insert(tasksets).values({
+      id: tasksetId,
       workspaceId,
       agentId,
-      body.name.trim(),
-      body.description || null,
-      now,
-      now
-    ).run();
+      name: body.name.trim(),
+      description: body.description || null,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     // Extract tasks from traces
     let insertedCount = 0;
     let skippedCount = 0;
 
-    for (const row of tracesResult.results) {
-      const steps = row.steps ? JSON.parse(row.steps as string) : [];
+    for (const row of tracesResult) {
+      const steps = row.steps as any[] || [];
 
       // Find first user message
       let userMessage: string | null = null;
@@ -270,18 +281,15 @@ export async function createTasksetFromTraces(
       const taskId = generateId('task');
 
       try {
-        await env.DB.prepare(
-          `INSERT INTO taskset_tasks (id, taskset_id, user_message, source, source_trace_id, content_hash, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).bind(
-          taskId,
+        await db.insert(tasksetTasks).values({
+          id: taskId,
           tasksetId,
           userMessage,
-          'trace',
-          row.trace_id as string,
+          source: 'trace',
+          sourceTraceId: row.traceId,
           contentHash,
-          now
-        ).run();
+          createdAt: now,
+        });
         insertedCount++;
       } catch (error: any) {
         // Skip duplicates (UNIQUE constraint violation)
@@ -294,9 +302,10 @@ export async function createTasksetFromTraces(
     }
 
     // Update task count
-    await env.DB.prepare(
-      'UPDATE tasksets SET task_count = ? WHERE id = ?'
-    ).bind(insertedCount, tasksetId).run();
+    await db
+      .update(tasksets)
+      .set({ taskCount: insertedCount })
+      .where(eq(tasksets.id, tasksetId));
 
     return createSuccessResponse({
       id: tasksetId,
@@ -330,24 +339,28 @@ export async function listTasksets(
     }
     validateWorkspaceAccess(workspaceId);
 
+    const db = createDb(env.DB);
     const url = new URL(request.url);
     const includeArchived = url.searchParams.get('include_archived') === 'true';
 
-    let statusCondition = "AND status = 'active'";
-    if (includeArchived) {
-      statusCondition = '';
+    // Build dynamic where conditions
+    const conditions = [
+      eq(tasksets.agentId, agentId),
+      eq(tasksets.workspaceId, workspaceId)
+    ];
+
+    if (!includeArchived) {
+      conditions.push(eq(tasksets.status, 'active'));
     }
 
-    const result = await env.DB.prepare(`
-      SELECT id, workspace_id, agent_id, name, description, task_count, status, created_at, updated_at
-      FROM tasksets
-      WHERE agent_id = ? AND workspace_id = ?
-      ${statusCondition}
-      ORDER BY created_at DESC
-    `).bind(agentId, workspaceId).all();
+    const result = await db
+      .select()
+      .from(tasksets)
+      .where(and(...conditions))
+      .orderBy(desc(tasksets.createdAt));
 
     return createSuccessResponse({
-      tasksets: result.results || [],
+      tasksets: result,
     });
   } catch (error: any) {
     console.error('Error listing tasksets:', error);
@@ -375,35 +388,50 @@ export async function getTaskset(
     }
     validateWorkspaceAccess(workspaceId);
 
-    // Get taskset
-    const taskset = await env.DB.prepare(
-      `SELECT id, workspace_id, agent_id, name, description, task_count, status, created_at, updated_at
-       FROM tasksets
-       WHERE id = ? AND agent_id = ? AND workspace_id = ?`
-    ).bind(tasksetId, agentId, workspaceId).first();
+    const db = createDb(env.DB);
 
-    if (!taskset) {
+    // Get taskset
+    const taskset = await db
+      .select()
+      .from(tasksets)
+      .where(
+        and(
+          eq(tasksets.id, tasksetId),
+          eq(tasksets.agentId, agentId),
+          eq(tasksets.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (!taskset[0]) {
       return createErrorResponse('NOT_FOUND', 'Taskset not found', 404);
     }
 
     // Get tasks
-    const tasksResult = await env.DB.prepare(
-      `SELECT id, user_message, expected_output, source, source_trace_id, metadata, created_at
-       FROM taskset_tasks
-       WHERE taskset_id = ?
-       ORDER BY created_at ASC`
-    ).bind(tasksetId).all();
+    const tasksResult = await db
+      .select()
+      .from(tasksetTasks)
+      .where(eq(tasksetTasks.tasksetId, tasksetId))
+      .orderBy(tasksetTasks.createdAt);
 
     const response: TasksetWithTasks = {
-      ...(taskset as unknown as TasksetResponse),
-      tasks: (tasksResult.results || []).map((t: any) => ({
+      id: taskset[0].id,
+      workspace_id: taskset[0].workspaceId,
+      agent_id: taskset[0].agentId,
+      name: taskset[0].name,
+      description: taskset[0].description,
+      task_count: taskset[0].taskCount || 0,
+      status: taskset[0].status,
+      created_at: taskset[0].createdAt,
+      updated_at: taskset[0].updatedAt,
+      tasks: tasksResult.map((t) => ({
         id: t.id,
-        user_message: t.user_message,
-        expected_output: t.expected_output,
+        user_message: t.userMessage,
+        expected_output: t.expectedOutput,
         source: t.source,
-        source_trace_id: t.source_trace_id,
-        metadata: t.metadata ? JSON.parse(t.metadata) : null,
-        created_at: t.created_at,
+        source_trace_id: t.sourceTraceId,
+        metadata: t.metadata as Record<string, unknown> | null,
+        created_at: t.createdAt,
       })),
     };
 
@@ -440,16 +468,26 @@ export async function addTasksToTaskset(
       return createErrorResponse('VALIDATION_ERROR', 'Tasks array is required', 400);
     }
 
-    // Validate taskset exists
-    const taskset = await env.DB.prepare(
-      `SELECT id, status FROM tasksets WHERE id = ? AND agent_id = ? AND workspace_id = ?`
-    ).bind(tasksetId, agentId, workspaceId).first();
+    const db = createDb(env.DB);
 
-    if (!taskset) {
+    // Validate taskset exists
+    const taskset = await db
+      .select({ id: tasksets.id, status: tasksets.status })
+      .from(tasksets)
+      .where(
+        and(
+          eq(tasksets.id, tasksetId),
+          eq(tasksets.agentId, agentId),
+          eq(tasksets.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (!taskset[0]) {
       return createErrorResponse('NOT_FOUND', 'Taskset not found', 404);
     }
 
-    if (taskset.status === 'archived') {
+    if (taskset[0].status === 'archived') {
       return createErrorResponse('VALIDATION_ERROR', 'Cannot add tasks to archived taskset', 400);
     }
 
@@ -467,19 +505,16 @@ export async function addTasksToTaskset(
       const source = task.source || 'manual';
 
       try {
-        await env.DB.prepare(
-          `INSERT INTO taskset_tasks (id, taskset_id, user_message, expected_output, source, content_hash, metadata, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-        ).bind(
-          taskId,
+        await db.insert(tasksetTasks).values({
+          id: taskId,
           tasksetId,
-          task.user_message.trim(),
-          task.expected_output || null,
+          userMessage: task.user_message.trim(),
+          expectedOutput: task.expected_output || null,
           source,
           contentHash,
-          task.metadata ? JSON.stringify(task.metadata) : null,
-          now
-        ).run();
+          metadata: task.metadata || null,
+          createdAt: now,
+        });
         insertedCount++;
       } catch (error: any) {
         if (error.message?.includes('UNIQUE constraint failed')) {
@@ -491,18 +526,22 @@ export async function addTasksToTaskset(
     }
 
     // Update task count
-    const countResult = await env.DB.prepare(
-      'SELECT COUNT(*) as count FROM taskset_tasks WHERE taskset_id = ?'
-    ).bind(tasksetId).first();
+    const countResult = await db
+      .select({ count: count() })
+      .from(tasksetTasks)
+      .where(eq(tasksetTasks.tasksetId, tasksetId));
 
-    await env.DB.prepare(
-      'UPDATE tasksets SET task_count = ?, updated_at = ? WHERE id = ?'
-    ).bind(countResult?.count || 0, now, tasksetId).run();
+    const totalTasks = countResult[0]?.count || 0;
+
+    await db
+      .update(tasksets)
+      .set({ taskCount: totalTasks, updatedAt: now })
+      .where(eq(tasksets.id, tasksetId));
 
     return createSuccessResponse({
       inserted: insertedCount,
       skipped_duplicates: skippedCount,
-      total_tasks: countResult?.count || 0,
+      total_tasks: totalTasks,
     });
   } catch (error: any) {
     console.error('Error adding tasks to taskset:', error);
@@ -530,12 +569,31 @@ export async function archiveTaskset(
     }
     validateWorkspaceAccess(workspaceId);
 
-    const result = await env.DB.prepare(
-      `UPDATE tasksets SET status = 'archived', updated_at = ?
-       WHERE id = ? AND agent_id = ? AND workspace_id = ?`
-    ).bind(new Date().toISOString(), tasksetId, agentId, workspaceId).run();
+    const db = createDb(env.DB);
+    const result = await db
+      .update(tasksets)
+      .set({ status: 'archived', updatedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(tasksets.id, tasksetId),
+          eq(tasksets.agentId, agentId),
+          eq(tasksets.workspaceId, workspaceId)
+        )
+      );
 
-    if (result.meta.changes === 0) {
+    // Note: Drizzle doesn't return rowsAffected directly, so we need to check by querying
+    const updated = await db
+      .select({ id: tasksets.id })
+      .from(tasksets)
+      .where(
+        and(
+          eq(tasksets.id, tasksetId),
+          eq(tasksets.status, 'archived')
+        )
+      )
+      .limit(1);
+
+    if (!updated[0]) {
       return createErrorResponse('NOT_FOUND', 'Taskset not found', 404);
     }
 
@@ -583,39 +641,56 @@ export async function runTaskset(
       // Empty body is fine, use defaults
     }
 
-    // Validate workspace exists
-    const workspace = await env.DB.prepare(
-      'SELECT id FROM workspaces WHERE id = ?'
-    ).bind(workspaceId).first();
+    const db = createDb(env.DB);
 
-    if (!workspace) {
+    // Validate workspace exists
+    const workspace = await db
+      .select({ id: workspaces.id })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+
+    if (!workspace[0]) {
       return createErrorResponse('NOT_FOUND', 'Workspace not found', 404);
     }
 
     // Validate agent exists
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    ).bind(agentId, workspaceId).first();
+    const agent = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
 
-    if (!agent) {
+    if (!agent[0]) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // Validate taskset exists and get task count
-    const taskset = await env.DB.prepare(
-      `SELECT id, task_count, status FROM tasksets
-       WHERE id = ? AND agent_id = ? AND workspace_id = ?`
-    ).bind(tasksetId, agentId, workspaceId).first();
+    const taskset = await db
+      .select({
+        id: tasksets.id,
+        taskCount: tasksets.taskCount,
+        status: tasksets.status,
+      })
+      .from(tasksets)
+      .where(
+        and(
+          eq(tasksets.id, tasksetId),
+          eq(tasksets.agentId, agentId),
+          eq(tasksets.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
 
-    if (!taskset) {
+    if (!taskset[0]) {
       return createErrorResponse('NOT_FOUND', 'Taskset not found', 404);
     }
 
-    if (taskset.status === 'archived') {
+    if (taskset[0].status === 'archived') {
       return createErrorResponse('VALIDATION_ERROR', 'Cannot run archived taskset', 400);
     }
 
-    const taskCount = (taskset.task_count as number) || 0;
+    const taskCount = taskset[0].taskCount || 0;
     if (taskCount === 0) {
       return createErrorResponse('VALIDATION_ERROR', 'Taskset has no tasks', 400);
     }
@@ -626,23 +701,20 @@ export async function runTaskset(
     const modelProvider = body.model_provider || 'anthropic';
     const modelId = body.model_id || 'anthropic/claude-sonnet-4-5';
 
-    await env.DB.prepare(
-      `INSERT INTO taskset_runs (
-        id, workspace_id, agent_id, taskset_id, status,
-        task_count, completed_count, failed_count,
-        model_provider, model_id, config, created_at
-      ) VALUES (?, ?, ?, ?, 'queued', ?, 0, 0, ?, ?, ?, ?)`
-    ).bind(
-      runId,
+    await db.insert(tasksetRuns).values({
+      id: runId,
       workspaceId,
       agentId,
       tasksetId,
+      status: 'queued',
       taskCount,
+      completedCount: 0,
+      failedCount: 0,
       modelProvider,
       modelId,
-      body.config ? JSON.stringify(body.config) : '{}',
-      now
-    ).run();
+      config: body.config || {},
+      createdAt: now,
+    });
 
     // Enqueue job
     if (!env.JOB_QUEUE) {
@@ -668,9 +740,13 @@ export async function runTaskset(
 
     if (!result.success) {
       // Update run status to failed
-      await env.DB.prepare(
-        'UPDATE taskset_runs SET status = ?, error = ? WHERE id = ?'
-      ).bind('failed', result.error || 'Failed to enqueue job', runId).run();
+      await db
+        .update(tasksetRuns)
+        .set({
+          status: 'failed',
+          error: result.error || 'Failed to enqueue job',
+        })
+        .where(eq(tasksetRuns.id, runId));
 
       return createErrorResponse(
         'INTERNAL_ERROR',
@@ -712,43 +788,53 @@ export async function listTasksetRuns(
     }
     validateWorkspaceAccess(workspaceId);
 
-    // Validate taskset exists
-    const taskset = await env.DB.prepare(
-      'SELECT id FROM tasksets WHERE id = ? AND agent_id = ? AND workspace_id = ?'
-    ).bind(tasksetId, agentId, workspaceId).first();
+    const db = createDb(env.DB);
 
-    if (!taskset) {
+    // Validate taskset exists
+    const taskset = await db
+      .select({ id: tasksets.id })
+      .from(tasksets)
+      .where(
+        and(
+          eq(tasksets.id, tasksetId),
+          eq(tasksets.agentId, agentId),
+          eq(tasksets.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (!taskset[0]) {
       return createErrorResponse('NOT_FOUND', 'Taskset not found', 404);
     }
 
     // Get all runs for this taskset
-    const result = await env.DB.prepare(
-      `SELECT
-        id, workspace_id, agent_id, taskset_id, status,
-        task_count, completed_count, failed_count,
-        model_provider, model_id, config,
-        created_at, started_at, completed_at, error
-       FROM taskset_runs
-       WHERE taskset_id = ? AND workspace_id = ?
-       ORDER BY created_at DESC`
-    ).bind(tasksetId, workspaceId).all();
+    const result = await db
+      .select()
+      .from(tasksetRuns)
+      .where(
+        and(
+          eq(tasksetRuns.tasksetId, tasksetId),
+          eq(tasksetRuns.workspaceId, workspaceId)
+        )
+      )
+      .orderBy(desc(tasksetRuns.createdAt));
 
     return createSuccessResponse({
-      runs: (result.results || []).map((row: any) => ({
+      runs: result.map((row) => ({
         id: row.id,
-        workspace_id: row.workspace_id,
-        agent_id: row.agent_id,
-        taskset_id: row.taskset_id,
+        workspace_id: row.workspaceId,
+        agent_id: row.agentId,
+        taskset_id: row.tasksetId,
         status: row.status,
-        task_count: row.task_count,
-        completed_count: row.completed_count,
-        failed_count: row.failed_count,
-        model_provider: row.model_provider,
-        model_id: row.model_id,
-        config: row.config ? JSON.parse(row.config) : {},
-        created_at: row.created_at,
-        started_at: row.started_at,
-        completed_at: row.completed_at,
+        task_count: row.taskCount,
+        completed_count: row.completedCount,
+        failed_count: row.failedCount,
+        model_provider: row.modelProvider,
+        model_id: row.modelId,
+        config: row.config as Record<string, unknown>,
+        created_at: row.createdAt,
+        started_at: row.startedAt,
+        completed_at: row.completedAt,
         error: row.error,
       })),
     });
@@ -779,60 +865,62 @@ export async function getTasksetRun(
     }
     validateWorkspaceAccess(workspaceId);
 
-    // Get run
-    const run = await env.DB.prepare(
-      `SELECT
-        id, workspace_id, agent_id, taskset_id, status,
-        task_count, completed_count, failed_count,
-        model_provider, model_id, config,
-        created_at, started_at, completed_at, error
-       FROM taskset_runs
-       WHERE id = ? AND taskset_id = ? AND agent_id = ? AND workspace_id = ?`
-    ).bind(runId, tasksetId, agentId, workspaceId).first();
+    const db = createDb(env.DB);
 
-    if (!run) {
+    // Get run
+    const run = await db
+      .select()
+      .from(tasksetRuns)
+      .where(
+        and(
+          eq(tasksetRuns.id, runId),
+          eq(tasksetRuns.tasksetId, tasksetId),
+          eq(tasksetRuns.agentId, agentId),
+          eq(tasksetRuns.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (!run[0]) {
       return createErrorResponse('NOT_FOUND', 'Run not found', 404);
     }
 
     // Get results for this run
-    const resultsData = await env.DB.prepare(
-      `SELECT
-        id, run_id, task_id, status, response, expected_output,
-        score, score_reason, trace_id, execution_time_ms, error, created_at
-       FROM taskset_run_results
-       WHERE run_id = ?
-       ORDER BY created_at ASC`
-    ).bind(runId).all();
+    const resultsData = await db
+      .select()
+      .from(tasksetRunResults)
+      .where(eq(tasksetRunResults.runId, runId))
+      .orderBy(tasksetRunResults.createdAt);
 
     const response = {
-      id: run.id,
-      workspace_id: run.workspace_id,
-      agent_id: run.agent_id,
-      taskset_id: run.taskset_id,
-      status: run.status,
-      task_count: run.task_count,
-      completed_count: run.completed_count,
-      failed_count: run.failed_count,
-      model_provider: run.model_provider,
-      model_id: run.model_id,
-      config: run.config ? JSON.parse(run.config as string) : {},
-      created_at: run.created_at,
-      started_at: run.started_at,
-      completed_at: run.completed_at,
-      error: run.error,
-      results: (resultsData.results || []).map((r: any) => ({
+      id: run[0].id,
+      workspace_id: run[0].workspaceId,
+      agent_id: run[0].agentId,
+      taskset_id: run[0].tasksetId,
+      status: run[0].status,
+      task_count: run[0].taskCount,
+      completed_count: run[0].completedCount,
+      failed_count: run[0].failedCount,
+      model_provider: run[0].modelProvider,
+      model_id: run[0].modelId,
+      config: run[0].config as Record<string, unknown>,
+      created_at: run[0].createdAt,
+      started_at: run[0].startedAt,
+      completed_at: run[0].completedAt,
+      error: run[0].error,
+      results: resultsData.map((r) => ({
         id: r.id,
-        run_id: r.run_id,
-        task_id: r.task_id,
+        run_id: r.runId,
+        task_id: r.taskId,
         status: r.status,
         response: r.response,
-        expected_output: r.expected_output,
+        expected_output: r.expectedOutput,
         score: r.score,
-        score_reason: r.score_reason,
-        trace_id: r.trace_id,
-        execution_time_ms: r.execution_time_ms,
+        score_reason: r.scoreReason,
+        trace_id: r.traceId,
+        execution_time_ms: r.executionTimeMs,
         error: r.error,
-        created_at: r.created_at,
+        created_at: r.createdAt,
       })),
     };
 

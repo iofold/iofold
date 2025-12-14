@@ -16,6 +16,11 @@ import {
 } from './utils';
 import { createPlaygroundDeepAgent, type StreamEvent } from '../playground/agent-deepagents';
 import { D1TraceCollector } from '../playground/tracing/d1-collector';
+import { createDb, type Database } from '../db/client';
+import { eq, and, desc, sql } from 'drizzle-orm';
+import { agents, agentVersions } from '../db/schema/agents';
+import { playgroundSessions } from '../db/schema/playground';
+import { integrations } from '../db/schema/integrations';
 
 export type ModelProvider = 'anthropic' | 'openai' | 'google';
 
@@ -137,6 +142,7 @@ export async function playgroundChat(
     const workspaceId = getWorkspaceId(request)!;
     validateWorkspaceAccess(workspaceId);
 
+    const drizzle = createDb(env.DB);
     const body = await parseJsonBody<PlaygroundChatRequest>(request);
 
     if (!body.messages || body.messages.length === 0) {
@@ -144,16 +150,20 @@ export async function playgroundChat(
     }
 
     // Get agent with active version
-    const agent = await env.DB.prepare(
-      `SELECT a.id, a.name, a.active_version_id, av.prompt_template, av.variables
-       FROM agents a
-       JOIN agent_versions av ON a.active_version_id = av.id
-       WHERE a.id = ? AND a.workspace_id = ?`
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const agentResult = await drizzle
+      .select({
+        id: agents.id,
+        name: agents.name,
+        active_version_id: agents.activeVersionId,
+        prompt_template: agentVersions.promptTemplate,
+        variables: agentVersions.variables,
+      })
+      .from(agents)
+      .innerJoin(agentVersions, eq(agents.activeVersionId, agentVersions.id))
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
 
-    if (!agent) {
+    if (agentResult.length === 0) {
       return createErrorResponse(
         'NOT_FOUND',
         'Agent not found or has no active version',
@@ -161,28 +171,35 @@ export async function playgroundChat(
       );
     }
 
+    const agent = agentResult[0];
+
     // Get or create session
     let session: PlaygroundSession | null = null;
     if (body.sessionId) {
-      const existingSession = await env.DB.prepare(
-        'SELECT * FROM playground_sessions WHERE id = ? AND agent_id = ? AND workspace_id = ?'
-      )
-        .bind(body.sessionId, agentId, workspaceId)
-        .first();
+      const existingSessionResult = await drizzle
+        .select()
+        .from(playgroundSessions)
+        .where(and(
+          eq(playgroundSessions.id, body.sessionId),
+          eq(playgroundSessions.agentId, agentId),
+          eq(playgroundSessions.workspaceId, workspaceId)
+        ))
+        .limit(1);
 
-      if (existingSession) {
+      if (existingSessionResult.length > 0) {
+        const existingSession = existingSessionResult[0];
         session = {
-          id: existingSession.id as string,
-          workspaceId: existingSession.workspace_id as string,
-          agentId: existingSession.agent_id as string,
-          agentVersionId: existingSession.agent_version_id as string,
-          messages: JSON.parse(existingSession.messages as string),
-          variables: JSON.parse(existingSession.variables as string),
-          files: JSON.parse(existingSession.files as string),
-          modelProvider: (existingSession.model_provider as ModelProvider) || 'anthropic',
-          modelId: (existingSession.model_id as string) || 'anthropic/claude-sonnet-4-5',
-          createdAt: existingSession.created_at as string,
-          updatedAt: existingSession.updated_at as string,
+          id: existingSession.id,
+          workspaceId: existingSession.workspaceId,
+          agentId: existingSession.agentId,
+          agentVersionId: existingSession.agentVersionId,
+          messages: existingSession.messages as any,
+          variables: existingSession.variables as any,
+          files: existingSession.files as any,
+          modelProvider: existingSession.modelProvider as ModelProvider,
+          modelId: existingSession.modelId,
+          createdAt: existingSession.createdAt,
+          updatedAt: existingSession.updatedAt,
         };
       }
     }
@@ -193,29 +210,21 @@ export async function playgroundChat(
       const now = new Date().toISOString();
       const modelProvider = body.modelProvider || 'anthropic';
       const modelId = body.modelId || 'anthropic/claude-sonnet-4-5';
-      const activeVersionId = agent.active_version_id as string;
+      const activeVersionId = agent.active_version_id!;
 
-      await env.DB.prepare(
-        `INSERT INTO playground_sessions (
-          id, workspace_id, agent_id, agent_version_id,
-          messages, variables, files, model_provider, model_id,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-        .bind(
-          sessionId,
-          workspaceId,
-          agentId,
-          activeVersionId,
-          JSON.stringify([]),
-          JSON.stringify(body.variables || {}),
-          JSON.stringify({}),
-          modelProvider,
-          modelId,
-          now,
-          now
-        )
-        .run();
+      await drizzle.insert(playgroundSessions).values({
+        id: sessionId,
+        workspaceId: workspaceId,
+        agentId: agentId,
+        agentVersionId: activeVersionId,
+        messages: [],
+        variables: body.variables || {},
+        files: {},
+        modelProvider: modelProvider,
+        modelId: modelId,
+        createdAt: now,
+        updatedAt: now,
+      });
 
       session = {
         id: sessionId,
@@ -241,11 +250,14 @@ export async function playgroundChat(
 
     // If model changed, update the session
     if (effectiveModelProvider !== currentSession.modelProvider || effectiveModelId !== currentSession.modelId) {
-      await env.DB.prepare(
-        'UPDATE playground_sessions SET model_provider = ?, model_id = ?, updated_at = ? WHERE id = ?'
-      )
-        .bind(effectiveModelProvider, effectiveModelId, new Date().toISOString(), currentSession.id)
-        .run();
+      await drizzle
+        .update(playgroundSessions)
+        .set({
+          modelProvider: effectiveModelProvider,
+          modelId: effectiveModelId,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(playgroundSessions.id, currentSession.id));
       currentSession.modelProvider = effectiveModelProvider;
       currentSession.modelId = effectiveModelId;
     }
@@ -298,21 +310,29 @@ export async function playgroundChat(
         const assistantMessageId = `msg_${crypto.randomUUID()}`;
 
         // Get or create playground integration for this workspace
-        let playgroundIntegration = await env.DB.prepare(
-          "SELECT id FROM integrations WHERE workspace_id = ? AND platform = 'playground'"
-        )
-          .bind(workspaceId)
-          .first();
+        const playgroundIntegrationResult = await drizzle
+          .select({ id: integrations.id })
+          .from(integrations)
+          .where(and(
+            eq(integrations.workspaceId, workspaceId),
+            eq(integrations.platform, 'playground')
+          ))
+          .limit(1);
 
-        if (!playgroundIntegration) {
+        let playgroundIntegration: { id: string };
+        if (playgroundIntegrationResult.length === 0) {
           const integrationId = `int_playground_${crypto.randomUUID()}`;
-          await env.DB.prepare(
-            `INSERT INTO integrations (id, workspace_id, name, platform, api_key_encrypted, status)
-             VALUES (?, ?, ?, ?, ?, ?)`
-          )
-            .bind(integrationId, workspaceId, 'Playground', 'playground', 'none', 'active')
-            .run();
+          await drizzle.insert(integrations).values({
+            id: integrationId,
+            workspaceId: workspaceId,
+            name: 'Playground',
+            platform: 'playground',
+            apiKeyEncrypted: 'none',
+            status: 'active',
+          });
           playgroundIntegration = { id: integrationId };
+        } else {
+          playgroundIntegration = playgroundIntegrationResult[0];
         }
 
         // Initialize trace collector
@@ -484,11 +504,13 @@ export async function playgroundChat(
           },
         ];
 
-        await env.DB.prepare(
-          'UPDATE playground_sessions SET messages = ?, updated_at = ? WHERE id = ?'
-        )
-          .bind(JSON.stringify(updatedMessages), new Date().toISOString(), currentSession.id)
-          .run();
+        await drizzle
+          .update(playgroundSessions)
+          .set({
+            messages: updatedMessages as any,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(playgroundSessions.id, currentSession.id));
 
         // Send session info in a custom event
         await writer.write(
@@ -557,28 +579,36 @@ export async function getPlaygroundSession(
     const workspaceId = getWorkspaceId(request)!;
     validateWorkspaceAccess(workspaceId);
 
-    const session = await env.DB.prepare(
-      'SELECT * FROM playground_sessions WHERE id = ? AND agent_id = ? AND workspace_id = ?'
-    )
-      .bind(sessionId, agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!session) {
+    const sessionResult = await drizzle
+      .select()
+      .from(playgroundSessions)
+      .where(and(
+        eq(playgroundSessions.id, sessionId),
+        eq(playgroundSessions.agentId, agentId),
+        eq(playgroundSessions.workspaceId, workspaceId)
+      ))
+      .limit(1);
+
+    if (sessionResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Session not found', 404);
     }
 
+    const session = sessionResult[0];
+
     return createSuccessResponse({
       id: session.id,
-      workspaceId: session.workspace_id,
-      agentId: session.agent_id,
-      agentVersionId: session.agent_version_id,
-      messages: JSON.parse(session.messages as string),
-      variables: JSON.parse(session.variables as string),
-      files: JSON.parse(session.files as string),
-      modelProvider: session.model_provider,
-      modelId: session.model_id,
-      createdAt: session.created_at,
-      updatedAt: session.updated_at,
+      workspaceId: session.workspaceId,
+      agentId: session.agentId,
+      agentVersionId: session.agentVersionId,
+      messages: session.messages,
+      variables: session.variables,
+      files: session.files,
+      modelProvider: session.modelProvider,
+      modelId: session.modelId,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -604,19 +634,25 @@ export async function deletePlaygroundSession(
     const workspaceId = getWorkspaceId(request)!;
     validateWorkspaceAccess(workspaceId);
 
-    const session = await env.DB.prepare(
-      'SELECT id FROM playground_sessions WHERE id = ? AND agent_id = ? AND workspace_id = ?'
-    )
-      .bind(sessionId, agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!session) {
+    const sessionResult = await drizzle
+      .select({ id: playgroundSessions.id })
+      .from(playgroundSessions)
+      .where(and(
+        eq(playgroundSessions.id, sessionId),
+        eq(playgroundSessions.agentId, agentId),
+        eq(playgroundSessions.workspaceId, workspaceId)
+      ))
+      .limit(1);
+
+    if (sessionResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Session not found', 404);
     }
 
-    await env.DB.prepare('DELETE FROM playground_sessions WHERE id = ?')
-      .bind(sessionId)
-      .run();
+    await drizzle
+      .delete(playgroundSessions)
+      .where(eq(playgroundSessions.id, sessionId));
 
     return new Response(null, { status: 204 });
   } catch (error: unknown) {
@@ -645,6 +681,8 @@ export async function listPlaygroundSessions(
     const workspaceId = getWorkspaceId(request)!;
     validateWorkspaceAccess(workspaceId);
 
+    const drizzle = createDb(env.DB);
+
     // Parse pagination parameters from query string
     const url = new URL(request.url);
     const limitParam = url.searchParams.get('limit');
@@ -659,45 +697,55 @@ export async function listPlaygroundSessions(
     if (limit > 200) limit = 200;
     if (isNaN(offset) || offset < 0) offset = 0;
 
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const agentResult = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
 
-    if (!agent) {
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // Get total count
-    const countResult = await env.DB.prepare(
-      'SELECT COUNT(*) as total FROM playground_sessions WHERE agent_id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const countResult = await drizzle
+      .select({ total: sql<number>`count(*)` })
+      .from(playgroundSessions)
+      .where(and(
+        eq(playgroundSessions.agentId, agentId),
+        eq(playgroundSessions.workspaceId, workspaceId)
+      ));
 
-    const total = (countResult?.total as number) || 0;
+    const total = countResult[0]?.total || 0;
 
     // Get paginated sessions
-    const result = await env.DB.prepare(
-      `SELECT id, agent_version_id, model_provider, model_id, created_at, updated_at,
-              json_array_length(messages) as message_count
-       FROM playground_sessions
-       WHERE agent_id = ? AND workspace_id = ?
-       ORDER BY updated_at DESC
-       LIMIT ? OFFSET ?`
-    )
-      .bind(agentId, workspaceId, limit, offset)
-      .all();
+    const result = await drizzle
+      .select({
+        id: playgroundSessions.id,
+        agentVersionId: playgroundSessions.agentVersionId,
+        modelProvider: playgroundSessions.modelProvider,
+        modelId: playgroundSessions.modelId,
+        message_count: sql<number>`json_array_length(${playgroundSessions.messages})`,
+        createdAt: playgroundSessions.createdAt,
+        updatedAt: playgroundSessions.updatedAt,
+      })
+      .from(playgroundSessions)
+      .where(and(
+        eq(playgroundSessions.agentId, agentId),
+        eq(playgroundSessions.workspaceId, workspaceId)
+      ))
+      .orderBy(desc(playgroundSessions.updatedAt))
+      .limit(limit)
+      .offset(offset);
 
-    const sessions = result.results.map((row: Record<string, unknown>) => ({
+    const sessions = result.map((row) => ({
       id: row.id,
-      agentVersionId: row.agent_version_id,
-      modelProvider: row.model_provider,
-      modelId: row.model_id,
+      agentVersionId: row.agentVersionId,
+      modelProvider: row.modelProvider,
+      modelId: row.modelId,
       messageCount: row.message_count,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     }));
 
     return createSuccessResponse({

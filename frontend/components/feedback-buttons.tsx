@@ -12,7 +12,6 @@ import { FeedbackNotesDialog } from '@/components/feedback-notes-dialog'
 
 interface FeedbackButtonsProps {
   traceId: string
-  agentId?: string
   currentFeedback?: Feedback
   onFeedbackSubmit?: () => void
   showNotesButton?: boolean
@@ -22,7 +21,6 @@ interface FeedbackButtonsProps {
 
 export function FeedbackButtons({
   traceId,
-  agentId,
   currentFeedback,
   onFeedbackSubmit,
   showNotesButton = true,
@@ -36,12 +34,8 @@ export function FeedbackButtons({
 
   const submitMutation = useMutation({
     mutationFn: (data: { rating: 'positive' | 'negative' | 'neutral'; notes?: string }) => {
-      if (!agentId) {
-        throw new Error('Agent ID is required')
-      }
       return apiClient.submitFeedback({
         trace_id: traceId,
-        agent_id: agentId,
         rating: data.rating,
         notes: data.notes,
       })
@@ -129,13 +123,7 @@ export function FeedbackButtons({
   const activeRating = optimisticRating || currentFeedback?.rating
   const isLoading = submitMutation.isPending || updateMutation.isPending
 
-  if (!agentId && !currentFeedback) {
-    return (
-      <div className="text-sm text-muted-foreground">
-        Select an agent to provide feedback
-      </div>
-    )
-  }
+  // Feedback can be submitted without an agent - agent_id is optional
 
   return (
     <>

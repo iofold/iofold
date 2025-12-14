@@ -18,6 +18,9 @@ import type {
   ExecuteEvalRequest,
   UpdateEvalRequest
 } from '../types/api';
+import { createDb, type Database } from '../db/client';
+import { eq, and, desc, sql, lt, inArray } from 'drizzle-orm';
+import { agents, evals, feedback, traces } from '../db/schema';
 
 // Request schemas
 const GenerateEvalSchema = z.object({
@@ -84,30 +87,35 @@ export class EvalsAPI {
     try {
       const validated = GenerateEvalSchema.parse(body) as GenerateEvalRequest;
 
-      // Check if agent exists and belongs to workspace
-      const agent = await this.db
-        .prepare('SELECT id FROM agents WHERE id = ? AND workspace_id = ?')
-        .bind(agentId, workspaceId)
-        .first();
+      const drizzle = createDb(this.db);
 
-      if (!agent) {
+      // Check if agent exists and belongs to workspace
+      const agent = await drizzle
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, agentId),
+            eq(agents.workspaceId, workspaceId)
+          )
+        )
+        .limit(1);
+
+      if (agent.length === 0) {
         return notFoundError('Agent', agentId);
       }
 
       // Check if we have sufficient examples
-      const feedbackCount = await this.db
-        .prepare(
-          `SELECT
-             SUM(CASE WHEN rating = 'positive' THEN 1 ELSE 0 END) as positive_count,
-             SUM(CASE WHEN rating = 'negative' THEN 1 ELSE 0 END) as negative_count
-           FROM feedback
-           WHERE agent_id = ?`
-        )
-        .bind(agentId)
-        .first();
+      const feedbackCount = await drizzle
+        .select({
+          positiveCount: sql<number>`SUM(CASE WHEN ${feedback.rating} = 'positive' THEN 1 ELSE 0 END)`,
+          negativeCount: sql<number>`SUM(CASE WHEN ${feedback.rating} = 'negative' THEN 1 ELSE 0 END)`,
+        })
+        .from(feedback)
+        .where(eq(feedback.agentId, agentId));
 
-      const positiveCount = (feedbackCount?.positive_count as number) || 0;
-      const negativeCount = (feedbackCount?.negative_count as number) || 0;
+      const positiveCount = feedbackCount[0]?.positiveCount || 0;
+      const negativeCount = feedbackCount[0]?.negativeCount || 0;
 
       if (positiveCount < 1 || negativeCount < 1) {
         return insufficientExamplesError(
@@ -175,51 +183,46 @@ export class EvalsAPI {
     try {
       const validated = CreateEvalSchema.parse(body);
 
-      // Check if agent exists and belongs to workspace (if workspace provided)
-      let query = 'SELECT id FROM agents WHERE id = ?';
-      const params: any[] = [validated.agent_id];
+      const drizzle = createDb(this.db);
 
+      // Check if agent exists and belongs to workspace (if workspace provided)
+      const conditions = [eq(agents.id, validated.agent_id)];
       if (workspaceId) {
-        query += ' AND workspace_id = ?';
-        params.push(workspaceId);
+        conditions.push(eq(agents.workspaceId, workspaceId));
       }
 
-      const agent = await this.db
-        .prepare(query)
-        .bind(...params)
-        .first();
+      const agent = await drizzle
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(...conditions))
+        .limit(1);
 
-      if (!agent) {
+      if (agent.length === 0) {
         return notFoundError('Agent', validated.agent_id);
       }
 
       // Get next version number for this agent
-      const versionResult = await this.db
-        .prepare('SELECT COALESCE(MAX(version), 0) + 1 as next_version FROM evals WHERE agent_id = ?')
-        .bind(validated.agent_id)
-        .first();
-      const version = (versionResult?.next_version as number) || 1;
+      const versionResult = await drizzle
+        .select({ nextVersion: sql<number>`COALESCE(MAX(${evals.version}), 0) + 1` })
+        .from(evals)
+        .where(eq(evals.agentId, validated.agent_id));
+      const version = versionResult[0]?.nextVersion || 1;
 
       const evalId = `eval_${crypto.randomUUID()}`;
       const now = new Date().toISOString();
 
-      await this.db
-        .prepare(
-          `INSERT INTO evals (id, agent_id, version, name, description, code, model_used, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)`
-        )
-        .bind(
-          evalId,
-          validated.agent_id,
-          version,
-          validated.name,
-          validated.description || null,
-          validated.code,
-          validated.model_used,
-          now,
-          now
-        )
-        .run();
+      await drizzle.insert(evals).values({
+        id: evalId,
+        agentId: validated.agent_id,
+        version,
+        name: validated.name,
+        description: validated.description || null,
+        code: validated.code,
+        modelUsed: validated.model_used,
+        status: 'draft',
+        createdAt: now,
+        updatedAt: now,
+      });
 
       return this.getEval(evalId);
     } catch (error) {
@@ -243,54 +246,65 @@ export class EvalsAPI {
 
       const validated = ListEvalsSchema.parse(params);
 
-      // Join with agents table to filter by workspace
-      let query = 'SELECT e.* FROM evals e INNER JOIN agents a ON e.agent_id = a.id';
-      const conditions: string[] = [];
-      const bindings: any[] = [];
+      const drizzle = createDb(this.db);
 
-      // Add workspace filter (required)
-      conditions.push('a.workspace_id = ?');
-      bindings.push(workspaceId);
+      // Build conditions array
+      const conditions: any[] = [eq(agents.workspaceId, workspaceId)];
 
       if (validated.agent_id) {
-        conditions.push('e.agent_id = ?');
-        bindings.push(validated.agent_id);
+        conditions.push(eq(evals.agentId, validated.agent_id));
       }
 
       if (validated.cursor) {
-        conditions.push('e.created_at < ?');
-        bindings.push(validated.cursor);
+        conditions.push(lt(evals.createdAt, validated.cursor));
       }
 
-      query += ' WHERE ' + conditions.join(' AND ');
-      query += ' ORDER BY e.created_at DESC LIMIT ?';
-      bindings.push(validated.limit! + 1); // Fetch one extra to check has_more
+      // Join with agents table to filter by workspace
+      const results = await drizzle
+        .select({
+          id: evals.id,
+          name: evals.name,
+          description: evals.description,
+          agentId: evals.agentId,
+          accuracy: evals.accuracy,
+          cohenKappa: evals.cohenKappa,
+          f1Score: evals.f1Score,
+          precision: evals.precision,
+          recall: evals.recall,
+          executionCount: evals.executionCount,
+          contradictionCount: evals.contradictionCount,
+          createdAt: evals.createdAt,
+          updatedAt: evals.updatedAt,
+        })
+        .from(evals)
+        .innerJoin(agents, eq(evals.agentId, agents.id))
+        .where(and(...conditions))
+        .orderBy(desc(evals.createdAt))
+        .limit(validated.limit! + 1); // Fetch one extra to check has_more
 
-      const results = await this.db.prepare(query).bind(...bindings).all();
+      const hasMore = results.length > validated.limit!;
+      const evalsList = results.slice(0, validated.limit!);
 
-      const hasMore = results.results.length > validated.limit!;
-      const evals = results.results.slice(0, validated.limit!);
-
-      const evalSummaries: EvalSummary[] = evals.map(record => ({
-        id: record.id as string,
-        name: record.name as string,
-        description: record.description as string | null,
-        agent_id: record.agent_id as string,
-        accuracy: record.accuracy as number,
-        cohen_kappa: record.cohen_kappa as number | null,
-        f1_score: record.f1_score as number | null,
-        precision: record.precision as number | null,
-        recall: record.recall as number | null,
-        execution_count: record.execution_count as number,
-        contradiction_count: record.contradiction_count as number,
-        created_at: record.created_at as string,
-        updated_at: record.updated_at as string
+      const evalSummaries: EvalSummary[] = evalsList.map(record => ({
+        id: record.id,
+        name: record.name,
+        description: record.description,
+        agent_id: record.agentId,
+        accuracy: record.accuracy!,
+        cohen_kappa: record.cohenKappa,
+        f1_score: record.f1Score,
+        precision: record.precision,
+        recall: record.recall,
+        execution_count: record.executionCount!,
+        contradiction_count: record.contradictionCount!,
+        created_at: record.createdAt,
+        updated_at: record.updatedAt,
       }));
 
       return new Response(
         JSON.stringify({
           evals: evalSummaries,
-          next_cursor: hasMore ? (evals[evals.length - 1].created_at as string) : null,
+          next_cursor: hasMore ? evalsList[evalsList.length - 1].createdAt : null,
           has_more: hasMore
         }),
         {
@@ -305,39 +319,77 @@ export class EvalsAPI {
   // GET /api/evals/:id - Get eval details
   async getEval(evalId: string, workspaceId?: string): Promise<Response> {
     try {
-      // Join with agents to verify workspace ownership
-      let query = workspaceId
-        ? 'SELECT e.* FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?'
-        : 'SELECT * FROM evals WHERE id = ?';
+      const drizzle = createDb(this.db);
 
-      const params = workspaceId ? [evalId, workspaceId] : [evalId];
+      // Build conditions
+      const conditions: any[] = [eq(evals.id, evalId)];
 
-      const record = await this.db
-        .prepare(query)
-        .bind(...params)
-        .first();
+      let record;
+      if (workspaceId) {
+        // Join with agents to verify workspace ownership
+        const result = await drizzle
+          .select({
+            id: evals.id,
+            name: evals.name,
+            description: evals.description,
+            agentId: evals.agentId,
+            code: evals.code,
+            modelUsed: evals.modelUsed,
+            accuracy: evals.accuracy,
+            cohenKappa: evals.cohenKappa,
+            f1Score: evals.f1Score,
+            precision: evals.precision,
+            recall: evals.recall,
+            testResults: evals.testResults,
+            executionCount: evals.executionCount,
+            contradictionCount: evals.contradictionCount,
+            createdAt: evals.createdAt,
+            updatedAt: evals.updatedAt,
+          })
+          .from(evals)
+          .innerJoin(agents, eq(evals.agentId, agents.id))
+          .where(
+            and(
+              eq(evals.id, evalId),
+              eq(agents.workspaceId, workspaceId)
+            )
+          )
+          .limit(1);
 
-      if (!record) {
-        return notFoundError('Eval', evalId);
+        if (result.length === 0) {
+          return notFoundError('Eval', evalId);
+        }
+        record = result[0];
+      } else {
+        const result = await drizzle
+          .select()
+          .from(evals)
+          .where(eq(evals.id, evalId))
+          .limit(1);
+
+        if (result.length === 0) {
+          return notFoundError('Eval', evalId);
+        }
+        record = result[0];
       }
 
       const eval_: Eval = {
-        id: record.id as string,
-        name: record.name as string,
-        description: record.description as string | null,
-        agent_id: record.agent_id as string,
-        code: record.code as string,
-        model_used: record.model_used as string,
-        accuracy: record.accuracy as number,
-        cohen_kappa: record.cohen_kappa as number | null,
-        f1_score: record.f1_score as number | null,
-        precision: record.precision as number | null,
-        recall: record.recall as number | null,
-        test_results: record.test_results ? JSON.parse(record.test_results as string) : null,
-        execution_count: record.execution_count as number,
-        contradiction_count: record.contradiction_count as number,
-        created_at: record.created_at as string,
-        updated_at: record.updated_at as string
+        id: record.id,
+        name: record.name,
+        description: record.description,
+        agent_id: record.agentId,
+        code: record.code,
+        model_used: record.modelUsed,
+        accuracy: record.accuracy!,
+        cohen_kappa: record.cohenKappa,
+        f1_score: record.f1Score,
+        precision: record.precision,
+        recall: record.recall,
+        test_results: record.testResults as any,
+        execution_count: record.executionCount!,
+        contradiction_count: record.contradictionCount!,
+        created_at: record.createdAt,
+        updated_at: record.updatedAt,
       };
 
       return new Response(JSON.stringify(eval_), {
@@ -353,53 +405,64 @@ export class EvalsAPI {
     try {
       const validated = UpdateEvalSchema.parse(body) as UpdateEvalRequest;
 
+      const drizzle = createDb(this.db);
+
       // Check if eval exists and belongs to workspace
-      let query = workspaceId
-        ? 'SELECT e.id FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?'
-        : 'SELECT id FROM evals WHERE id = ?';
+      let existing;
+      if (workspaceId) {
+        const result = await drizzle
+          .select({ id: evals.id })
+          .from(evals)
+          .innerJoin(agents, eq(evals.agentId, agents.id))
+          .where(
+            and(
+              eq(evals.id, evalId),
+              eq(agents.workspaceId, workspaceId)
+            )
+          )
+          .limit(1);
 
-      const params = workspaceId ? [evalId, workspaceId] : [evalId];
+        if (result.length === 0) {
+          return notFoundError('Eval', evalId);
+        }
+        existing = result[0];
+      } else {
+        const result = await drizzle
+          .select({ id: evals.id })
+          .from(evals)
+          .where(eq(evals.id, evalId))
+          .limit(1);
 
-      const existing = await this.db
-        .prepare(query)
-        .bind(...params)
-        .first();
-
-      if (!existing) {
-        return notFoundError('Eval', evalId);
+        if (result.length === 0) {
+          return notFoundError('Eval', evalId);
+        }
+        existing = result[0];
       }
 
-      // Build update query
-      const updates: string[] = [];
-      const bindings: any[] = [];
+      // Build update object
+      const updateValues: any = {
+        updatedAt: new Date().toISOString(),
+      };
 
       if (validated.name !== undefined) {
-        updates.push('name = ?');
-        bindings.push(validated.name);
+        updateValues.name = validated.name;
       }
 
       if (validated.description !== undefined) {
-        updates.push('description = ?');
-        bindings.push(validated.description);
+        updateValues.description = validated.description;
       }
 
       if (validated.code !== undefined) {
-        updates.push('code = ?');
-        bindings.push(validated.code);
+        updateValues.code = validated.code;
         // Invalidate accuracy when code is modified
-        updates.push('accuracy = NULL');
-        updates.push('test_results = NULL');
+        updateValues.accuracy = null;
+        updateValues.testResults = null;
       }
 
-      updates.push('updated_at = ?');
-      bindings.push(new Date().toISOString());
-
-      bindings.push(evalId);
-
-      await this.db
-        .prepare(`UPDATE evals SET ${updates.join(', ')} WHERE id = ?`)
-        .bind(...bindings)
-        .run();
+      await drizzle
+        .update(evals)
+        .set(updateValues)
+        .where(eq(evals.id, evalId));
 
       // Return updated eval
       return this.getEval(evalId, workspaceId);
@@ -417,13 +480,25 @@ export class EvalsAPI {
     try {
       const validated = ExecuteEvalSchema.parse(body) as ExecuteEvalRequest;
 
-      // Check if eval exists and belongs to workspace
-      const eval_ = await this.db
-        .prepare('SELECT e.id, e.agent_id FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?')
-        .bind(evalId, workspaceId)
-        .first();
+      const drizzle = createDb(this.db);
 
-      if (!eval_) {
+      // Check if eval exists and belongs to workspace
+      const eval_ = await drizzle
+        .select({
+          id: evals.id,
+          agentId: evals.agentId,
+        })
+        .from(evals)
+        .innerJoin(agents, eq(evals.agentId, agents.id))
+        .where(
+          and(
+            eq(evals.id, evalId),
+            eq(agents.workspaceId, workspaceId)
+          )
+        )
+        .limit(1);
+
+      if (eval_.length === 0) {
         return notFoundError('Eval', evalId);
       }
 
@@ -433,15 +508,11 @@ export class EvalsAPI {
         estimatedCount = validated.trace_ids.length;
       } else {
         // Count traces for agent
-        const countResult = await this.db
-          .prepare(
-            `SELECT COUNT(DISTINCT trace_id) as count
-             FROM feedback
-             WHERE agent_id = ?`
-          )
-          .bind(eval_.agent_id)
-          .first();
-        estimatedCount = (countResult?.count as number) || 0;
+        const countResult = await drizzle
+          .select({ count: sql<number>`COUNT(DISTINCT ${feedback.traceId})` })
+          .from(feedback)
+          .where(eq(feedback.agentId, eval_[0].agentId));
+        estimatedCount = countResult[0]?.count || 0;
       }
 
       // Create job
@@ -494,27 +565,44 @@ export class EvalsAPI {
   // DELETE /api/evals/:id - Delete eval
   async deleteEval(evalId: string, workspaceId?: string): Promise<Response> {
     try {
+      const drizzle = createDb(this.db);
+
       // Check if eval exists and belongs to workspace
-      let query = workspaceId
-        ? 'SELECT e.id FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?'
-        : 'SELECT id FROM evals WHERE id = ?';
+      let existing;
+      if (workspaceId) {
+        const result = await drizzle
+          .select({ id: evals.id })
+          .from(evals)
+          .innerJoin(agents, eq(evals.agentId, agents.id))
+          .where(
+            and(
+              eq(evals.id, evalId),
+              eq(agents.workspaceId, workspaceId)
+            )
+          )
+          .limit(1);
 
-      const params = workspaceId ? [evalId, workspaceId] : [evalId];
+        if (result.length === 0) {
+          return notFoundError('Eval', evalId);
+        }
+        existing = result[0];
+      } else {
+        const result = await drizzle
+          .select({ id: evals.id })
+          .from(evals)
+          .where(eq(evals.id, evalId))
+          .limit(1);
 
-      const existing = await this.db
-        .prepare(query)
-        .bind(...params)
-        .first();
-
-      if (!existing) {
-        return notFoundError('Eval', evalId);
+        if (result.length === 0) {
+          return notFoundError('Eval', evalId);
+        }
+        existing = result[0];
       }
 
       // Delete eval (cascades to eval_executions)
-      await this.db
-        .prepare('DELETE FROM evals WHERE id = ?')
-        .bind(evalId)
-        .run();
+      await drizzle
+        .delete(evals)
+        .where(eq(evals.id, evalId));
 
       return new Response(null, { status: 204 });
     } catch (error) {
@@ -531,30 +619,48 @@ export class EvalsAPI {
     try {
       const validated = PlaygroundRunSchema.parse(body);
 
-      // Check if eval exists, belongs to workspace, and get agent_id
-      const evalRecord = await this.db
-        .prepare('SELECT e.id, e.agent_id FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?')
-        .bind(evalId, workspaceId)
-        .first();
+      const drizzle = createDb(this.db);
 
-      if (!evalRecord) {
+      // Check if eval exists, belongs to workspace, and get agent_id
+      const evalRecord = await drizzle
+        .select({
+          id: evals.id,
+          agentId: evals.agentId,
+        })
+        .from(evals)
+        .innerJoin(agents, eq(evals.agentId, agents.id))
+        .where(
+          and(
+            eq(evals.id, evalId),
+            eq(agents.workspaceId, workspaceId)
+          )
+        )
+        .limit(1);
+
+      if (evalRecord.length === 0) {
         return notFoundError('Eval', evalId);
       }
 
       // Fetch traces with their feedback
-      const placeholders = validated.trace_ids.map(() => '?').join(',');
-      const traces = await this.db
-        .prepare(
-          `SELECT t.id, t.steps, t.raw_data,
-                  f.rating as human_rating, f.rating_detail as human_notes
-           FROM traces t
-           LEFT JOIN feedback f ON t.id = f.trace_id AND f.agent_id = ?
-           WHERE t.id IN (${placeholders})`
+      const traceResults = await drizzle
+        .select({
+          id: traces.id,
+          steps: traces.steps,
+          rawData: traces.rawData,
+          humanRating: feedback.rating,
+          humanNotes: feedback.ratingDetail,
+        })
+        .from(traces)
+        .leftJoin(
+          feedback,
+          and(
+            eq(traces.id, feedback.traceId),
+            eq(feedback.agentId, evalRecord[0].agentId)
+          )
         )
-        .bind(evalRecord.agent_id, ...validated.trace_ids)
-        .all();
+        .where(inArray(traces.id, validated.trace_ids));
 
-      if (!traces.results || traces.results.length === 0) {
+      if (!traceResults || traceResults.length === 0) {
         return validationError('trace_ids', 'No valid traces found');
       }
 
@@ -564,7 +670,7 @@ export class EvalsAPI {
       let contradictions = 0;
       let totalTime = 0;
 
-      for (const trace of traces.results) {
+      for (const trace of traceResults) {
         const startTime = Date.now();
         let predicted = false;
         let reason = '';
@@ -575,7 +681,7 @@ export class EvalsAPI {
           const traceData = {
             trace_id: trace.id,
             steps: typeof trace.steps === 'string' ? JSON.parse(trace.steps as string) : trace.steps,
-            raw_data: typeof trace.raw_data === 'string' ? JSON.parse(trace.raw_data as string) : trace.raw_data
+            raw_data: typeof trace.rawData === 'string' ? JSON.parse(trace.rawData as string) : trace.rawData
           };
 
           // Execute eval code using PythonRunner
@@ -633,7 +739,7 @@ print(json.dumps(result_dict))
         totalTime += executionTime;
 
         // Determine if this is a match or contradiction
-        const humanRating = trace.human_rating as string | null;
+        const humanRating = trace.humanRating as string | null;
         let isMatch: boolean | null = null;
         let isContradiction = false;
 

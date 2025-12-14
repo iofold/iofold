@@ -1,10 +1,13 @@
 import type { D1Database, DurableObjectNamespace } from '@cloudflare/workers-types';
 import type { Sandbox } from '@cloudflare/sandbox';
+import { eq, sql, inArray, and } from 'drizzle-orm';
 import { PythonRunner } from '../sandbox/python-runner';
 import type { Trace } from '../types/trace';
 import type { ExecuteEvalJobResult } from '../types/api';
 import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
+import { createDb, type Database } from '../db/client';
+import { evals, traces, feedback, evalExecutions, evalComparison } from '../db/schema';
 
 export interface EvalExecutionJobConfig {
   jobId: string;
@@ -23,12 +26,14 @@ export class EvalExecutionJob {
   private jobManager: JobManager;
   private runner: PythonRunner;
   private stream?: SSEStream;
+  private drizzle: Database;
 
   constructor(
     private config: EvalExecutionJobConfig,
     private deps: EvalExecutionJobDeps
   ) {
     this.jobManager = new JobManager(deps.db);
+    this.drizzle = createDb(deps.db);
     this.runner = new PythonRunner({
       sandboxBinding: deps.sandboxBinding,
       timeout: 5000
@@ -43,17 +48,22 @@ export class EvalExecutionJob {
       await this.jobManager.updateJobStatus(this.config.jobId, 'running', 0);
 
       // Step 1: Fetch eval code
-      const evalRecord = await this.deps.db
-        .prepare('SELECT id, code, agent_id FROM evals WHERE id = ?')
-        .bind(this.config.evalId)
-        .first();
+      const evalRecord = await this.drizzle
+        .select({
+          id: evals.id,
+          code: evals.code,
+          agentId: evals.agentId
+        })
+        .from(evals)
+        .where(eq(evals.id, this.config.evalId))
+        .limit(1);
 
-      if (!evalRecord) {
+      if (evalRecord.length === 0) {
         throw new Error(`Eval ${this.config.evalId} not found`);
       }
 
-      const evalCode = evalRecord.code as string;
-      const agentId = evalRecord.agent_id as string;
+      const evalCode = evalRecord[0].code;
+      const agentId = evalRecord[0].agentId;
 
       // Step 2: Get traces to execute against
       const traces = await this.fetchTraces(agentId);
@@ -141,15 +151,13 @@ export class EvalExecutionJob {
       await this.storeExecutionResults(this.config.evalId, executionResults);
 
       // Step 5: Update eval execution count
-      await this.deps.db
-        .prepare(
-          `UPDATE evals
-           SET execution_count = execution_count + ?,
-               updated_at = ?
-           WHERE id = ?`
-        )
-        .bind(results.completed, new Date().toISOString(), this.config.evalId)
-        .run();
+      await this.drizzle
+        .update(evals)
+        .set({
+          executionCount: sql`${evals.executionCount} + ${results.completed}`,
+          updatedAt: new Date().toISOString()
+        })
+        .where(eq(evals.id, this.config.evalId));
 
       // Mark job as completed
       await this.jobManager.completeJob(this.config.jobId, results);
@@ -169,33 +177,35 @@ export class EvalExecutionJob {
   }
 
   private async fetchTraces(agentId: string): Promise<Trace[]> {
-    let query: string;
-    let bindings: any[];
+    let results;
 
     if (this.config.traceIds && this.config.traceIds.length > 0) {
       // Execute against specific traces
-      const placeholders = this.config.traceIds.map(() => '?').join(',');
-      query = `SELECT * FROM traces WHERE id IN (${placeholders})`;
-      bindings = this.config.traceIds;
+      results = await this.drizzle
+        .select()
+        .from(traces)
+        .where(inArray(traces.id, this.config.traceIds));
     } else {
       // Execute against all traces for agent (that have feedback)
-      query = `
-        SELECT DISTINCT t.*
-        FROM traces t
-        JOIN feedback f ON t.id = f.trace_id
-        WHERE f.agent_id = ?
-      `;
-      bindings = [agentId];
+      results = await this.drizzle
+        .selectDistinct({
+          id: traces.id,
+          traceId: traces.traceId,
+          source: traces.source,
+          steps: traces.steps,
+          rawData: traces.rawData
+        })
+        .from(traces)
+        .innerJoin(feedback, eq(traces.id, feedback.traceId))
+        .where(eq(feedback.agentId, agentId));
     }
 
-    const results = await this.deps.db.prepare(query).bind(...bindings).all();
-
-    return results.results.map(record => ({
-      id: record.id as string,
-      trace_id: record.trace_id as string,
-      source: record.source as 'langfuse' | 'langsmith' | 'openai',
-      steps: JSON.parse(record.normalized_data as string),
-      raw_data: JSON.parse(record.raw_data as string)
+    return results.map(record => ({
+      id: record.id,
+      trace_id: record.traceId,
+      source: record.source,
+      steps: typeof record.steps === 'string' ? JSON.parse(record.steps) : record.steps,
+      raw_data: typeof record.rawData === 'string' ? JSON.parse(record.rawData as string) : record.rawData
     }));
   }
 
@@ -287,37 +297,53 @@ print(json.dumps(result_dict))
       stderr?: string;
     }>
   ): Promise<void> {
+    if (results.length === 0) return;
+
     const now = new Date().toISOString();
 
-    // Use INSERT OR REPLACE to handle re-execution (force = true)
-    const statements = results.map(result =>
-      this.deps.db
-        .prepare(
-          `INSERT OR REPLACE INTO eval_executions (
-            id, eval_id, trace_id, result, reason, execution_time_ms,
-            error, stdout, stderr, created_at
-          ) VALUES (
-            (SELECT id FROM eval_executions WHERE eval_id = ? AND trace_id = ?),
-            ?, ?, ?, ?, ?, ?, ?, ?
-          )`
+    // Handle INSERT OR REPLACE by checking for existing records first
+    for (const result of results) {
+      // Check if execution already exists
+      const existing = await this.drizzle
+        .select({ id: evalExecutions.id })
+        .from(evalExecutions)
+        .where(
+          and(
+            eq(evalExecutions.evalId, evalId),
+            eq(evalExecutions.traceId, result.traceId)
+          )
         )
-        .bind(
-          evalId,
-          result.traceId,
-          evalId,
-          result.traceId,
-          result.result ? 1 : 0,
-          result.reason,
-          result.executionTimeMs,
-          result.error || null,
-          result.stdout || null,
-          result.stderr || null,
-          now
-        )
-    );
+        .limit(1);
 
-    if (statements.length > 0) {
-      await this.deps.db.batch(statements);
+      if (existing.length > 0) {
+        // Update existing record
+        await this.drizzle
+          .update(evalExecutions)
+          .set({
+            predictedResult: result.result,
+            predictedReason: result.reason,
+            executionTimeMs: result.executionTimeMs,
+            error: result.error || null,
+            stdout: result.stdout || null,
+            stderr: result.stderr || null,
+            executedAt: now
+          })
+          .where(eq(evalExecutions.id, existing[0].id));
+      } else {
+        // Insert new record
+        await this.drizzle.insert(evalExecutions).values({
+          id: crypto.randomUUID(),
+          evalId,
+          traceId: result.traceId,
+          predictedResult: result.result,
+          predictedReason: result.reason,
+          executionTimeMs: result.executionTimeMs,
+          error: result.error || null,
+          stdout: result.stdout || null,
+          stderr: result.stderr || null,
+          executedAt: now
+        });
+      }
     }
 
     // Update contradiction count
@@ -325,22 +351,23 @@ print(json.dumps(result_dict))
   }
 
   private async updateContradictionCount(evalId: string): Promise<void> {
-    // Count contradictions using the eval_comparison view
-    const result = await this.deps.db
-      .prepare(
-        `SELECT COUNT(*) as count
-         FROM eval_comparison
-         WHERE eval_id = ? AND is_contradiction = 1`
-      )
-      .bind(evalId)
-      .first();
+    // Count contradictions using the eval_comparison view (Drizzle type-safe)
+    const result = await this.drizzle
+      .select({
+        count: sql<number>`COUNT(*)`
+      })
+      .from(evalComparison)
+      .where(and(
+        eq(evalComparison.evalId, evalId),
+        eq(evalComparison.isContradiction, 1)
+      ));
 
-    const count = result?.count as number || 0;
+    const count = result[0]?.count || 0;
 
-    await this.deps.db
-      .prepare('UPDATE evals SET contradiction_count = ? WHERE id = ?')
-      .bind(count, evalId)
-      .run();
+    await this.drizzle
+      .update(evals)
+      .set({ contradictionCount: count })
+      .where(eq(evals.id, evalId));
   }
 
   private emitProgress(status: string, progress: number, extra?: any) {

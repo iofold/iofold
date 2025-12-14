@@ -11,11 +11,7 @@ import type {
   ImportJobPayload,
   GenerateJobPayload,
   ExecuteJobPayload,
-  MonitorJobPayload,
-  AutoRefineJobPayload,
   AgentDiscoveryJobPayload,
-  PromptImprovementJobPayload,
-  PromptEvaluationJobPayload,
   RolloutTaskPayload,
   GEPAOptimizationJobPayload,
   TasksetRunJobPayload,
@@ -26,12 +22,13 @@ import { TraceImportJob } from '../jobs/trace-import-job';
 import { EvalGenerationJob } from '../jobs/eval-generation-job';
 import { EvalExecutionJob } from '../jobs/eval-execution-job';
 import { AgentDiscoveryJob } from '../jobs/agent-discovery-job';
-import { PromptImprovementJob } from '../jobs/prompt-improvement-job';
-import { PromptEvaluationJob } from '../jobs/prompt-evaluation-job';
 import { GEPAOptimizationJob } from '../jobs/gepa-optimization-job';
 import { TasksetRunJob } from '../jobs/taskset-run-job';
 import { classifyError, isRetryable, getErrorCategoryDescription, type ErrorCategory } from '../errors/classifier';
 import { calculateBackoffDelay, shouldRetry as shouldRetryBackoff, DEFAULT_RETRY_CONFIG } from '../retry/backoff';
+import { createDb, type Database } from '../db/client';
+import { eq, sql } from 'drizzle-orm';
+import { jobs, jobRetryHistory, rolloutResults } from '../db/schema';
 
 /**
  * Custom error class for rollout task timeouts
@@ -108,6 +105,7 @@ export interface QueueConsumerDeps {
  */
 export class QueueConsumer {
   private db: D1Database;
+  private drizzle: Database;
   private benchmarksDb?: D1Database;
   private sandboxBinding?: DurableObjectNamespace<Sandbox>;
   private encryptionKey: string;
@@ -122,6 +120,7 @@ export class QueueConsumer {
 
   constructor(deps: QueueConsumerDeps) {
     this.db = deps.db;
+    this.drizzle = createDb(deps.db);
     this.benchmarksDb = deps.benchmarksDb;
     this.sandboxBinding = deps.sandboxBinding;
     this.encryptionKey = deps.encryptionKey;
@@ -209,20 +208,8 @@ export class QueueConsumer {
         case 'execute':
           await this.processExecuteJob(job_id, workspace_id, payload as ExecuteJobPayload);
           break;
-        case 'monitor':
-          await this.processMonitorJob(job_id, workspace_id, payload as MonitorJobPayload);
-          break;
-        case 'auto_refine':
-          await this.processAutoRefineJob(job_id, workspace_id, payload as AutoRefineJobPayload);
-          break;
         case 'agent_discovery':
           await this.processAgentDiscoveryJob(job_id, workspace_id, payload as AgentDiscoveryJobPayload);
-          break;
-        case 'prompt_improvement':
-          await this.processPromptImprovementJob(job_id, workspace_id, payload as PromptImprovementJobPayload);
-          break;
-        case 'prompt_evaluation':
-          await this.processPromptEvaluationJob(job_id, workspace_id, payload as PromptEvaluationJobPayload);
           break;
         case 'rollout_task':
           await this.processRolloutTask(job_id, workspace_id, payload as RolloutTaskPayload);
@@ -329,56 +316,6 @@ export class QueueConsumer {
   }
 
   /**
-   * Process monitoring job (triggered by cron)
-   */
-  private async processMonitorJob(
-    jobId: string,
-    workspaceId: string,
-    payload: MonitorJobPayload
-  ): Promise<void> {
-    // TODO: Implement PerformanceMonitor in Phase 3
-    // For now, log and complete
-    console.log(`[QueueConsumer] Monitor job ${jobId} - monitoring ${payload.eval_ids?.length || 'all'} evals`);
-
-    // Update job progress
-    await this.jobManager.updateJobStatus(jobId, 'running', 50);
-
-    // Placeholder for Phase 3 implementation
-    // const monitor = new PerformanceMonitor({ db: this.db });
-    // await monitor.runMonitoring(payload.eval_ids, payload.window_days);
-
-    await this.jobManager.updateJobStatus(jobId, 'running', 100);
-  }
-
-  /**
-   * Process auto-refinement job
-   */
-  private async processAutoRefineJob(
-    jobId: string,
-    workspaceId: string,
-    payload: AutoRefineJobPayload
-  ): Promise<void> {
-    // TODO: Implement AutoRefineManager in Phase 3
-    // For now, log and complete
-    console.log(
-      `[QueueConsumer] Auto-refine job ${jobId} - refining eval ${payload.eval_id} triggered by alert ${payload.alert_id}`
-    );
-
-    // Update job progress
-    await this.jobManager.updateJobStatus(jobId, 'running', 50);
-
-    // Placeholder for Phase 3 implementation
-    // const refiner = new AutoRefineManager({
-    //   db: this.db,
-    //   anthropicApiKey: this.anthropicApiKey,
-    //   sandboxBinding: this.sandboxBinding
-    // });
-    // await refiner.refineEval(payload.eval_id, payload.alert_id, payload.trigger_metrics);
-
-    await this.jobManager.updateJobStatus(jobId, 'running', 100);
-  }
-
-  /**
    * Process agent discovery job
    */
   private async processAgentDiscoveryJob(
@@ -412,56 +349,6 @@ export class QueueConsumer {
     );
 
     await discoveryJob.execute();
-  }
-
-  /**
-   * Process prompt improvement job
-   */
-  private async processPromptImprovementJob(
-    jobId: string,
-    workspaceId: string,
-    payload: PromptImprovementJobPayload
-  ): Promise<void> {
-    const improvementJob = new PromptImprovementJob(
-      {
-        jobId,
-        agentId: payload.agent_id,
-        workspaceId,
-        maxContradictions: payload.max_contradictions
-      },
-      {
-        db: this.db,
-        cfAccountId: this.cfAccountId,
-        cfGatewayId: this.cfGatewayId,
-        cfGatewayToken: this.cfGatewayToken,
-      }
-    );
-
-    await improvementJob.execute();
-  }
-
-  /**
-   * Process prompt evaluation job
-   */
-  private async processPromptEvaluationJob(
-    jobId: string,
-    workspaceId: string,
-    payload: PromptEvaluationJobPayload
-  ): Promise<void> {
-    const evaluationJob = new PromptEvaluationJob(
-      {
-        jobId,
-        agentVersionId: payload.agent_version_id,
-        workspaceId,
-        maxTraces: payload.max_traces
-      },
-      {
-        db: this.db,
-        sandboxBinding: this.sandboxBinding
-      }
-    );
-
-    await evaluationJob.execute();
   }
 
   /**
@@ -604,20 +491,14 @@ export class QueueConsumer {
 
       // 4. Store successful result in rollout_results
       const resultId = this.generateResultId('rr');
-      await this.db
-        .prepare(
-          `INSERT INTO rollout_results (id, batch_id, task_id, status, trace, execution_time_ms)
-           VALUES (?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          resultId,
-          payload.batch_id,
-          payload.task_id,
-          'completed',
-          JSON.stringify(simpleTrace),
-          executionTimeMs
-        )
-        .run();
+      await this.drizzle.insert(rolloutResults).values({
+        id: resultId,
+        batchId: payload.batch_id,
+        taskId: payload.task_id,
+        status: 'completed',
+        trace: simpleTrace,
+        executionTimeMs
+      });
 
       console.log(`[RolloutTask] Completed task ${payload.task_id} in ${executionTimeMs}ms`);
     } catch (error: any) {
@@ -631,20 +512,14 @@ export class QueueConsumer {
 
       // Store failure result
       const resultId = this.generateResultId('rr');
-      await this.db
-        .prepare(
-          `INSERT INTO rollout_results (id, batch_id, task_id, status, error, execution_time_ms)
-           VALUES (?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          resultId,
-          payload.batch_id,
-          payload.task_id,
-          status,
-          errorMessage,
-          Date.now() - startTime
-        )
-        .run();
+      await this.drizzle.insert(rolloutResults).values({
+        id: resultId,
+        batchId: payload.batch_id,
+        taskId: payload.task_id,
+        status,
+        error: errorMessage,
+        executionTimeMs: Date.now() - startTime
+      });
     }
   }
 
@@ -727,26 +602,27 @@ export class QueueConsumer {
   ): Promise<void> {
     const id = `retry_${crypto.randomUUID()}`;
 
-    await this.db
-      .prepare(
-        `INSERT INTO job_retry_history (id, job_id, attempt, error, error_category, delay_ms)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      )
-      .bind(id, jobId, attempt, error, errorCategory, delayMs)
-      .run();
+    await this.drizzle.insert(jobRetryHistory).values({
+      id,
+      jobId,
+      attempt,
+      error,
+      errorCategory,
+      delayMs
+    });
 
     // Update job record with retry info
-    await this.db
-      .prepare(
-        `UPDATE jobs SET
-         retry_count = ?,
-         error_category = ?,
-         last_error_at = ?,
-         next_retry_at = datetime('now', '+' || ? || ' seconds')
-         WHERE id = ?`
-      )
-      .bind(attempt, errorCategory, new Date().toISOString(), Math.ceil(delayMs / 1000), jobId)
-      .run();
+    const now = new Date().toISOString();
+    const nextRetrySeconds = Math.ceil(delayMs / 1000);
+    await this.drizzle
+      .update(jobs)
+      .set({
+        retryCount: attempt,
+        errorCategory,
+        lastErrorAt: now,
+        nextRetryAt: sql`datetime('now', '+' || ${nextRetrySeconds} || ' seconds')`
+      })
+      .where(eq(jobs.id, jobId));
   }
 
   /**
@@ -798,32 +674,23 @@ export class QueueConsumer {
     }
 
     // Update job status to failed with enhanced DLQ info
-    await this.db
-      .prepare(
-        `UPDATE jobs SET
-         status = 'failed',
-         error = ?,
-         error_category = ?,
-         completed_at = ?,
-         metadata = json_set(
-           COALESCE(metadata, '{}'),
-           '$.moved_to_dlq', true,
-           '$.final_attempt', ?,
-           '$.requires_user_action', ?,
-           '$.suggested_action', ?
-         )
-         WHERE id = ?`
-      )
-      .bind(
-        `Failed after ${message.attempt} attempts: ${errorMessage}`,
-        errorResult.errorCategory,
-        new Date().toISOString(),
-        message.attempt,
-        requiresUserAction,
-        errorResult.suggestedAction || null,
-        message.job_id
-      )
-      .run();
+    const now = new Date().toISOString();
+    await this.drizzle
+      .update(jobs)
+      .set({
+        status: 'failed',
+        error: `Failed after ${message.attempt} attempts: ${errorMessage}`,
+        errorCategory: errorResult.errorCategory,
+        completedAt: now,
+        metadata: sql`json_set(
+          COALESCE(metadata, '{}'),
+          '$.moved_to_dlq', true,
+          '$.final_attempt', ${message.attempt},
+          '$.requires_user_action', ${requiresUserAction},
+          '$.suggested_action', ${errorResult.suggestedAction || null}
+        )`
+      })
+      .where(eq(jobs.id, message.job_id));
   }
 
   /**
@@ -854,22 +721,16 @@ export class QueueConsumer {
     }
 
     // Update job status to failed with DLQ info
-    await this.db
-      .prepare(
-        `UPDATE jobs SET
-         status = 'failed',
-         error = ?,
-         completed_at = ?,
-         metadata = json_set(COALESCE(metadata, '{}'), '$.moved_to_dlq', true, '$.final_attempt', ?)
-         WHERE id = ?`
-      )
-      .bind(
-        `Failed after ${message.attempt} attempts: ${error}`,
-        new Date().toISOString(),
-        message.attempt,
-        message.job_id
-      )
-      .run();
+    const now = new Date().toISOString();
+    await this.drizzle
+      .update(jobs)
+      .set({
+        status: 'failed',
+        error: `Failed after ${message.attempt} attempts: ${error}`,
+        completedAt: now,
+        metadata: sql`json_set(COALESCE(metadata, '{}'), '$.moved_to_dlq', true, '$.final_attempt', ${message.attempt})`
+      })
+      .where(eq(jobs.id, message.job_id));
   }
 }
 

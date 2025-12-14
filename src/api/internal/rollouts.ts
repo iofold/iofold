@@ -22,6 +22,10 @@ import type {
   RolloutTaskMessage,
 } from '../../types/api';
 
+import { createDb, type Database } from '../../db/client';
+import { eq, and, desc, sql, type SQL } from 'drizzle-orm';
+import { agents, rolloutBatches, rolloutResults } from '../../db/schema';
+
 export interface Env {
   DB: D1Database;
   JOB_QUEUE?: {
@@ -65,12 +69,16 @@ export async function createBatchRollout(
       );
     }
 
-    // 1. Validate agent exists and user has access
-    const agent = await env.DB.prepare(
-      `SELECT id, workspace_id FROM agents WHERE id = ? AND workspace_id = ?`
-    ).bind(body.agent_id, workspaceId).first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // 1. Validate agent exists and user has access
+    const agentResult = await drizzle
+      .select()
+      .from(agents)
+      .where(and(eq(agents.id, body.agent_id), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
@@ -86,20 +94,17 @@ export async function createBatchRollout(
     // 3. Create batch record
     const batchId = generateId('rb');
     const now = new Date().toISOString();
-    const config = JSON.stringify(body.config || {});
 
-    await env.DB.prepare(`
-      INSERT INTO rollout_batches (id, workspace_id, agent_id, system_prompt, task_count, status, config, created_at)
-      VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
-    `).bind(
-      batchId,
-      workspaceId,
-      body.agent_id,
-      body.system_prompt,
-      body.tasks.length,
-      config,
-      now
-    ).run();
+    await drizzle.insert(rolloutBatches).values({
+      id: batchId,
+      workspaceId: workspaceId,
+      agentId: body.agent_id,
+      systemPrompt: body.system_prompt,
+      taskCount: body.tasks.length,
+      status: 'queued',
+      config: body.config || {},
+      createdAt: now
+    });
 
     // 4. Queue each task
 
@@ -162,65 +167,66 @@ export async function listRolloutBatches(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    const drizzle = createDb(env.DB);
 
     const url = new URL(request.url);
     const agentId = url.searchParams.get('agent_id');
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
 
     // Build query based on filters
-    let query = `
-      SELECT
-        rb.id,
-        rb.agent_id,
-        rb.system_prompt,
-        rb.task_count,
-        rb.status,
-        rb.config,
-        rb.created_at,
-        rb.completed_at,
-        a.name as agent_name
-      FROM rollout_batches rb
-      LEFT JOIN agents a ON rb.agent_id = a.id
-      WHERE rb.workspace_id = ?
-    `;
-    const params: any[] = [workspaceId];
+    const conditions: SQL[] = [eq(rolloutBatches.workspaceId, workspaceId)];
 
     if (agentId) {
-      query += ' AND rb.agent_id = ?';
-      params.push(agentId);
+      conditions.push(eq(rolloutBatches.agentId, agentId));
     }
 
-    query += ' ORDER BY rb.created_at DESC LIMIT ?';
-    params.push(limit);
-
-    const batchesResult = await env.DB.prepare(query).bind(...params).all();
+    const batchesResult = await drizzle
+      .select({
+        id: rolloutBatches.id,
+        agentId: rolloutBatches.agentId,
+        systemPrompt: rolloutBatches.systemPrompt,
+        taskCount: rolloutBatches.taskCount,
+        status: rolloutBatches.status,
+        config: rolloutBatches.config,
+        createdAt: rolloutBatches.createdAt,
+        completedAt: rolloutBatches.completedAt,
+        agentName: agents.name
+      })
+      .from(rolloutBatches)
+      .leftJoin(agents, eq(rolloutBatches.agentId, agents.id))
+      .where(and(...conditions))
+      .orderBy(desc(rolloutBatches.createdAt))
+      .limit(limit);
 
     // For each batch, get summary of results
-    const batches = await Promise.all((batchesResult.results || []).map(async (batch: any) => {
+    const batches = await Promise.all(batchesResult.map(async (batch) => {
       // Get completion stats
-      const statsResult = await env.DB.prepare(`
-        SELECT
-          COUNT(*) as total,
-          SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-          SUM(CASE WHEN status = 'failed' OR status = 'timeout' THEN 1 ELSE 0 END) as failed
-        FROM rollout_results
-        WHERE batch_id = ?
-      `).bind(batch.id).first();
+      const statsResult = await drizzle
+        .select({
+          total: sql<number>`COUNT(*)`,
+          completed: sql<number>`SUM(CASE WHEN ${rolloutResults.status} = 'completed' THEN 1 ELSE 0 END)`,
+          failed: sql<number>`SUM(CASE WHEN ${rolloutResults.status} = 'failed' OR ${rolloutResults.status} = 'timeout' THEN 1 ELSE 0 END)`
+        })
+        .from(rolloutResults)
+        .where(eq(rolloutResults.batchId, batch.id))
+        .limit(1);
+
+      const stats = statsResult[0];
 
       return {
         id: batch.id,
-        agent_id: batch.agent_id,
-        agent_name: batch.agent_name || null,
-        system_prompt: batch.system_prompt?.substring(0, 100) + (batch.system_prompt?.length > 100 ? '...' : ''),
-        task_count: batch.task_count,
+        agent_id: batch.agentId,
+        agent_name: batch.agentName || null,
+        system_prompt: batch.systemPrompt?.substring(0, 100) + (batch.systemPrompt?.length > 100 ? '...' : ''),
+        task_count: batch.taskCount,
         status: batch.status,
         progress: {
-          total: batch.task_count,
-          completed: (statsResult?.completed as number) || 0,
-          failed: (statsResult?.failed as number) || 0,
+          total: batch.taskCount,
+          completed: (stats?.completed as number) || 0,
+          failed: (stats?.failed as number) || 0,
         },
-        created_at: batch.created_at,
-        completed_at: batch.completed_at || null,
+        created_at: batch.createdAt,
+        completed_at: batch.completedAt || null,
       };
     }));
 
@@ -252,30 +258,31 @@ export async function getBatchStatus(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    const drizzle = createDb(env.DB);
 
     // 1. Get batch record
-    const batch = await env.DB.prepare(`
-      SELECT id, workspace_id, agent_id, system_prompt, task_count, status, config, created_at, completed_at
-      FROM rollout_batches
-      WHERE id = ? AND workspace_id = ?
-    `).bind(batchId, workspaceId).first();
+    const batchResult = await drizzle
+      .select()
+      .from(rolloutBatches)
+      .where(and(eq(rolloutBatches.id, batchId), eq(rolloutBatches.workspaceId, workspaceId)))
+      .limit(1);
 
-    if (!batch) {
+    if (batchResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Batch not found', 404);
     }
 
-    // 2. Get all results for this batch
-    const resultsQuery = await env.DB.prepare(`
-      SELECT id, batch_id, task_id, status, trace, error, execution_time_ms, created_at
-      FROM rollout_results
-      WHERE batch_id = ?
-      ORDER BY created_at ASC
-    `).bind(batchId).all();
+    const batch = batchResult[0];
 
-    const results = resultsQuery.results || [];
-    const completed = results.filter((r: any) => r.status === 'completed').length;
-    const failed = results.filter((r: any) => r.status === 'failed' || r.status === 'timeout').length;
-    const taskCount = batch.task_count as number;
+    // 2. Get all results for this batch
+    const results = await drizzle
+      .select()
+      .from(rolloutResults)
+      .where(eq(rolloutResults.batchId, batchId))
+      .orderBy(rolloutResults.createdAt);
+
+    const completed = results.filter((r) => r.status === 'completed').length;
+    const failed = results.filter((r) => r.status === 'failed' || r.status === 'timeout').length;
+    const taskCount = batch.taskCount;
     const pending = taskCount - completed - failed;
 
     // 3. Determine overall status
@@ -287,18 +294,17 @@ export async function getBatchStatus(
     }
 
     // 4. Update batch status in database if completed
-    const currentDbStatus = batch.status as string;
+    const currentDbStatus = batch.status;
     if (pending === 0 && currentDbStatus !== status) {
       const completedAt = new Date().toISOString();
-      await env.DB.prepare(`
-        UPDATE rollout_batches
-        SET status = ?, completed_at = ?
-        WHERE id = ?
-      `).bind(status, completedAt, batchId).run();
+      await drizzle
+        .update(rolloutBatches)
+        .set({ status, completedAt })
+        .where(eq(rolloutBatches.id, batchId));
 
       // Update the batch object for response
-      (batch as any).status = status;
-      (batch as any).completed_at = completedAt;
+      batch.status = status;
+      batch.completedAt = completedAt;
     }
 
     // 5. Build response with results
@@ -311,15 +317,15 @@ export async function getBatchStatus(
         failed,
         pending,
       },
-      results: results.map((r: any) => ({
-        task_id: r.task_id,
+      results: results.map((r) => ({
+        task_id: r.taskId,
         status: r.status,
-        trace: r.trace ? JSON.parse(r.trace) : undefined,
-        execution_time_ms: r.execution_time_ms,
+        trace: r.trace,
+        execution_time_ms: r.executionTimeMs,
         error: r.error || undefined,
       })),
-      created_at: batch.created_at as string,
-      completed_at: pending === 0 ? (batch.completed_at as string | undefined || new Date().toISOString()) : undefined,
+      created_at: batch.createdAt,
+      completed_at: pending === 0 ? (batch.completedAt || new Date().toISOString()) : undefined,
     };
 
     return createSuccessResponse(response);

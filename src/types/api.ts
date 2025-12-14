@@ -10,7 +10,7 @@ export interface APIError {
 }
 
 // Job Types
-export type JobType = 'import' | 'generate' | 'execute' | 'monitor' | 'auto_refine' | 'agent_discovery' | 'prompt_improvement' | 'template_drift' | 'eval_revalidation' | 'prompt_evaluation';
+export type JobType = 'import' | 'generate' | 'execute' | 'monitor' | 'auto_refine' | 'agent_discovery';
 export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface Job {

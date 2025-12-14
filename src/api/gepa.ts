@@ -16,6 +16,15 @@ import {
   validateWorkspaceAccess,
   parseJsonBody,
 } from './utils';
+import { createDb, type Database } from '../db/client';
+import { eq, and, desc, sql } from 'drizzle-orm';
+import { agents } from '../db/schema/agents';
+import { tasksets, tasksetTasks } from '../db/schema/tasksets';
+import { evals } from '../db/schema/evals';
+import { gepaRuns, gepaRunTasks } from '../db/schema/gepa';
+import { traces } from '../db/schema/traces';
+import { agentVersions } from '../db/schema/agents';
+import { feedback } from '../db/schema/feedback';
 
 export interface Env {
   DB: D1Database;
@@ -97,16 +106,25 @@ export async function startGEPAOptimization(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    const drizzle = createDb(env.DB);
     const body = await parseJsonBody<StartGEPARequest>(request);
 
     // 1. Validate agent exists and user has access
-    const agent = await env.DB.prepare(
-      `SELECT id, workspace_id, active_version_id FROM agents WHERE id = ? AND workspace_id = ?`
-    ).bind(agentId, workspaceId).first();
+    const agentResult = await drizzle
+      .select({
+        id: agents.id,
+        workspace_id: agents.workspaceId,
+        active_version_id: agents.activeVersionId,
+      })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
 
-    if (!agent) {
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
+
+    const agent = agentResult[0];
 
     // 2. Validate that taskset_id, eval_id, or tasks are provided
     if (!body.taskset_id && !body.eval_id && (!body.tasks || body.tasks.length === 0)) {
@@ -125,21 +143,33 @@ export async function startGEPAOptimization(
     // Priority: taskset_id > eval_id > inline tasks
     if (body.taskset_id) {
       // Load tasks from taskset
-      const taskset = await env.DB.prepare(
-        `SELECT id, agent_id, task_count FROM tasksets WHERE id = ? AND agent_id = ?`
-      ).bind(body.taskset_id, agentId).first();
+      const tasksetResult = await drizzle
+        .select({
+          id: tasksets.id,
+          agent_id: tasksets.agentId,
+          task_count: tasksets.taskCount,
+        })
+        .from(tasksets)
+        .where(and(eq(tasksets.id, body.taskset_id), eq(tasksets.agentId, agentId)))
+        .limit(1);
 
-      if (!taskset) {
+      if (tasksetResult.length === 0) {
         return createErrorResponse('NOT_FOUND', 'Taskset not found', 404);
       }
 
       tasksetId = body.taskset_id;
 
-      const tasksResult = await env.DB.prepare(
-        `SELECT id, user_message, expected_output FROM taskset_tasks WHERE taskset_id = ? ORDER BY created_at`
-      ).bind(body.taskset_id).all();
+      const tasksResult = await drizzle
+        .select({
+          id: tasksetTasks.id,
+          user_message: tasksetTasks.userMessage,
+          expected_output: tasksetTasks.expectedOutput,
+        })
+        .from(tasksetTasks)
+        .where(eq(tasksetTasks.tasksetId, body.taskset_id))
+        .orderBy(tasksetTasks.createdAt);
 
-      if (!tasksResult.results || tasksResult.results.length === 0) {
+      if (tasksResult.length === 0) {
         return createErrorResponse(
           'VALIDATION_ERROR',
           'Taskset has no tasks. Add tasks before starting GEPA.',
@@ -147,7 +177,7 @@ export async function startGEPAOptimization(
         );
       }
 
-      testCases = tasksResult.results.map((t: any) => ({
+      testCases = tasksResult.map((t) => ({
         id: t.id,
         user_message: t.user_message,
         expected_output: t.expected_output || undefined,
@@ -155,30 +185,40 @@ export async function startGEPAOptimization(
 
     } else if (body.eval_id) {
       // DEPRECATED: Extract tasks from traces (legacy behavior)
-      evalRecord = await env.DB.prepare(
-        `SELECT id, agent_id, code FROM evals WHERE id = ? AND agent_id = ?`
-      ).bind(body.eval_id, agentId).first();
+      const evalRecordResult = await drizzle
+        .select({
+          id: evals.id,
+          agent_id: evals.agentId,
+          code: evals.code,
+        })
+        .from(evals)
+        .where(and(eq(evals.id, body.eval_id), eq(evals.agentId, agentId)))
+        .limit(1);
 
-      if (!evalRecord) {
+      if (evalRecordResult.length === 0) {
         return createErrorResponse('NOT_FOUND', 'Eval not found', 404);
       }
 
-      // Extract tasks from traces associated with this eval
-      const tracesResult = await env.DB.prepare(`
-        SELECT DISTINCT
-          t.id,
-          t.steps,
-          f.rating
-        FROM traces t
-        JOIN feedback f ON t.id = f.trace_id
-        JOIN agent_versions av ON t.agent_version_id = av.id
-        WHERE av.agent_id = ?
-          AND f.rating IS NOT NULL
-        ORDER BY t.imported_at DESC
-        LIMIT 100
-      `).bind(agentId).all();
+      evalRecord = evalRecordResult[0];
 
-      if (!tracesResult.results || tracesResult.results.length === 0) {
+      // Extract tasks from traces associated with this eval
+      const tracesResult = await drizzle
+        .select({
+          id: traces.id,
+          steps: traces.steps,
+          rating: feedback.rating,
+        })
+        .from(traces)
+        .innerJoin(feedback, eq(traces.id, feedback.traceId))
+        .innerJoin(agentVersions, eq(traces.agentVersionId, agentVersions.id))
+        .where(and(
+          eq(agentVersions.agentId, agentId),
+          sql`${feedback.rating} IS NOT NULL`
+        ))
+        .orderBy(desc(traces.importedAt))
+        .limit(100);
+
+      if (tracesResult.length === 0) {
         return createErrorResponse(
           'VALIDATION_ERROR',
           'No labeled traces found for this agent. Please add feedback to traces first.',
@@ -187,8 +227,8 @@ export async function startGEPAOptimization(
       }
 
       // Extract user messages from trace steps
-      for (const row of tracesResult.results) {
-        const steps = row.steps ? JSON.parse(row.steps as string) : [];
+      for (const row of tracesResult) {
+        const steps = row.steps || [];
 
         for (const step of steps) {
           const messages = step.messages_added || [];
@@ -222,11 +262,15 @@ export async function startGEPAOptimization(
     let seedPrompt = body.seed_prompt;
     if (!seedPrompt) {
       if (agent.active_version_id) {
-        const activeVersion = await env.DB.prepare(
-          `SELECT prompt_template FROM agent_versions WHERE id = ?`
-        ).bind(agent.active_version_id).first();
+        const activeVersionResult = await drizzle
+          .select({ prompt_template: agentVersions.promptTemplate })
+          .from(agentVersions)
+          .where(eq(agentVersions.id, agent.active_version_id))
+          .limit(1);
 
-        seedPrompt = activeVersion?.prompt_template as string || 'You are a helpful assistant.';
+        seedPrompt = activeVersionResult.length > 0
+          ? activeVersionResult[0].prompt_template
+          : 'You are a helpful assistant.';
       } else {
         seedPrompt = 'You are a helpful assistant.';
       }
@@ -240,30 +284,23 @@ export async function startGEPAOptimization(
     const trainSplit = body.train_split || 0.7;
     const randomSeed = body.random_seed || Math.floor(Math.random() * 2147483647);
 
-    await env.DB.prepare(`
-      INSERT INTO gepa_runs (
-        id, workspace_id, agent_id, eval_id, taskset_id,
-        seed_prompt, test_case_count, max_metric_calls, parallelism,
-        train_split, val_split, random_seed,
-        status, progress_metric_calls,
-        created_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)
-    `).bind(
-      runId,
-      workspaceId,
-      agentId,
-      body.eval_id || null,
-      tasksetId,
-      seedPrompt,
-      testCases.length,
-      maxMetricCalls,
-      parallelism,
-      trainSplit,
-      1 - trainSplit, // val_split
-      randomSeed,
-      now
-    ).run();
+    await drizzle.insert(gepaRuns).values({
+      id: runId,
+      workspaceId: workspaceId,
+      agentId: agentId,
+      evalId: body.eval_id || null,
+      tasksetId: tasksetId,
+      seedPrompt: seedPrompt,
+      testCaseCount: testCases.length,
+      maxMetricCalls: maxMetricCalls,
+      parallelism: parallelism,
+      trainSplit: trainSplit,
+      valSplit: 1 - trainSplit,
+      randomSeed: randomSeed,
+      status: 'pending',
+      progressMetricCalls: 0,
+      createdAt: now,
+    });
 
     // 6a. If using taskset, create gepa_run_tasks entries with split assignments
     if (tasksetId && testCases.length > 0) {
@@ -281,15 +318,21 @@ export async function startGEPAOptimization(
 
       // Assign splits
       const trainCount = Math.floor(shuffled.length * trainSplit);
-      const insertPromises = shuffled.map((task, idx) => {
-        const split = idx < trainCount ? 'train' : 'val';
+      const insertValues = shuffled.map((task, idx) => {
+        const split = idx < trainCount ? 'train' as const : 'val' as const;
         const taskEntryId = generateId('grt');
-        return env.DB.prepare(
-          `INSERT INTO gepa_run_tasks (id, run_id, task_id, split) VALUES (?, ?, ?, ?)`
-        ).bind(taskEntryId, runId, task.id, split).run();
+        return {
+          id: taskEntryId,
+          runId: runId,
+          taskId: task.id!,
+          split: split,
+        };
       });
 
-      await Promise.all(insertPromises);
+      // Insert in batches if needed
+      for (const value of insertValues) {
+        await drizzle.insert(gepaRunTasks).values(value);
+      }
     }
 
     // 7. Queue GEPA optimization job
@@ -366,41 +409,45 @@ export async function listGEPARuns(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // 1. Validate agent exists and user has access
-    const agent = await env.DB.prepare(
-      `SELECT id FROM agents WHERE id = ? AND workspace_id = ?`
-    ).bind(agentId, workspaceId).first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // 1. Validate agent exists and user has access
+    const agentResult = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // 2. Get all runs for this agent
-    const runsResult = await env.DB.prepare(`
-      SELECT
-        id,
-        status,
-        progress_metric_calls,
-        max_metric_calls,
-        test_case_count,
-        best_score,
-        total_candidates,
-        error,
-        created_at,
-        started_at,
-        completed_at
-      FROM gepa_runs
-      WHERE agent_id = ? AND workspace_id = ?
-      ORDER BY created_at DESC
-      LIMIT 50
-    `).bind(agentId, workspaceId).all();
+    const runsResult = await drizzle
+      .select({
+        id: gepaRuns.id,
+        status: gepaRuns.status,
+        progress_metric_calls: gepaRuns.progressMetricCalls,
+        max_metric_calls: gepaRuns.maxMetricCalls,
+        test_case_count: gepaRuns.testCaseCount,
+        best_score: gepaRuns.bestScore,
+        total_candidates: gepaRuns.totalCandidates,
+        error: gepaRuns.error,
+        created_at: gepaRuns.createdAt,
+        started_at: gepaRuns.startedAt,
+        completed_at: gepaRuns.completedAt,
+      })
+      .from(gepaRuns)
+      .where(and(eq(gepaRuns.agentId, agentId), eq(gepaRuns.workspaceId, workspaceId)))
+      .orderBy(desc(gepaRuns.createdAt))
+      .limit(50);
 
-    const runs = (runsResult.results || []).map((run: any) => ({
+    const runs = runsResult.map((run) => ({
       id: run.id,
       status: run.status,
       progress: {
         metric_calls: run.progress_metric_calls || 0,
-        max_metric_calls: run.max_metric_calls,
+        max_metric_calls: run.max_metric_calls!,
         best_score: run.best_score || null,
         total_candidates: run.total_candidates || 0,
       },
@@ -446,68 +493,79 @@ export async function getGEPARunStatus(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // 1. Validate agent exists and user has access
-    const agent = await env.DB.prepare(
-      `SELECT id FROM agents WHERE id = ? AND workspace_id = ?`
-    ).bind(agentId, workspaceId).first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // 1. Validate agent exists and user has access
+    const agentResult = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // 2. Get run record
-    const run = await env.DB.prepare(`
-      SELECT
-        id,
-        status,
-        progress_metric_calls,
-        max_metric_calls,
-        best_prompt,
-        best_score,
-        total_candidates,
-        error,
-        created_at,
-        started_at,
-        completed_at
-      FROM gepa_runs
-      WHERE id = ? AND agent_id = ? AND workspace_id = ?
-    `).bind(runId, agentId, workspaceId).first();
+    const runResult = await drizzle
+      .select({
+        id: gepaRuns.id,
+        status: gepaRuns.status,
+        progress_metric_calls: gepaRuns.progressMetricCalls,
+        max_metric_calls: gepaRuns.maxMetricCalls,
+        best_prompt: gepaRuns.bestPrompt,
+        best_score: gepaRuns.bestScore,
+        total_candidates: gepaRuns.totalCandidates,
+        error: gepaRuns.error,
+        created_at: gepaRuns.createdAt,
+        started_at: gepaRuns.startedAt,
+        completed_at: gepaRuns.completedAt,
+      })
+      .from(gepaRuns)
+      .where(and(
+        eq(gepaRuns.id, runId),
+        eq(gepaRuns.agentId, agentId),
+        eq(gepaRuns.workspaceId, workspaceId)
+      ))
+      .limit(1);
 
-    if (!run) {
+    if (runResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'GEPA run not found', 404);
     }
 
+    const run = runResult[0];
+
     // 3. Build response
     const response: GEPARunStatus = {
-      id: run.id as string,
+      id: run.id,
       status: run.status as any,
       progress: {
-        metric_calls: (run.progress_metric_calls as number) || 0,
-        max_metric_calls: run.max_metric_calls as number,
-        best_score: run.best_score as number | undefined,
-        total_candidates: (run.total_candidates as number) || 0,
+        metric_calls: run.progress_metric_calls || 0,
+        max_metric_calls: run.max_metric_calls!,
+        best_score: run.best_score || undefined,
+        total_candidates: run.total_candidates || 0,
       },
-      created_at: run.created_at as string,
+      created_at: run.created_at,
     };
 
     // Add started_at if present (when status is 'running', 'completed', or 'failed')
     if (run.started_at) {
-      response.started_at = run.started_at as string;
+      response.started_at = run.started_at;
     }
 
     // Add result if completed
     if (run.status === 'completed' && run.best_prompt) {
       response.result = {
-        best_prompt: run.best_prompt as string,
-        best_score: run.best_score as number,
+        best_prompt: run.best_prompt,
+        best_score: run.best_score!,
       };
-      response.completed_at = run.completed_at as string;
+      response.completed_at = run.completed_at!;
     }
 
     // Add error if failed
     if (run.status === 'failed' && run.error) {
-      response.error = run.error as string;
-      response.completed_at = run.completed_at as string;
+      response.error = run.error;
+      response.completed_at = run.completed_at!;
     }
 
     return createSuccessResponse(response);
@@ -545,25 +603,38 @@ export async function streamGEPAProgress(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // 1. Validate agent exists and user has access
-    const agent = await env.DB.prepare(
-      `SELECT id FROM agents WHERE id = ? AND workspace_id = ?`
-    ).bind(agentId, workspaceId).first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // 1. Validate agent exists and user has access
+    const agentResult = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // 2. Validate run exists
-    const run = await env.DB.prepare(`
-      SELECT id, status
-      FROM gepa_runs
-      WHERE id = ? AND agent_id = ? AND workspace_id = ?
-    `).bind(runId, agentId, workspaceId).first();
+    const runResult = await drizzle
+      .select({
+        id: gepaRuns.id,
+        status: gepaRuns.status,
+      })
+      .from(gepaRuns)
+      .where(and(
+        eq(gepaRuns.id, runId),
+        eq(gepaRuns.agentId, agentId),
+        eq(gepaRuns.workspaceId, workspaceId)
+      ))
+      .limit(1);
 
-    if (!run) {
+    if (runResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'GEPA run not found', 404);
     }
+
+    const run = runResult[0];
 
     // 3. Create SSE stream
     const { readable, writable } = new TransformStream();
@@ -591,25 +662,27 @@ export async function streamGEPAProgress(
         // Poll until completed, failed, or timeout
         while (pollCount < maxPolls) {
           // Get latest run state
-          const currentRun = await env.DB.prepare(`
-            SELECT
-              status,
-              progress_metric_calls,
-              max_metric_calls,
-              best_score,
-              total_candidates,
-              best_prompt,
-              error
-            FROM gepa_runs
-            WHERE id = ?
-          `).bind(runId).first();
+          const currentRunResult = await drizzle
+            .select({
+              status: gepaRuns.status,
+              progress_metric_calls: gepaRuns.progressMetricCalls,
+              max_metric_calls: gepaRuns.maxMetricCalls,
+              best_score: gepaRuns.bestScore,
+              total_candidates: gepaRuns.totalCandidates,
+              best_prompt: gepaRuns.bestPrompt,
+              error: gepaRuns.error,
+            })
+            .from(gepaRuns)
+            .where(eq(gepaRuns.id, runId))
+            .limit(1);
 
-          if (!currentRun) {
+          if (currentRunResult.length === 0) {
             await sendEvent('error', { error: 'Run not found' });
             break;
           }
 
-          const status = currentRun.status as string;
+          const currentRun = currentRunResult[0];
+          const status = currentRun.status;
 
           // Send progress event
           if (status === 'pending' || status === 'running') {

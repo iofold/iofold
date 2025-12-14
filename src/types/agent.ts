@@ -120,32 +120,10 @@ export interface TriggerImprovementRequest {
 }
 
 // Job types for agent operations
-export type AgentJobType = 'agent_discovery' | 'prompt_improvement' | 'template_drift' | 'eval_revalidation' | 'prompt_evaluation';
+export type AgentJobType = 'agent_discovery';
 
 export interface AgentDiscoveryJobResult {
   discovered_agents: string[];
   assigned_traces: number;
   orphaned_traces: number;
-}
-
-export interface PromptImprovementJobResult {
-  new_version_id: string;
-  new_version_number: number;
-  changes_summary: string;
-  failure_patterns: string[];
-  best_practices_applied: string[];
-}
-
-export interface PromptEvaluationJobResult {
-  version_id: string;
-  accuracy: number;
-  test_results: {
-    passed: number;
-    failed: number;
-    errors: number;
-  };
-  comparison: {
-    previous_accuracy: number;
-    accuracy_delta: number;
-  };
 }

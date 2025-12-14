@@ -1,9 +1,8 @@
 // src/db/schema/playground.ts
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { workspaces } from './users';
 import { agents, agentVersions } from './agents';
-import { traces } from './traces';
 
 export const playgroundSessions = sqliteTable('playground_sessions', {
   id: text('id').primaryKey(),
@@ -24,31 +23,6 @@ export const playgroundSessions = sqliteTable('playground_sessions', {
   updatedIdx: index('idx_playground_sessions_updated').on(table.updatedAt),
 }));
 
-export const playgroundSteps = sqliteTable('playground_steps', {
-  id: text('id').primaryKey(),
-  sessionId: text('session_id').notNull().references(() => playgroundSessions.id, { onDelete: 'cascade' }),
-  traceId: text('trace_id').notNull().references(() => traces.id, { onDelete: 'cascade' }),
-  stepIndex: integer('step_index').notNull(),
-  stepType: text('step_type', { enum: ['llm_call', 'tool_call', 'tool_result'] }).notNull(),
-  input: text('input'),
-  output: text('output'),
-  toolName: text('tool_name'),
-  toolArgs: text('tool_args'),
-  toolResult: text('tool_result'),
-  toolError: text('tool_error'),
-  latencyMs: integer('latency_ms'),
-  tokensInput: integer('tokens_input'),
-  tokensOutput: integer('tokens_output'),
-  timestamp: text('timestamp').default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => ({
-  sessionIdx: index('idx_playground_steps_session').on(table.sessionId),
-  traceIdx: index('idx_playground_steps_trace').on(table.traceId),
-  sessionIndexIdx: index('idx_playground_steps_session_index').on(table.sessionId, table.stepIndex),
-  timestampIdx: index('idx_playground_steps_timestamp').on(table.timestamp),
-}));
-
 // Type exports
 export type PlaygroundSession = typeof playgroundSessions.$inferSelect;
 export type NewPlaygroundSession = typeof playgroundSessions.$inferInsert;
-export type PlaygroundStep = typeof playgroundSteps.$inferSelect;
-export type NewPlaygroundStep = typeof playgroundSteps.$inferInsert;

@@ -1,6 +1,15 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { z } from 'zod';
+import { eq, and, or, gte, lte, inArray, desc, asc, sql, SQL } from 'drizzle-orm';
+import { createDb, type Database } from '../db/client';
+import {
+  feedback,
+  traces,
+  integrations,
+  evalCandidateExecutions,
+  evalCandidates
+} from '../db/schema';
 
 /**
  * API Response Types based on API specification
@@ -232,68 +241,64 @@ export async function getComparisonMatrix(
       });
     }
 
-    // Decode cursor if provided
-    let cursorCondition = '';
-    let cursorParams: any[] = [];
-    if (params.cursor) {
-      const decoded = decodeCursor(params.cursor);
-      if (decoded) {
-        cursorCondition = 'AND (f.created_at, t.id) > (?, ?)';
-        cursorParams = [decoded.timestamp, decoded.id];
-      }
-    }
-
     // Build filter conditions
-    const conditions: string[] = ['f.agent_id = ?'];
-    const filterParams: any[] = [agentId];
+    const drizzle = createDb(db);
+    const conditions: SQL[] = [eq(feedback.agentId, agentId)];
 
     if (params.rating) {
-      conditions.push('f.rating = ?');
-      filterParams.push(params.rating);
+      conditions.push(eq(feedback.rating, params.rating));
     }
 
     if (params.date_from) {
-      conditions.push('t.created_at >= ?');
-      filterParams.push(params.date_from);
+      conditions.push(gte(traces.timestamp, params.date_from));
     }
 
     if (params.date_to) {
-      conditions.push('t.created_at <= ?');
-      filterParams.push(params.date_to);
+      conditions.push(lte(traces.timestamp, params.date_to));
+    }
+
+    // Add cursor condition if provided
+    if (params.cursor) {
+      const decoded = decodeCursor(params.cursor);
+      if (decoded) {
+        conditions.push(
+          or(
+            sql`${feedback.createdAt} > ${decoded.timestamp}`,
+            and(
+              eq(feedback.createdAt, decoded.timestamp),
+              sql`${traces.id} > ${decoded.id}`
+            )
+          )!
+        );
+      }
     }
 
     // Main query: Fetch traces with feedback and all eval executions
     // Uses LEFT JOIN to include traces even if not all evals have run
-    const query = `
-      SELECT
-        t.id as trace_id,
-        t.trace_id as external_trace_id,
-        t.integration_id,
-        t.timestamp,
-        t.steps,
-        f.rating as human_rating,
-        f.notes as human_notes,
-        f.created_at as feedback_created_at,
-        i.platform as source
-      FROM feedback f
-      INNER JOIN traces t ON f.trace_id = t.id
-      LEFT JOIN integrations i ON t.integration_id = i.id
-      WHERE ${conditions.join(' AND ')}
-      ${cursorCondition}
-      ORDER BY f.created_at ASC, t.id ASC
-      LIMIT ?
-    `;
+    const result = await drizzle
+      .select({
+        traceId: traces.id,
+        externalTraceId: traces.traceId,
+        integrationId: traces.integrationId,
+        timestamp: traces.timestamp,
+        steps: traces.steps,
+        humanRating: feedback.rating,
+        humanNotes: feedback.ratingDetail,
+        feedbackCreatedAt: feedback.createdAt,
+        source: integrations.platform
+      })
+      .from(feedback)
+      .innerJoin(traces, eq(feedback.traceId, traces.id))
+      .leftJoin(integrations, eq(traces.integrationId, integrations.id))
+      .where(and(...conditions))
+      .orderBy(asc(feedback.createdAt), asc(traces.id))
+      .limit(params.limit + 1) // Fetch one extra to determine has_more
+      .all();
 
-    const result = await db.prepare(query).bind(
-      ...filterParams,
-      ...cursorParams,
-      params.limit + 1 // Fetch one extra to determine has_more
-    ).all();
+    const hasMore = result.length > params.limit;
+    const traceResults = result.slice(0, params.limit);
 
-    const hasMore = result.results.length > params.limit;
-    const traces = result.results.slice(0, params.limit);
-
-    if (traces.length === 0) {
+    if (traceResults.length === 0) {
       return new Response(JSON.stringify({
         rows: [],
         stats: {
@@ -308,42 +313,39 @@ export async function getComparisonMatrix(
       });
     }
 
-    const traceIds = traces.map(t => t.trace_id as string);
+    const traceIds = traceResults.map(t => t.traceId as string);
 
     // Fetch all eval executions for these traces
     // Optimized: Single query with IN clause
-    const placeholders = evalIds.map(() => '?').join(',');
-    const tracePlaceholders = traceIds.map(() => '?').join(',');
-
-    const executionsQuery = `
-      SELECT
-        ee.trace_id,
-        ee.eval_candidate_id as eval_id,
-        ee.success as result,
-        ee.feedback as reason,
-        ee.duration_ms as execution_time_ms,
-        ee.error,
-        ee.created_at as executed_at,
-        ec.code as eval_name
-      FROM eval_candidate_executions ee
-      INNER JOIN eval_candidates ec ON ee.eval_candidate_id = ec.id
-      WHERE ee.eval_candidate_id IN (${placeholders})
-        AND ee.trace_id IN (${tracePlaceholders})
-      ORDER BY ee.created_at DESC
-    `;
-
-    const executions = await db.prepare(executionsQuery).bind(
-      ...evalIds,
-      ...traceIds
-    ).all();
+    const executions = await drizzle
+      .select({
+        traceId: evalCandidateExecutions.traceId,
+        evalId: evalCandidateExecutions.evalCandidateId,
+        result: evalCandidateExecutions.success,
+        reason: evalCandidateExecutions.feedback,
+        executionTimeMs: evalCandidateExecutions.durationMs,
+        error: evalCandidateExecutions.error,
+        executedAt: evalCandidateExecutions.createdAt,
+        evalName: evalCandidates.code
+      })
+      .from(evalCandidateExecutions)
+      .innerJoin(evalCandidates, eq(evalCandidateExecutions.evalCandidateId, evalCandidates.id))
+      .where(
+        and(
+          inArray(evalCandidateExecutions.evalCandidateId, evalIds),
+          inArray(evalCandidateExecutions.traceId, traceIds)
+        )
+      )
+      .orderBy(desc(evalCandidateExecutions.createdAt))
+      .all();
 
     // Build execution map: trace_id -> eval_id -> execution
     const executionMap: Record<string, Record<string, any>> = {};
     const evalNamesMap: Record<string, string> = {};
 
-    for (const exec of executions.results) {
-      const traceId = exec.trace_id as string;
-      const evalId = exec.eval_id as string;
+    for (const exec of executions) {
+      const traceId = exec.traceId as string;
+      const evalId = exec.evalId as string;
 
       if (!executionMap[traceId]) {
         executionMap[traceId] = {};
@@ -352,7 +354,7 @@ export async function getComparisonMatrix(
       // Keep only the most recent execution per trace-eval pair (due to ORDER BY DESC)
       if (!executionMap[traceId][evalId]) {
         executionMap[traceId][evalId] = exec;
-        evalNamesMap[evalId] = exec.eval_name as string;
+        evalNamesMap[evalId] = exec.evalName as string;
       }
     }
 
@@ -377,12 +379,12 @@ export async function getComparisonMatrix(
       };
     }
 
-    for (const trace of traces) {
-      const traceId = trace.trace_id as string;
-      const humanRating = trace.human_rating as string | null;
+    for (const trace of traceResults) {
+      const traceId = trace.traceId as string;
+      const humanRating = trace.humanRating as string | null;
 
       const { input_preview, output_preview } = extractTraceSummary(
-        trace.steps as string
+        JSON.stringify(trace.steps)
       );
 
       const predictions: Record<string, PredictionResult | null> = {};
@@ -403,7 +405,7 @@ export async function getComparisonMatrix(
         predictions[evalId] = {
           result: predicted,
           reason: execution.reason as string || '',
-          execution_time_ms: execution.execution_time_ms as number || 0,
+          execution_time_ms: execution.executionTimeMs as number || 0,
           error: execution.error as string || null,
           is_contradiction: contradiction
         };
@@ -416,8 +418,8 @@ export async function getComparisonMatrix(
         if (hasError) {
           statsMap[evalId].errors++;
         }
-        if (execution.execution_time_ms) {
-          statsMap[evalId].execution_times.push(execution.execution_time_ms as number);
+        if (execution.executionTimeMs) {
+          statsMap[evalId].execution_times.push(execution.executionTimeMs as number);
         }
 
         // Calculate correctness for accuracy
@@ -442,7 +444,7 @@ export async function getComparisonMatrix(
         },
         human_feedback: humanRating ? {
           rating: humanRating as 'positive' | 'negative' | 'neutral',
-          notes: trace.human_notes as string || null
+          notes: trace.humanNotes as string || null
         } : null,
         predictions
       };
@@ -489,11 +491,11 @@ export async function getComparisonMatrix(
 
     // Generate next cursor
     let nextCursor: string | null = null;
-    if (hasMore && traces.length > 0) {
-      const lastTrace = traces[traces.length - 1];
+    if (hasMore && traceResults.length > 0) {
+      const lastTrace = traceResults[traceResults.length - 1];
       nextCursor = encodeCursor(
-        lastTrace.feedback_created_at as string,
-        lastTrace.trace_id as string
+        lastTrace.feedbackCreatedAt as string,
+        lastTrace.traceId as string
       );
     }
 
@@ -553,25 +555,30 @@ export async function getEvalExecutionDetail(
 ): Promise<Response> {
   try {
     // Query execution with human feedback
-    const query = `
-      SELECT
-        ee.trace_id,
-        ee.eval_candidate_id as eval_id,
-        ee.success as result,
-        ee.feedback as reason,
-        ee.duration_ms as execution_time_ms,
-        ee.error,
-        ee.created_at as executed_at,
-        f.rating as human_rating,
-        f.rating_detail as human_notes
-      FROM eval_candidate_executions ee
-      LEFT JOIN feedback f ON ee.trace_id = f.trace_id
-      WHERE ee.trace_id = ? AND ee.eval_candidate_id = ?
-      ORDER BY ee.created_at DESC
-      LIMIT 1
-    `;
-
-    const result = await db.prepare(query).bind(traceId, evalId).first();
+    const drizzle = createDb(db);
+    const result = await drizzle
+      .select({
+        traceId: evalCandidateExecutions.traceId,
+        evalId: evalCandidateExecutions.evalCandidateId,
+        result: evalCandidateExecutions.success,
+        reason: evalCandidateExecutions.feedback,
+        executionTimeMs: evalCandidateExecutions.durationMs,
+        error: evalCandidateExecutions.error,
+        executedAt: evalCandidateExecutions.createdAt,
+        humanRating: feedback.rating,
+        humanNotes: feedback.ratingDetail
+      })
+      .from(evalCandidateExecutions)
+      .leftJoin(feedback, eq(evalCandidateExecutions.traceId, feedback.traceId))
+      .where(
+        and(
+          eq(evalCandidateExecutions.traceId, traceId),
+          eq(evalCandidateExecutions.evalCandidateId, evalId)
+        )
+      )
+      .orderBy(desc(evalCandidateExecutions.createdAt))
+      .limit(1)
+      .get();
 
     if (!result) {
       return new Response(JSON.stringify({
@@ -586,7 +593,7 @@ export async function getEvalExecutionDetail(
     }
 
     const predicted = Boolean(result.result);
-    const humanRating = result.human_rating as string | null;
+    const humanRating = result.humanRating as string | null;
     const contradiction = isContradiction(humanRating, predicted);
 
     const response: EvalExecutionDetail = {
@@ -594,14 +601,14 @@ export async function getEvalExecutionDetail(
       eval_id: evalId,
       result: predicted,
       reason: result.reason as string || '',
-      execution_time_ms: result.execution_time_ms as number || 0,
+      execution_time_ms: result.executionTimeMs as number || 0,
       error: result.error as string || null,
       stdout: '', // Not stored in current schema
       stderr: '', // Not stored in current schema
-      executed_at: result.executed_at as string,
+      executed_at: result.executedAt as string,
       human_feedback: humanRating ? {
         rating: humanRating as 'positive' | 'negative' | 'neutral',
-        notes: result.human_notes as string || null
+        notes: result.humanNotes as string || null
       } : null,
       is_contradiction: contradiction
     };
@@ -636,31 +643,31 @@ export async function getTraceExecutions(
   traceId: string
 ): Promise<Response> {
   try {
-    const query = `
-      SELECT
-        ee.eval_candidate_id as eval_id,
-        ec.code as eval_name,
-        ee.success as result,
-        ee.feedback as reason,
-        ee.duration_ms as execution_time_ms,
-        ee.error,
-        ee.created_at as executed_at
-      FROM eval_candidate_executions ee
-      INNER JOIN eval_candidates ec ON ee.eval_candidate_id = ec.id
-      WHERE ee.trace_id = ?
-      ORDER BY ee.created_at DESC
-    `;
+    const drizzle = createDb(db);
+    const result = await drizzle
+      .select({
+        evalId: evalCandidateExecutions.evalCandidateId,
+        evalName: evalCandidates.code,
+        result: evalCandidateExecutions.success,
+        reason: evalCandidateExecutions.feedback,
+        executionTimeMs: evalCandidateExecutions.durationMs,
+        error: evalCandidateExecutions.error,
+        executedAt: evalCandidateExecutions.createdAt
+      })
+      .from(evalCandidateExecutions)
+      .innerJoin(evalCandidates, eq(evalCandidateExecutions.evalCandidateId, evalCandidates.id))
+      .where(eq(evalCandidateExecutions.traceId, traceId))
+      .orderBy(desc(evalCandidateExecutions.createdAt))
+      .all();
 
-    const result = await db.prepare(query).bind(traceId).all();
-
-    const executions: TraceExecution[] = result.results.map(row => ({
-      eval_id: row.eval_id as string,
-      eval_name: row.eval_name as string,
+    const executions: TraceExecution[] = result.map(row => ({
+      eval_id: row.evalId as string,
+      eval_name: row.evalName as string,
       result: Boolean(row.result),
       reason: row.reason as string || '',
-      execution_time_ms: row.execution_time_ms as number || 0,
+      execution_time_ms: row.executionTimeMs as number || 0,
       error: row.error as string || null,
-      executed_at: row.executed_at as string
+      executed_at: row.executedAt as string
     }));
 
     return new Response(JSON.stringify({ executions }), {
@@ -700,77 +707,75 @@ export async function getEvalExecutions(
     // Validate query parameters
     const params = EvalExecutionsQuerySchema.parse(Object.fromEntries(queryParams));
 
-    // Decode cursor if provided
-    let cursorCondition = '';
-    let cursorParams: any[] = [];
-    if (params.cursor) {
-      const decoded = decodeCursor(params.cursor);
-      if (decoded) {
-        cursorCondition = 'AND (ee.created_at, ee.trace_id) > (?, ?)';
-        cursorParams = [decoded.timestamp, decoded.id];
-      }
-    }
-
     // Build filter conditions
-    const conditions: string[] = ['ee.eval_candidate_id = ?'];
-    const filterParams: any[] = [evalId];
+    const drizzle = createDb(db);
+    const conditions: SQL[] = [eq(evalCandidateExecutions.evalCandidateId, evalId)];
 
     if (params.result !== undefined) {
-      const resultValue = params.result === 'true' ? 1 : 0;
-      conditions.push('ee.success = ?');
-      filterParams.push(resultValue);
+      const resultValue = params.result === 'true';
+      conditions.push(eq(evalCandidateExecutions.success, resultValue));
     }
 
     if (params.has_error === 'true') {
-      conditions.push('ee.error IS NOT NULL');
+      conditions.push(sql`${evalCandidateExecutions.error} IS NOT NULL`);
     }
 
-    const query = `
-      SELECT
-        ee.id,
-        ee.trace_id,
-        ee.success as result,
-        ee.feedback as reason,
-        ee.duration_ms as execution_time_ms,
-        ee.error,
-        ee.created_at as executed_at,
-        t.imported_at as trace_timestamp,
-        t.steps,
-        i.platform as source
-      FROM eval_candidate_executions ee
-      INNER JOIN traces t ON ee.trace_id = t.id
-      LEFT JOIN integrations i ON t.integration_id = i.id
-      WHERE ${conditions.join(' AND ')}
-      ${cursorCondition}
-      ORDER BY ee.created_at ASC, ee.trace_id ASC
-      LIMIT ?
-    `;
+    // Add cursor condition if provided
+    if (params.cursor) {
+      const decoded = decodeCursor(params.cursor);
+      if (decoded) {
+        conditions.push(
+          or(
+            sql`${evalCandidateExecutions.createdAt} > ${decoded.timestamp}`,
+            and(
+              eq(evalCandidateExecutions.createdAt, decoded.timestamp),
+              sql`${evalCandidateExecutions.traceId} > ${decoded.id}`
+            )
+          )!
+        );
+      }
+    }
 
-    const result = await db.prepare(query).bind(
-      ...filterParams,
-      ...cursorParams,
-      params.limit + 1
-    ).all();
+    const result = await drizzle
+      .select({
+        id: evalCandidateExecutions.id,
+        traceId: evalCandidateExecutions.traceId,
+        result: evalCandidateExecutions.success,
+        reason: evalCandidateExecutions.feedback,
+        executionTimeMs: evalCandidateExecutions.durationMs,
+        error: evalCandidateExecutions.error,
+        executedAt: evalCandidateExecutions.createdAt,
+        traceTimestamp: traces.importedAt,
+        steps: traces.steps,
+        source: integrations.platform
+      })
+      .from(evalCandidateExecutions)
+      .innerJoin(traces, eq(evalCandidateExecutions.traceId, traces.id))
+      .leftJoin(integrations, eq(traces.integrationId, integrations.id))
+      .where(and(...conditions))
+      .orderBy(asc(evalCandidateExecutions.createdAt), asc(evalCandidateExecutions.traceId))
+      .limit(params.limit + 1)
+      .all();
 
-    const hasMore = result.results.length > params.limit;
-    const executions = result.results.slice(0, params.limit);
+    const hasMore = result.length > params.limit;
+    const executions = result.slice(0, params.limit);
 
     // Build response
     const executionsList: EvalExecution[] = executions.map(row => {
       const { input_preview, output_preview } = extractTraceSummary(
-        row.steps as string
+        JSON.stringify(row.steps)
       );
 
       return {
         id: row.id as string,
-        trace_id: row.trace_id as string,
+        trace_id: row.traceId as string,
         result: Boolean(row.result),
         reason: row.reason as string || '',
-        execution_time_ms: row.execution_time_ms as number || 0,
+        execution_time_ms: row.executionTimeMs as number || 0,
         error: row.error as string || null,
-        executed_at: row.executed_at as string,
+        executed_at: row.executedAt as string,
         trace_summary: {
-          timestamp: row.trace_timestamp as string,
+          timestamp: row.traceTimestamp as string,
           input_preview,
           output_preview,
           source: (row.source as string) || 'unknown'
@@ -783,8 +788,8 @@ export async function getEvalExecutions(
     if (hasMore && executions.length > 0) {
       const lastExec = executions[executions.length - 1];
       nextCursor = encodeCursor(
-        lastExec.executed_at as string,
-        lastExec.trace_id as string
+        lastExec.executedAt as string,
+        lastExec.traceId as string
       );
     }
 

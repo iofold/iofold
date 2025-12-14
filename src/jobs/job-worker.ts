@@ -5,6 +5,9 @@ import type { Job, JobType } from '../types/api';
 import { TraceImportJob } from './trace-import-job';
 import { EvalGenerationJob } from './eval-generation-job';
 import { EvalExecutionJob } from './eval-execution-job';
+import { createDb, type Database } from '../db/client';
+import { eq, asc } from 'drizzle-orm';
+import { jobs } from '../db/schema';
 
 export interface JobWorkerDeps {
   db: D1Database;
@@ -18,6 +21,7 @@ export interface JobWorkerDeps {
 export class JobWorker {
   private manager: JobManager;
   private db: D1Database;
+  private drizzle: Database;
   private cfAccountId?: string;
   private cfGatewayId?: string;
   private cfGatewayToken?: string;
@@ -26,6 +30,7 @@ export class JobWorker {
 
   constructor(deps: JobWorkerDeps) {
     this.db = deps.db;
+    this.drizzle = createDb(deps.db);
     this.cfAccountId = deps.cfAccountId;
     this.cfGatewayId = deps.cfGatewayId;
     this.cfGatewayToken = deps.cfGatewayToken;
@@ -52,23 +57,21 @@ export class JobWorker {
    */
   private async processPendingJobs(): Promise<void> {
     // Fetch all queued jobs across all workspaces
-    const result = await this.db
-      .prepare(
-        `SELECT * FROM jobs
-         WHERE status = 'queued'
-         ORDER BY created_at ASC
-         LIMIT 10`
-      )
-      .all();
+    const queuedJobs = await this.drizzle
+      .select()
+      .from(jobs)
+      .where(eq(jobs.status, 'queued'))
+      .orderBy(asc(jobs.createdAt))
+      .limit(10);
 
-    if (!result.results || result.results.length === 0) {
+    if (queuedJobs.length === 0) {
       return;
     }
 
-    console.log(`[JobWorker] Processing ${result.results.length} queued job(s)`);
+    console.log(`[JobWorker] Processing ${queuedJobs.length} queued job(s)`);
 
     // Process each job sequentially (simple implementation)
-    for (const jobRecord of result.results) {
+    for (const jobRecord of queuedJobs) {
       try {
         console.log(`[JobWorker] Starting job ${jobRecord.id} (${jobRecord.type})`);
         const job = this.jobFromRecord(jobRecord);
@@ -234,18 +237,18 @@ export class JobWorker {
   /**
    * Helper to convert database record to Job type
    */
-  private jobFromRecord(record: any): Job {
+  private jobFromRecord(record: typeof jobs.$inferSelect): Job {
     return {
-      id: record.id as string,
-      workspace_id: record.workspace_id as string,
+      id: record.id,
+      workspace_id: record.workspaceId,
       type: record.type as JobType,
       status: record.status as 'queued' | 'running' | 'completed' | 'failed' | 'cancelled',
-      progress: record.progress as number,
-      created_at: record.created_at as string,
-      started_at: record.started_at as string | null,
-      completed_at: record.completed_at as string | null,
-      result: record.result ? JSON.parse(record.result as string) : undefined,
-      error: record.error as string | undefined
+      progress: record.progress,
+      created_at: record.createdAt,
+      started_at: record.startedAt,
+      completed_at: record.completedAt,
+      result: record.result as any,
+      error: record.error ?? undefined
     };
   }
 }

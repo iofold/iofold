@@ -25,6 +25,19 @@ import type {
 } from '../types/agent';
 
 import { QueueProducer, type Queue } from '../queue/producer';
+import { createDb, type Database } from '../db/client';
+import { eq, and, desc, sql, count, ne } from 'drizzle-orm';
+import {
+  agents,
+  agentVersions,
+  functions,
+  agentFunctions,
+  traces,
+  evals,
+  feedback,
+  tasksets,
+  evalCandidates,
+} from '../db/schema';
 
 export interface Env {
   DB: D1Database;
@@ -55,14 +68,22 @@ export async function createAgent(request: Request, env: Env): Promise<Response>
       );
     }
 
-    // Check for duplicate name in workspace
-    const existing = await env.DB.prepare(
-      'SELECT id FROM agents WHERE workspace_id = ? AND name = ? AND status != ?'
-    )
-      .bind(workspaceId, body.name.trim(), 'archived')
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (existing) {
+    // Check for duplicate name in workspace
+    const existing = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.workspaceId, workspaceId),
+          eq(agents.name, body.name.trim()),
+          ne(agents.status, 'archived')
+        )
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
       return createErrorResponse(
         'ALREADY_EXISTS',
         'Agent with same name already exists',
@@ -74,20 +95,15 @@ export async function createAgent(request: Request, env: Env): Promise<Response>
     const agentId = `agent_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
-    await env.DB.prepare(
-      `INSERT INTO agents (id, workspace_id, name, description, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    )
-      .bind(
-        agentId,
-        workspaceId,
-        body.name.trim(),
-        body.description || null,
-        'confirmed',
-        now,
-        now
-      )
-      .run();
+    await drizzle.insert(agents).values({
+      id: agentId,
+      workspaceId: workspaceId,
+      name: body.name.trim(),
+      description: body.description || null,
+      status: 'confirmed',
+      createdAt: now,
+      updatedAt: now,
+    });
 
     return createSuccessResponse(
       {
@@ -110,7 +126,8 @@ export async function createAgent(request: Request, env: Env): Promise<Response>
     if (error.message === 'Invalid JSON in request body') {
       return createErrorResponse('VALIDATION_ERROR', error.message, 400);
     }
-    return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
+    // Pass error object for full stack trace logging
+    return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500, undefined, error);
   }
 }
 
@@ -133,7 +150,10 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
     const limitParam = url.searchParams.get('limit');
     const limit = limitParam ? parseInt(limitParam, 10) : undefined;
 
-    // Build query with optional LIMIT - includes counts for traces, evals, feedback, and tasks
+    const drizzle = createDb(env.DB);
+
+    // Note: Complex query with subqueries for counts - keeping as raw SQL for now
+    // since Drizzle subqueries would be too verbose. This could be optimized with separate queries.
     let query = `SELECT
         a.id,
         a.workspace_id,
@@ -171,13 +191,17 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
       .all();
 
     // Count pending discoveries
-    const pendingResult = await env.DB.prepare(
-      'SELECT COUNT(*) as count FROM agents WHERE workspace_id = ? AND status = ?'
-    )
-      .bind(workspaceId, 'discovered')
-      .first();
+    const pendingResult = await drizzle
+      .select({ count: count() })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.workspaceId, workspaceId),
+          eq(agents.status, 'discovered')
+        )
+      );
 
-    const agents: AgentWithVersion[] = agentsResult.results.map((row: any) => ({
+    const agentsList: AgentWithVersion[] = agentsResult.results.map((row: any) => ({
       id: row.id,
       workspace_id: row.workspace_id,
       name: row.name,
@@ -207,8 +231,8 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
     }));
 
     const response: ListAgentsResponse = {
-      agents,
-      pending_discoveries: (pendingResult?.count as number) || 0,
+      agents: agentsList,
+      pending_discoveries: pendingResult[0]?.count || 0,
     };
 
     return createSuccessResponse(response);
@@ -235,59 +259,90 @@ export async function getAgentById(request: Request, env: Env, agentId: string):
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Get agent with active version
-    const agentResult = await env.DB.prepare(
-      `SELECT
-        a.id,
-        a.workspace_id,
-        a.name,
-        a.description,
-        a.status,
-        a.active_version_id,
-        a.created_at,
-        a.updated_at,
-        av.id as version_id,
-        av.version as version_number,
-        av.prompt_template,
-        av.variables,
-        av.source,
-        av.parent_version_id,
-        av.accuracy,
-        av.status as version_status,
-        av.created_at as version_created_at
-      FROM agents a
-      LEFT JOIN agent_versions av ON a.active_version_id = av.id
-      WHERE a.id = ? AND a.workspace_id = ?`
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agentResult) {
+    // Get agent with active version
+    const agentResult = await drizzle
+      .select({
+        id: agents.id,
+        workspaceId: agents.workspaceId,
+        name: agents.name,
+        description: agents.description,
+        status: agents.status,
+        activeVersionId: agents.activeVersionId,
+        createdAt: agents.createdAt,
+        updatedAt: agents.updatedAt,
+        versionId: agentVersions.id,
+        versionNumber: agentVersions.version,
+        promptTemplate: agentVersions.promptTemplate,
+        variables: agentVersions.variables,
+        source: agentVersions.source,
+        parentVersionId: agentVersions.parentVersionId,
+        accuracy: agentVersions.accuracy,
+        versionStatus: agentVersions.status,
+        versionCreatedAt: agentVersions.createdAt,
+      })
+      .from(agents)
+      .leftJoin(agentVersions, eq(agents.activeVersionId, agentVersions.id))
+      .where(
+        and(
+          eq(agents.id, agentId),
+          eq(agents.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
+    const agent = agentResult[0];
+
     // Get all versions
-    const versionsResult = await env.DB.prepare(
-      `SELECT id, agent_id, version, prompt_template, variables, source,
-              parent_version_id, accuracy, status, created_at
-       FROM agent_versions
-       WHERE agent_id = ?
-       ORDER BY version DESC`
-    )
-      .bind(agentId)
-      .all();
+    const versionsResult = await drizzle
+      .select({
+        id: agentVersions.id,
+        agentId: agentVersions.agentId,
+        version: agentVersions.version,
+        promptTemplate: agentVersions.promptTemplate,
+        variables: agentVersions.variables,
+        source: agentVersions.source,
+        parentVersionId: agentVersions.parentVersionId,
+        accuracy: agentVersions.accuracy,
+        status: agentVersions.status,
+        createdAt: agentVersions.createdAt,
+      })
+      .from(agentVersions)
+      .where(eq(agentVersions.agentId, agentId))
+      .orderBy(desc(agentVersions.version));
 
     // Get functions for this agent
-    const functionsResult = await env.DB.prepare(
-      `SELECT f.*, af.role
-       FROM functions f
-       JOIN agent_functions af ON f.id = af.function_id
-       WHERE af.agent_id = ? AND f.status = ?`
-    )
-      .bind(agentId, 'active')
-      .all();
+    const functionsResult = await drizzle
+      .select({
+        id: functions.id,
+        workspaceId: functions.workspaceId,
+        type: functions.type,
+        name: functions.name,
+        code: functions.code,
+        inputSchema: functions.inputSchema,
+        outputSchema: functions.outputSchema,
+        modelUsed: functions.modelUsed,
+        parentFunctionId: functions.parentFunctionId,
+        status: functions.status,
+        createdAt: functions.createdAt,
+        role: agentFunctions.role,
+      })
+      .from(functions)
+      .innerJoin(agentFunctions, eq(functions.id, agentFunctions.functionId))
+      .where(
+        and(
+          eq(agentFunctions.agentId, agentId),
+          eq(functions.status, 'active')
+        )
+      );
 
     // Get metrics - use direct agent_id where available, join via agent_versions for traces
+    // Note: Complex query with multiple subqueries - keeping as raw SQL for simplicity
     const metricsResult = await env.DB.prepare(
       `SELECT
         (SELECT COUNT(*) FROM traces t
@@ -305,18 +360,21 @@ export async function getAgentById(request: Request, env: Env, agentId: string):
     // Note: The eval_executions table schema changed for GEPA - using eval_candidates metrics now
     let evalStatsResult: { accuracy: number | null; contradiction_rate: number | null } | null = null;
     try {
-      const activeEvalResult = await env.DB.prepare(
-        `SELECT accuracy FROM eval_candidates
-         WHERE agent_id = ? AND status = 'active'
-         LIMIT 1`
-      )
-        .bind(agentId)
-        .first();
+      const activeEvalResult = await drizzle
+        .select({ accuracy: evalCandidates.accuracy })
+        .from(evalCandidates)
+        .where(
+          and(
+            eq(evalCandidates.agentId, agentId),
+            eq(evalCandidates.status, 'active')
+          )
+        )
+        .limit(1);
 
-      if (activeEvalResult && activeEvalResult.accuracy !== null) {
+      if (activeEvalResult.length > 0 && activeEvalResult[0].accuracy !== null) {
         evalStatsResult = {
-          accuracy: activeEvalResult.accuracy as number,
-          contradiction_rate: 1 - (activeEvalResult.accuracy as number)
+          accuracy: activeEvalResult[0].accuracy,
+          contradiction_rate: 1 - activeEvalResult[0].accuracy
         };
       }
     } catch {
@@ -324,68 +382,68 @@ export async function getAgentById(request: Request, env: Env, agentId: string):
       evalStatsResult = null;
     }
 
-    const extractor = functionsResult.results.find((f: any) => f.role === 'extractor');
-    const injector = functionsResult.results.find((f: any) => f.role === 'injector');
+    const extractor = functionsResult.find((f: any) => f.role === 'extractor');
+    const injector = functionsResult.find((f: any) => f.role === 'injector');
 
     const response: AgentWithDetails = {
-      id: agentResult.id as string,
-      workspace_id: agentResult.workspace_id as string,
-      name: agentResult.name as string,
-      description: agentResult.description as string | null,
-      status: agentResult.status as any,
-      active_version_id: agentResult.active_version_id as string | null,
-      created_at: agentResult.created_at as string,
-      updated_at: agentResult.updated_at as string,
-      active_version: agentResult.version_id ? {
-        id: agentResult.version_id as string,
-        agent_id: agentResult.id as string,
-        version: agentResult.version_number as number,
-        prompt_template: agentResult.prompt_template as string,
-        variables: agentResult.variables ? JSON.parse(agentResult.variables as string) : [],
-        source: agentResult.source as any,
-        parent_version_id: agentResult.parent_version_id as string | null,
-        accuracy: agentResult.accuracy as number | null,
-        status: agentResult.version_status as any,
-        created_at: agentResult.version_created_at as string,
+      id: agent.id,
+      workspace_id: agent.workspaceId,
+      name: agent.name,
+      description: agent.description,
+      status: agent.status as any,
+      active_version_id: agent.activeVersionId,
+      created_at: agent.createdAt,
+      updated_at: agent.updatedAt,
+      active_version: agent.versionId ? {
+        id: agent.versionId,
+        agent_id: agent.id,
+        version: agent.versionNumber!,
+        prompt_template: agent.promptTemplate!,
+        variables: agent.variables as any[] || [],
+        source: agent.source as any,
+        parent_version_id: agent.parentVersionId,
+        accuracy: agent.accuracy,
+        status: agent.versionStatus as any,
+        created_at: agent.versionCreatedAt!,
       } : null,
-      versions: versionsResult.results.map((v: any) => ({
+      versions: versionsResult.map((v: any) => ({
         id: v.id,
-        agent_id: v.agent_id,
+        agent_id: v.agentId,
         version: v.version,
-        prompt_template: v.prompt_template,
-        variables: v.variables ? JSON.parse(v.variables) : [],
+        prompt_template: v.promptTemplate,
+        variables: v.variables || [],
         source: v.source,
-        parent_version_id: v.parent_version_id,
+        parent_version_id: v.parentVersionId,
         accuracy: v.accuracy,
         status: v.status,
-        created_at: v.created_at,
+        created_at: v.createdAt,
       })),
       functions: {
         extractor: extractor ? {
-          id: extractor.id as string,
-          workspace_id: extractor.workspace_id as string,
+          id: extractor.id,
+          workspace_id: extractor.workspaceId,
           type: extractor.type as any,
-          name: extractor.name as string,
-          code: extractor.code as string,
-          input_schema: extractor.input_schema ? JSON.parse(extractor.input_schema as string) : null,
-          output_schema: extractor.output_schema ? JSON.parse(extractor.output_schema as string) : null,
-          model_used: extractor.model_used as string | null,
-          parent_function_id: extractor.parent_function_id as string | null,
+          name: extractor.name,
+          code: extractor.code,
+          input_schema: extractor.inputSchema || null,
+          output_schema: extractor.outputSchema || null,
+          model_used: extractor.modelUsed,
+          parent_function_id: extractor.parentFunctionId,
           status: extractor.status as any,
-          created_at: extractor.created_at as string,
+          created_at: extractor.createdAt,
         } : null,
         injector: injector ? {
-          id: injector.id as string,
-          workspace_id: injector.workspace_id as string,
+          id: injector.id,
+          workspace_id: injector.workspaceId,
           type: injector.type as any,
-          name: injector.name as string,
-          code: injector.code as string,
-          input_schema: injector.input_schema ? JSON.parse(injector.input_schema as string) : null,
-          output_schema: injector.output_schema ? JSON.parse(injector.output_schema as string) : null,
-          model_used: injector.model_used as string | null,
-          parent_function_id: injector.parent_function_id as string | null,
+          name: injector.name,
+          code: injector.code,
+          input_schema: injector.inputSchema || null,
+          output_schema: injector.outputSchema || null,
+          model_used: injector.modelUsed,
+          parent_function_id: injector.parentFunctionId,
           status: injector.status as any,
-          created_at: injector.created_at as string,
+          created_at: injector.createdAt,
         } : null,
       },
       metrics: {
@@ -425,18 +483,29 @@ export async function confirmAgent(request: Request, env: Env, agentId: string):
 
     const body = await parseJsonBody<ConfirmAgentRequest>(request);
 
-    // Verify agent exists and is in discovered state
-    const agent = await env.DB.prepare(
-      'SELECT id, name, status FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists and is in discovered state
+    const agent = await drizzle
+      .select({
+        id: agents.id,
+        name: agents.name,
+        status: agents.status,
+      })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, agentId),
+          eq(agents.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (agent.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
-    if (agent.status !== 'discovered') {
+    if (agent[0].status !== 'discovered') {
       return createErrorResponse(
         'VALIDATION_ERROR',
         'Only discovered agents can be confirmed',
@@ -444,32 +513,38 @@ export async function confirmAgent(request: Request, env: Env, agentId: string):
       );
     }
 
-    // Update agent status and optionally name
-    const updates: string[] = ['status = ?', 'updated_at = ?'];
-    const params: any[] = ['confirmed', new Date().toISOString()];
+    // Build update values
+    const updateValues: any = {
+      status: 'confirmed',
+      updatedAt: new Date().toISOString(),
+    };
 
     if (body.name && body.name.trim().length > 0) {
       // Check for duplicate name
-      const duplicate = await env.DB.prepare(
-        'SELECT id FROM agents WHERE workspace_id = ? AND name = ? AND id != ? AND status != ?'
-      )
-        .bind(workspaceId, body.name.trim(), agentId, 'archived')
-        .first();
+      const duplicate = await drizzle
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.workspaceId, workspaceId),
+            eq(agents.name, body.name.trim()),
+            ne(agents.id, agentId),
+            ne(agents.status, 'archived')
+          )
+        )
+        .limit(1);
 
-      if (duplicate) {
+      if (duplicate.length > 0) {
         return createErrorResponse('ALREADY_EXISTS', 'Agent with same name already exists', 409);
       }
 
-      updates.push('name = ?');
-      params.push(body.name.trim());
+      updateValues.name = body.name.trim();
     }
 
-    params.push(agentId);
-    await env.DB.prepare(
-      `UPDATE agents SET ${updates.join(', ')} WHERE id = ?`
-    )
-      .bind(...params)
-      .run();
+    await drizzle
+      .update(agents)
+      .set(updateValues)
+      .where(eq(agents.id, agentId));
 
     // Return updated agent
     return getAgentById(request, env, agentId);
@@ -499,23 +574,32 @@ export async function deleteAgent(request: Request, env: Env, agentId: string): 
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify agent exists
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists
+    const agent = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, agentId),
+          eq(agents.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (agent.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // Soft delete by setting status to archived
-    await env.DB.prepare(
-      'UPDATE agents SET status = ?, updated_at = ? WHERE id = ?'
-    )
-      .bind('archived', new Date().toISOString(), agentId)
-      .run();
+    await drizzle
+      .update(agents)
+      .set({
+        status: 'archived',
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(agents.id, agentId));
 
     return new Response(null, { status: 204 });
   } catch (error: any) {
@@ -541,22 +625,28 @@ export async function getAgentPrompt(request: Request, env: Env, agentId: string
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Get agent with active version
-    const result = await env.DB.prepare(
-      `SELECT
-        av.id as version_id,
-        av.version,
-        av.prompt_template,
-        av.variables,
-        av.created_at as updated_at
-      FROM agents a
-      JOIN agent_versions av ON a.active_version_id = av.id
-      WHERE a.id = ? AND a.workspace_id = ?`
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!result) {
+    // Get agent with active version
+    const result = await drizzle
+      .select({
+        versionId: agentVersions.id,
+        version: agentVersions.version,
+        promptTemplate: agentVersions.promptTemplate,
+        variables: agentVersions.variables,
+        updatedAt: agentVersions.createdAt,
+      })
+      .from(agents)
+      .innerJoin(agentVersions, eq(agents.activeVersionId, agentVersions.id))
+      .where(
+        and(
+          eq(agents.id, agentId),
+          eq(agents.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (result.length === 0) {
       return createErrorResponse(
         'NOT_FOUND',
         'Agent not found or has no active version',
@@ -564,8 +654,10 @@ export async function getAgentPrompt(request: Request, env: Env, agentId: string
       );
     }
 
+    const row = result[0];
+
     // Generate ETag based on version ID and updated_at
-    const etag = `"${result.version_id}-${result.updated_at}"`;
+    const etag = `"${row.versionId}-${row.updatedAt}"`;
     const ifNoneMatch = request.headers.get('If-None-Match');
 
     // Check if client has current version
@@ -577,11 +669,11 @@ export async function getAgentPrompt(request: Request, env: Env, agentId: string
     }
 
     const response: AgentPromptResponse = {
-      template: result.prompt_template as string,
-      version: result.version as number,
-      version_id: result.version_id as string,
-      variables: result.variables ? JSON.parse(result.variables as string) : [],
-      updated_at: result.updated_at as string,
+      template: row.promptTemplate,
+      version: row.version,
+      version_id: row.versionId,
+      variables: row.variables || [],
+      updated_at: row.updatedAt,
     };
 
     return new Response(JSON.stringify(response), {
@@ -635,31 +727,50 @@ export async function updateAgent(request: Request, env: Env, agentId: string): 
       );
     }
 
-    // Verify agent exists and belongs to workspace
-    const agent = await env.DB.prepare(
-      'SELECT id, name, status FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists and belongs to workspace
+    const agent = await drizzle
+      .select({
+        id: agents.id,
+        name: agents.name,
+        status: agents.status,
+      })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, agentId),
+          eq(agents.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (agent.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
-    // Build dynamic UPDATE query
-    const updates: string[] = ['updated_at = ?'];
-    const params: any[] = [new Date().toISOString()];
+    // Build update values
+    const updateValues: any = {
+      updatedAt: new Date().toISOString(),
+    };
 
     // Handle name update
     if (body.name !== undefined) {
       // Check for duplicate name (excluding current agent)
-      const existing = await env.DB.prepare(
-        'SELECT id FROM agents WHERE workspace_id = ? AND name = ? AND id != ? AND status != ?'
-      )
-        .bind(workspaceId, body.name.trim(), agentId, 'archived')
-        .first();
+      const existing = await drizzle
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.workspaceId, workspaceId),
+            eq(agents.name, body.name.trim()),
+            ne(agents.id, agentId),
+            ne(agents.status, 'archived')
+          )
+        )
+        .limit(1);
 
-      if (existing) {
+      if (existing.length > 0) {
         return createErrorResponse(
           'ALREADY_EXISTS',
           'Agent with same name already exists',
@@ -667,23 +778,19 @@ export async function updateAgent(request: Request, env: Env, agentId: string): 
         );
       }
 
-      updates.push('name = ?');
-      params.push(body.name.trim());
+      updateValues.name = body.name.trim();
     }
 
     // Handle description update
     if (body.description !== undefined) {
-      updates.push('description = ?');
-      params.push(body.description || null);
+      updateValues.description = body.description || null;
     }
 
     // Update agent
-    params.push(agentId);
-    await env.DB.prepare(
-      `UPDATE agents SET ${updates.join(', ')} WHERE id = ?`
-    )
-      .bind(...params)
-      .run();
+    await drizzle
+      .update(agents)
+      .set(updateValues)
+      .where(eq(agents.id, agentId));
 
     // Return updated agent
     return getAgentById(request, env, agentId);
@@ -757,15 +864,22 @@ export async function discoverAgents(request: Request, env: Env): Promise<Respon
       }
     }
 
+    const drizzle = createDb(env.DB);
+
     // Check if there are unassigned traces
-    const unassignedCount = await env.DB
-      .prepare('SELECT COUNT(*) as count FROM traces WHERE workspace_id = ? AND assignment_status = ?')
-      .bind(workspaceId, 'unassigned')
-      .first();
+    const unassignedCount = await drizzle
+      .select({ count: count() })
+      .from(traces)
+      .where(
+        and(
+          eq(traces.workspaceId, workspaceId),
+          eq(traces.assignmentStatus, 'unassigned')
+        )
+      );
 
-    const count = (unassignedCount?.count as number) || 0;
+    const traceCount = unassignedCount[0]?.count || 0;
 
-    if (count === 0) {
+    if (traceCount === 0) {
       return createErrorResponse(
         'VALIDATION_ERROR',
         'No unassigned traces found. Import traces first.',
@@ -805,7 +919,7 @@ export async function discoverAgents(request: Request, env: Env): Promise<Respon
       {
         job_id: result.job_id,
         status: 'queued',
-        unassigned_traces: count,
+        unassigned_traces: traceCount,
         config: {
           similarity_threshold: config.similarity_threshold || 0.85,
           min_cluster_size: config.min_cluster_size || 5,
@@ -847,21 +961,31 @@ export async function improveAgent(request: Request, env: Env, agentId: string):
       // Empty body is fine
     }
 
-    // Verify agent exists and belongs to workspace
-    const agent = await env.DB.prepare(
-      `SELECT a.*, av.prompt_template, av.version as active_version
-       FROM agents a
-       LEFT JOIN agent_versions av ON a.active_version_id = av.id
-       WHERE a.id = ? AND a.workspace_id = ?`
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists and belongs to workspace
+    const agent = await drizzle
+      .select({
+        id: agents.id,
+        activeVersionId: agents.activeVersionId,
+        promptTemplate: agentVersions.promptTemplate,
+        activeVersion: agentVersions.version,
+      })
+      .from(agents)
+      .leftJoin(agentVersions, eq(agents.activeVersionId, agentVersions.id))
+      .where(
+        and(
+          eq(agents.id, agentId),
+          eq(agents.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (agent.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
-    if (!agent.prompt_template) {
+    if (!agent[0].promptTemplate) {
       return createErrorResponse(
         'VALIDATION_ERROR',
         'Agent has no active version with prompt template',
@@ -870,12 +994,11 @@ export async function improveAgent(request: Request, env: Env, agentId: string):
     }
 
     // Get next version number
-    const versionResult = await env.DB.prepare(
-      'SELECT COALESCE(MAX(version), 0) + 1 as next_version FROM agent_versions WHERE agent_id = ?'
-    )
-      .bind(agentId)
-      .first();
-    const nextVersion = (versionResult?.next_version as number) || 1;
+    const versionResult = await drizzle
+      .select({ nextVersion: sql<number>`COALESCE(MAX(${agentVersions.version}), 0) + 1` })
+      .from(agentVersions)
+      .where(eq(agentVersions.agentId, agentId));
+    const nextVersion = versionResult[0]?.nextVersion || 1;
 
     // For now, create a placeholder improved version
     // In production, this would call an LLM to improve the prompt
@@ -884,38 +1007,35 @@ export async function improveAgent(request: Request, env: Env, agentId: string):
 
     // Create improved prompt (placeholder - in production would use LLM)
     const improvedPrompt = customInstructions
-      ? `${agent.prompt_template}\n\n[Improvement guidance: ${customInstructions}]`
-      : agent.prompt_template;
+      ? `${agent[0].promptTemplate}\n\n[Improvement guidance: ${customInstructions}]`
+      : agent[0].promptTemplate;
 
-    await env.DB.prepare(
-      `INSERT INTO agent_versions (id, agent_id, version, prompt_template, source, parent_version_id, status, created_at)
-       VALUES (?, ?, ?, ?, 'ai_improved', ?, 'candidate', ?)`
-    )
-      .bind(
-        versionId,
-        agentId,
-        nextVersion,
-        improvedPrompt,
-        agent.active_version_id,
-        now
-      )
-      .run();
+    await drizzle.insert(agentVersions).values({
+      id: versionId,
+      agentId: agentId,
+      version: nextVersion,
+      promptTemplate: improvedPrompt,
+      source: 'ai_improved',
+      parentVersionId: agent[0].activeVersionId,
+      status: 'candidate',
+      createdAt: now,
+    });
 
     // Return the new version
-    const newVersion = await env.DB.prepare(
-      'SELECT * FROM agent_versions WHERE id = ?'
-    )
-      .bind(versionId)
-      .first();
+    const newVersion = await drizzle
+      .select()
+      .from(agentVersions)
+      .where(eq(agentVersions.id, versionId))
+      .limit(1);
 
     return createSuccessResponse({
-      id: newVersion!.id,
-      agent_id: newVersion!.agent_id,
-      version: newVersion!.version,
-      prompt_template: newVersion!.prompt_template,
-      source: newVersion!.source,
-      status: newVersion!.status,
-      created_at: newVersion!.created_at,
+      id: newVersion[0].id,
+      agent_id: newVersion[0].agentId,
+      version: newVersion[0].version,
+      prompt_template: newVersion[0].promptTemplate,
+      source: newVersion[0].source,
+      status: newVersion[0].status,
+      created_at: newVersion[0].createdAt,
       message: 'New candidate version created. Review and promote to activate.'
     }, 201);
   } catch (error: any) {

@@ -12,6 +12,7 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types';
+import { eq, sql } from 'drizzle-orm';
 import OpenAI from 'openai';
 import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
@@ -21,6 +22,8 @@ import { ClusteringService, type TracePrompt } from '../services/clustering-serv
 import type { PromptCluster } from '../types/vectorize';
 import type { AgentDiscoveryJobResult } from '../types/agent';
 import { createGatewayClient, DEFAULT_MODEL } from '../ai/gateway';
+import { createDb, type Database } from '../db/client';
+import { traces, agents, agentVersions } from '../db/schema';
 
 export interface AgentDiscoveryJobConfig {
   jobId: string;
@@ -55,12 +58,14 @@ export class AgentDiscoveryJob {
   private clusteringService: ClusteringService;
   private client: OpenAI;
   private stream?: SSEStream;
+  private drizzle: Database;
 
   constructor(
     private config: AgentDiscoveryJobConfig,
     private deps: AgentDiscoveryJobDeps
   ) {
     this.jobManager = new JobManager(deps.db);
+    this.drizzle = createDb(deps.db);
     this.embeddingService = new EmbeddingService({ ai: deps.ai });
     this.vectorService = new VectorService({ vectorize: deps.vectorize });
     this.clusteringService = new ClusteringService({
@@ -97,23 +102,25 @@ export class AgentDiscoveryJob {
 
       // Step 1: Fetch unassigned traces from D1
       const maxTraces = this.config.maxTracesToProcess ?? 100;
-      const unassignedTraces = await this.deps.db
-        .prepare(
-          `SELECT id, steps, workspace_id
-           FROM traces
-           WHERE workspace_id = ? AND assignment_status = 'unassigned'
-           LIMIT ?`
+      const unassignedTraces = await this.drizzle
+        .select({
+          id: traces.id,
+          steps: traces.steps,
+          workspaceId: traces.workspaceId
+        })
+        .from(traces)
+        .where(
+          sql`${traces.workspaceId} = ${this.config.workspaceId} AND ${traces.assignmentStatus} = 'unassigned'`
         )
-        .bind(this.config.workspaceId, maxTraces)
-        .all();
+        .limit(maxTraces);
 
       console.log(JSON.stringify({
         event: 'traces_fetched',
         job_id: this.config.jobId,
-        count: unassignedTraces.results.length
+        count: unassignedTraces.length
       }));
 
-      if (unassignedTraces.results.length === 0) {
+      if (unassignedTraces.length === 0) {
         const result: AgentDiscoveryJobResult = {
           discovered_agents: [],
           assigned_traces: 0,
@@ -133,15 +140,15 @@ export class AgentDiscoveryJob {
       }
 
       this.emitProgress('extracting_prompts', 10, {
-        traces_found: unassignedTraces.results.length
+        traces_found: unassignedTraces.length
       });
 
       // Step 2: Extract system prompts from each trace
       const tracePrompts: TracePrompt[] = [];
-      for (const row of unassignedTraces.results) {
-        const traceId = row.id as string;
-        const steps = JSON.parse(row.steps as string);
-        const workspaceId = row.workspace_id as string;
+      for (const row of unassignedTraces) {
+        const traceId = row.id;
+        const steps = typeof row.steps === 'string' ? JSON.parse(row.steps) : row.steps;
+        const workspaceId = row.workspaceId;
 
         const systemPrompt = this.extractSystemPrompt(steps);
         if (systemPrompt) {
@@ -156,19 +163,19 @@ export class AgentDiscoveryJob {
       console.log(JSON.stringify({
         event: 'prompts_extracted',
         job_id: this.config.jobId,
-        total_traces: unassignedTraces.results.length,
+        total_traces: unassignedTraces.length,
         traces_with_prompts: tracePrompts.length,
-        traces_without_prompts: unassignedTraces.results.length - tracePrompts.length
+        traces_without_prompts: unassignedTraces.length - tracePrompts.length
       }));
 
       if (tracePrompts.length === 0) {
         // No system prompts found - mark all as orphaned
-        await this.markAllAsOrphaned(unassignedTraces.results.map(r => r.id as string));
+        await this.markAllAsOrphaned(unassignedTraces.map(r => r.id));
 
         const result: AgentDiscoveryJobResult = {
           discovered_agents: [],
           assigned_traces: 0,
-          orphaned_traces: unassignedTraces.results.length
+          orphaned_traces: unassignedTraces.length
         };
 
         console.log(JSON.stringify({
@@ -282,7 +289,7 @@ export class AgentDiscoveryJob {
         job_id: this.config.jobId,
         result,
         summary: {
-          total_traces_processed: unassignedTraces.results.length,
+          total_traces_processed: unassignedTraces.length,
           traces_with_prompts: tracePrompts.length,
           clusters_formed: clusteringResult.clusters.length,
           agents_created: discoveredAgents.length,
@@ -404,58 +411,40 @@ Rules:
     const now = new Date().toISOString();
 
     // Create agent
-    await this.deps.db
-      .prepare(
-        `INSERT INTO agents (
-          id, workspace_id, name, description, status, active_version_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        agentId,
-        this.config.workspaceId,
-        template.agent_name,
-        `Discovered from ${cluster.trace_ids.length} similar traces`,
-        'discovered',
-        versionId,
-        now,
-        now
-      )
-      .run();
+    await this.drizzle.insert(agents).values({
+      id: agentId,
+      workspaceId: this.config.workspaceId,
+      name: template.agent_name,
+      description: `Discovered from ${cluster.trace_ids.length} similar traces`,
+      status: 'discovered',
+      activeVersionId: versionId,
+      createdAt: now,
+      updatedAt: now
+    });
 
     // Create agent version
-    await this.deps.db
-      .prepare(
-        `INSERT INTO agent_versions (
-          id, agent_id, version, prompt_template, variables, source, parent_version_id, accuracy, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        versionId,
-        agentId,
-        1,
-        template.template,
-        JSON.stringify(template.variables),
-        'discovered',
-        null,
-        null,
-        'active',
-        now
-      )
-      .run();
+    await this.drizzle.insert(agentVersions).values({
+      id: versionId,
+      agentId,
+      version: 1,
+      promptTemplate: template.template,
+      variables: template.variables as unknown as Record<string, unknown>,
+      source: 'discovered',
+      parentVersionId: null,
+      accuracy: null,
+      status: 'active',
+      createdAt: now
+    });
 
     // Update traces with agent_version_id and assignment_status
-    const updateStatements = cluster.trace_ids.map(traceId =>
-      this.deps.db
-        .prepare(
-          `UPDATE traces
-           SET agent_id = ?, agent_version_id = ?, assignment_status = ?
-           WHERE id = ?`
-        )
-        .bind(agentId, versionId, 'assigned', traceId)
-    );
-
-    if (updateStatements.length > 0) {
-      await this.deps.db.batch(updateStatements);
+    for (const traceId of cluster.trace_ids) {
+      await this.drizzle
+        .update(traces)
+        .set({
+          agentVersionId: versionId,
+          assignmentStatus: 'assigned'
+        })
+        .where(eq(traces.id, traceId));
     }
 
     return agentId;
@@ -467,17 +456,12 @@ Rules:
   private async markAllAsOrphaned(traceIds: string[]): Promise<void> {
     if (traceIds.length === 0) return;
 
-    const statements = traceIds.map(traceId =>
-      this.deps.db
-        .prepare(
-          `UPDATE traces
-           SET assignment_status = ?
-           WHERE id = ?`
-        )
-        .bind('orphaned', traceId)
-    );
-
-    await this.deps.db.batch(statements);
+    for (const traceId of traceIds) {
+      await this.drizzle
+        .update(traces)
+        .set({ assignmentStatus: 'orphaned' })
+        .where(eq(traces.id, traceId));
+    }
   }
 
   private emitProgress(status: string, progress: number, extra?: any) {

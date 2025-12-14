@@ -17,6 +17,15 @@ import {
   decodeCursor,
 } from './utils';
 import { QueueProducer, type Queue } from '../queue/producer';
+import { createDb, type Database } from '../db/client';
+import { eq, and, or, lt, gte, lte, desc, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import {
+  traces,
+  integrations,
+  agentVersions,
+  feedback,
+  jobs,
+} from '../db/schema';
 
 export interface Env {
   DB: D1Database;
@@ -60,14 +69,25 @@ export async function importTraces(request: Request, env: Env): Promise<Response
       );
     }
 
-    // Verify integration exists and belongs to workspace
-    const integration = await env.DB.prepare(
-      'SELECT id, platform, status FROM integrations WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(body.integration_id, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!integration) {
+    // Verify integration exists and belongs to workspace
+    const integration = await drizzle
+      .select({
+        id: integrations.id,
+        platform: integrations.platform,
+        status: integrations.status,
+      })
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, body.integration_id),
+          eq(integrations.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (integration.length === 0) {
       return createErrorResponse(
         'NOT_FOUND',
         'Integration not found',
@@ -125,23 +145,20 @@ export async function importTraces(request: Request, env: Env): Promise<Response
 
     // Fallback: Create job and execute synchronously (no queue in local dev)
     const jobId = `job_${crypto.randomUUID()}`;
-    await env.DB.prepare(
-      `INSERT INTO jobs (id, workspace_id, type, status, metadata, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    )
-      .bind(
-        jobId,
-        workspaceId,
-        'import',
-        'running', // Start as running since we'll execute immediately
-        JSON.stringify({
-          integration_id: body.integration_id,
-          filters: body.filters || {},
-          workspaceId
-        }),
-        new Date().toISOString()
-      )
-      .run();
+    const now = new Date().toISOString();
+
+    await drizzle.insert(jobs).values({
+      id: jobId,
+      workspaceId: workspaceId,
+      type: 'import',
+      status: 'running', // Start as running since we'll execute immediately
+      metadata: {
+        integration_id: body.integration_id,
+        filters: body.filters || {},
+        workspaceId
+      },
+      createdAt: now,
+    });
 
     // Import TraceImportJob and execute synchronously
     const { TraceImportJob } = await import('../jobs/trace-import-job');
@@ -178,16 +195,14 @@ export async function importTraces(request: Request, env: Env): Promise<Response
       );
     } catch (execError: any) {
       // Mark job as failed
-      await env.DB.prepare(
-        `UPDATE jobs SET status = ?, error = ?, completed_at = ? WHERE id = ?`
-      )
-        .bind(
-          'failed',
-          execError.message || 'Unknown error',
-          new Date().toISOString(),
-          jobId
-        )
-        .run();
+      await drizzle
+        .update(jobs)
+        .set({
+          status: 'failed',
+          error: execError.message || 'Unknown error',
+          completedAt: new Date().toISOString(),
+        })
+        .where(eq(jobs.id, jobId));
 
       return createSuccessResponse(
         {
@@ -236,66 +251,44 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
     const dateFrom = url.searchParams.get('date_from');
     const dateTo = url.searchParams.get('date_to');
 
-    // Build query - include agent_id from agent_versions
-    let query = `
-      SELECT
-        t.id,
-        t.trace_id,
-        i.platform as source,
-        t.timestamp,
-        t.imported_at,
-        t.input_preview,
-        t.output_preview,
-        t.step_count,
-        t.has_errors,
-        t.agent_version_id,
-        av.agent_id as trace_agent_id,
-        f.id as feedback_id,
-        f.rating,
-        f.rating_detail as notes,
-        f.agent_id as feedback_agent_id
-      FROM traces t
-      LEFT JOIN integrations i ON t.integration_id = i.id
-      LEFT JOIN agent_versions av ON t.agent_version_id = av.id
-      LEFT JOIN feedback f ON t.id = f.trace_id
-      WHERE t.workspace_id = ?
-    `;
+    const drizzle = createDb(env.DB);
 
-    const params: any[] = [workspaceId];
+    // Build conditions array
+    const conditions: any[] = [eq(traces.workspaceId, workspaceId)];
 
     // Apply filters - agent_id can match either trace's agent (via agent_version) or feedback's agent
     if (agentId) {
-      query += ' AND (av.agent_id = ? OR f.agent_id = ?)';
-      params.push(agentId, agentId);
+      conditions.push(
+        or(
+          eq(agentVersions.agentId, agentId),
+          eq(feedback.agentId, agentId)
+        )
+      );
     }
 
     if (source) {
-      query += ' AND i.platform = ?';
-      params.push(source);
+      conditions.push(eq(integrations.platform, source as any));
     }
 
     if (ratingFilter) {
       const ratings = ratingFilter.split(',');
-      query += ` AND f.rating IN (${ratings.map(() => '?').join(',')})`;
-      params.push(...ratings);
+      conditions.push(inArray(feedback.rating, ratings as any[]));
     }
 
     if (hasFeedback !== null) {
       if (hasFeedback === 'true') {
-        query += ' AND f.id IS NOT NULL';
+        conditions.push(isNotNull(feedback.id));
       } else if (hasFeedback === 'false') {
-        query += ' AND f.id IS NULL';
+        conditions.push(isNull(feedback.id));
       }
     }
 
     if (dateFrom) {
-      query += ' AND t.imported_at >= ?';
-      params.push(dateFrom);
+      conditions.push(gte(traces.importedAt, dateFrom));
     }
 
     if (dateTo) {
-      query += ' AND t.imported_at <= ?';
-      params.push(dateTo);
+      conditions.push(lte(traces.importedAt, dateTo));
     }
 
     // Apply cursor pagination
@@ -304,41 +297,68 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
       if (!decoded) {
         return createErrorResponse('VALIDATION_ERROR', 'Invalid cursor', 400);
       }
-      query += ' AND (t.imported_at < ? OR (t.imported_at = ? AND t.id < ?))';
-      params.push(decoded.timestamp, decoded.timestamp, decoded.id);
+      conditions.push(
+        or(
+          lt(traces.importedAt, decoded.timestamp),
+          and(
+            eq(traces.importedAt, decoded.timestamp),
+            lt(traces.id, decoded.id)
+          )
+        )
+      );
     }
 
-    // Order and limit
-    query += ' ORDER BY t.imported_at DESC, t.id DESC LIMIT ?';
-    params.push(limit + 1); // Fetch one extra to determine has_more
-
-    const result = await env.DB.prepare(query).bind(...params).all();
+    const result = await drizzle
+      .select({
+        id: traces.id,
+        traceId: traces.traceId,
+        source: integrations.platform,
+        timestamp: traces.timestamp,
+        importedAt: traces.importedAt,
+        inputPreview: traces.inputPreview,
+        outputPreview: traces.outputPreview,
+        stepCount: traces.stepCount,
+        hasErrors: traces.hasErrors,
+        agentVersionId: traces.agentVersionId,
+        traceAgentId: agentVersions.agentId,
+        feedbackId: feedback.id,
+        rating: feedback.rating,
+        notes: feedback.ratingDetail,
+        feedbackAgentId: feedback.agentId,
+      })
+      .from(traces)
+      .leftJoin(integrations, eq(traces.integrationId, integrations.id))
+      .leftJoin(agentVersions, eq(traces.agentVersionId, agentVersions.id))
+      .leftJoin(feedback, eq(traces.id, feedback.traceId))
+      .where(and(...conditions))
+      .orderBy(desc(traces.importedAt), desc(traces.id))
+      .limit(limit + 1);
 
     // Transform results - use pre-computed columns from database
-    const traces = result.results.map((row: any) => {
+    const tracesList = result.map((row: any) => {
       const trace: any = {
         id: row.id,
-        trace_id: row.trace_id,
+        trace_id: row.traceId,
         source: row.source,
         timestamp: row.timestamp,
-        imported_at: row.imported_at,
-        step_count: row.step_count,
+        imported_at: row.importedAt,
+        step_count: row.stepCount,
         // Include agent_id from agent_version (trace's assigned agent)
-        agent_id: row.trace_agent_id || null,
-        agent_version_id: row.agent_version_id || null,
+        agent_id: row.traceAgentId || null,
+        agent_version_id: row.agentVersionId || null,
         summary: {
-          input_preview: row.input_preview || 'No input',
-          output_preview: row.output_preview || 'No output',
-          has_errors: Boolean(row.has_errors),
+          input_preview: row.inputPreview || 'No input',
+          output_preview: row.outputPreview || 'No output',
+          has_errors: Boolean(row.hasErrors),
         },
       };
 
       // Add feedback if exists
-      if (row.feedback_id) {
+      if (row.feedbackId) {
         trace.feedback = {
           rating: row.rating,
           notes: row.notes,
-          agent_id: row.feedback_agent_id,
+          agent_id: row.feedbackAgentId,
         };
       }
 
@@ -347,51 +367,51 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
 
     // Get total count with same filters (cached, expensive query)
     // TODO: Implement caching layer
-    let countQuery = `
-      SELECT COUNT(*) as count
-      FROM traces t
-      LEFT JOIN integrations i ON t.integration_id = i.id
-      LEFT JOIN agent_versions av ON t.agent_version_id = av.id
-      LEFT JOIN feedback f ON t.id = f.trace_id
-      WHERE t.workspace_id = ?
-    `;
-    const countParams: any[] = [workspaceId];
+    // Build count conditions (same as main query but without cursor)
+    const countConditions: any[] = [eq(traces.workspaceId, workspaceId)];
 
     if (agentId) {
-      countQuery += ' AND (av.agent_id = ? OR f.agent_id = ?)';
-      countParams.push(agentId, agentId);
+      countConditions.push(
+        or(
+          eq(agentVersions.agentId, agentId),
+          eq(feedback.agentId, agentId)
+        )
+      );
     }
     if (source) {
-      countQuery += ' AND i.platform = ?';
-      countParams.push(source);
+      countConditions.push(eq(integrations.platform, source as any));
     }
     if (ratingFilter) {
       const ratings = ratingFilter.split(',');
-      countQuery += ` AND f.rating IN (${ratings.map(() => '?').join(',')})`;
-      countParams.push(...ratings);
+      countConditions.push(inArray(feedback.rating, ratings as any[]));
     }
     if (hasFeedback !== null) {
       if (hasFeedback === 'true') {
-        countQuery += ' AND f.id IS NOT NULL';
+        countConditions.push(isNotNull(feedback.id));
       } else if (hasFeedback === 'false') {
-        countQuery += ' AND f.id IS NULL';
+        countConditions.push(isNull(feedback.id));
       }
     }
     if (dateFrom) {
-      countQuery += ' AND t.imported_at >= ?';
-      countParams.push(dateFrom);
+      countConditions.push(gte(traces.importedAt, dateFrom));
     }
     if (dateTo) {
-      countQuery += ' AND t.imported_at <= ?';
-      countParams.push(dateTo);
+      countConditions.push(lte(traces.importedAt, dateTo));
     }
 
-    const countResult = await env.DB.prepare(countQuery).bind(...countParams).first();
-    const totalCount = (countResult?.count as number) || 0;
+    const countResult = await drizzle
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(traces)
+      .leftJoin(integrations, eq(traces.integrationId, integrations.id))
+      .leftJoin(agentVersions, eq(traces.agentVersionId, agentVersions.id))
+      .leftJoin(feedback, eq(traces.id, feedback.traceId))
+      .where(and(...countConditions));
+
+    const totalCount = countResult[0]?.count || 0;
 
     return createSuccessResponse(
       buildPaginatedResponse(
-        traces,
+        tracesList,
         limit,
         (t: any) => t.imported_at,
         (t: any) => t.id,
@@ -447,58 +467,66 @@ export async function getTraceById(request: Request, env: Env, traceId: string):
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    const result = await env.DB.prepare(
-      `SELECT
-        t.id,
-        t.trace_id,
-        i.platform as source,
-        t.timestamp,
-        t.steps,
-        t.raw_data,
-        f.id as feedback_id,
-        f.rating,
-        f.rating_detail as notes,
-        f.agent_id,
-        f.created_at as feedback_created_at
-      FROM traces t
-      LEFT JOIN integrations i ON t.integration_id = i.id
-      LEFT JOIN feedback f ON t.id = f.trace_id
-      WHERE t.id = ? AND t.workspace_id = ?`
-    )
-      .bind(traceId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!result) {
+    const result = await drizzle
+      .select({
+        id: traces.id,
+        traceId: traces.traceId,
+        source: integrations.platform,
+        timestamp: traces.timestamp,
+        steps: traces.steps,
+        rawData: traces.rawData,
+        feedbackId: feedback.id,
+        rating: feedback.rating,
+        notes: feedback.ratingDetail,
+        agentId: feedback.agentId,
+        feedbackCreatedAt: feedback.createdAt,
+      })
+      .from(traces)
+      .leftJoin(integrations, eq(traces.integrationId, integrations.id))
+      .leftJoin(feedback, eq(traces.id, feedback.traceId))
+      .where(
+        and(
+          eq(traces.id, traceId),
+          eq(traces.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (result.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Trace not found', 404);
     }
 
+    const row = result[0];
+
     // Parse the steps JSON column
-    const steps = result.steps ? JSON.parse(result.steps as string) : [];
+    const steps = row.steps || [];
 
     // Parse raw_data if it exists
-    const rawData = result.raw_data ? JSON.parse(result.raw_data as string) : null;
+    const rawData = row.rawData || null;
 
     // Get observations from raw_data or convert steps to observations
-    const observations = rawData?.observations || stepsToObservations(steps);
+    const observations = rawData?.observations || stepsToObservations(steps as any[]);
 
     const response: any = {
-      id: result.id,
-      trace_id: result.trace_id,
-      source: result.source,
-      timestamp: result.timestamp,
+      id: row.id,
+      trace_id: row.traceId,
+      source: row.source,
+      timestamp: row.timestamp,
       steps: steps,
       observations: observations,
       raw_data: rawData,
     };
 
     // Add feedback if exists
-    if (result.feedback_id) {
+    if (row.feedbackId) {
       response.feedback = {
-        id: result.feedback_id,
-        rating: result.rating,
-        notes: result.notes,
-        agent_id: result.agent_id,
-        created_at: result.feedback_created_at,
+        id: row.feedbackId,
+        rating: row.rating,
+        notes: row.notes,
+        agent_id: row.agentId,
+        created_at: row.feedbackCreatedAt,
       };
     }
 
@@ -544,14 +572,24 @@ export async function createTrace(request: Request, env: Env): Promise<Response>
       );
     }
 
-    // Verify integration exists and belongs to workspace, get platform for source field
-    const integration = await env.DB.prepare(
-      'SELECT id, platform FROM integrations WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(body.integration_id, workspaceId)
-      .first<{ id: string; platform: string }>();
+    const drizzle = createDb(env.DB);
 
-    if (!integration) {
+    // Verify integration exists and belongs to workspace, get platform for source field
+    const integration = await drizzle
+      .select({
+        id: integrations.id,
+        platform: integrations.platform,
+      })
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, body.integration_id),
+          eq(integrations.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (integration.length === 0) {
       return createErrorResponse(
         'NOT_FOUND',
         'Integration not found',
@@ -566,29 +604,22 @@ export async function createTrace(request: Request, env: Env): Promise<Response>
     const inputPreview = body.input_preview || 'Test input';
     const outputPreview = body.output_preview || 'Test output';
     const hasErrors = body.has_errors || false;
-    const source = integration.platform; // Use the integration's platform as the source
+    const source = integration[0].platform; // Use the integration's platform as the source
 
-    await env.DB.prepare(
-      `INSERT INTO traces (
-        id, workspace_id, integration_id, trace_id, source, timestamp,
-        steps, input_preview, output_preview, step_count, has_errors, imported_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-      .bind(
-        traceId,
-        workspaceId,
-        body.integration_id,
-        externalTraceId,
-        source,
-        timestamp,
-        JSON.stringify(steps),
-        inputPreview,
-        outputPreview,
-        steps.length,
-        hasErrors ? 1 : 0,
-        new Date().toISOString()
-      )
-      .run();
+    await drizzle.insert(traces).values({
+      id: traceId,
+      workspaceId: workspaceId,
+      integrationId: body.integration_id,
+      traceId: externalTraceId,
+      source: source as any,
+      timestamp,
+      steps: steps as any,
+      inputPreview,
+      outputPreview,
+      stepCount: steps.length,
+      hasErrors,
+      importedAt: new Date().toISOString(),
+    });
 
     return createSuccessResponse(
       {
@@ -630,21 +661,28 @@ export async function deleteTrace(request: Request, env: Env, traceId: string): 
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify trace exists and belongs to workspace
-    const trace = await env.DB.prepare(
-      'SELECT id FROM traces WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(traceId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!trace) {
+    // Verify trace exists and belongs to workspace
+    const trace = await drizzle
+      .select({ id: traces.id })
+      .from(traces)
+      .where(
+        and(
+          eq(traces.id, traceId),
+          eq(traces.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+
+    if (trace.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Trace not found', 404);
     }
 
     // Delete trace (cascading deletes will handle feedback and executions)
-    await env.DB.prepare('DELETE FROM traces WHERE id = ?')
-      .bind(traceId)
-      .run();
+    await drizzle
+      .delete(traces)
+      .where(eq(traces.id, traceId));
 
     return new Response(null, { status: 204 });
   } catch (error: any) {
@@ -688,18 +726,20 @@ export async function deleteTraces(request: Request, env: Env): Promise<Response
       );
     }
 
-    // Build placeholders for IN clause
-    const placeholders = body.trace_ids.map(() => '?').join(',');
+    const drizzle = createDb(env.DB);
 
     // Delete only traces belonging to this workspace
-    const result = await env.DB.prepare(
-      `DELETE FROM traces WHERE id IN (${placeholders}) AND workspace_id = ?`
-    )
-      .bind(...body.trace_ids, workspaceId)
-      .run();
+    const result = await drizzle
+      .delete(traces)
+      .where(
+        and(
+          inArray(traces.id, body.trace_ids),
+          eq(traces.workspaceId, workspaceId)
+        )
+      );
 
     return createSuccessResponse({
-      deleted_count: result.meta.changes || 0
+      deleted_count: result.rowsAffected || 0
     });
   } catch (error: any) {
     if (error.message === 'Missing X-Workspace-Id header') {

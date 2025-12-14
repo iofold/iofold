@@ -2,6 +2,9 @@
  * Queue Producer - Enqueue jobs to Cloudflare Queue for background processing
  */
 
+import { createDb, type Database } from '../db/client';
+import { eq } from 'drizzle-orm';
+import { jobs } from '../db/schema';
 import type {
   QueueMessage,
   JobPayload,
@@ -9,8 +12,6 @@ import type {
   ImportJobPayload,
   GenerateJobPayload,
   ExecuteJobPayload,
-  MonitorJobPayload,
-  AutoRefineJobPayload,
   AgentDiscoveryJobPayload,
   TasksetRunJobPayload
 } from '../types/queue';
@@ -38,10 +39,12 @@ export interface QueueProducerDeps {
 export class QueueProducer {
   private queue: Queue;
   private db: D1Database;
+  private drizzle: Database;
 
   constructor(deps: QueueProducerDeps) {
     this.queue = deps.queue;
     this.db = deps.db;
+    this.drizzle = createDb(deps.db);
   }
 
   /**
@@ -105,42 +108,6 @@ export class QueueProducer {
     };
 
     return this.enqueueJob('execute', workspaceId, payload);
-  }
-
-  /**
-   * Enqueue a monitoring job (typically triggered by cron)
-   */
-  async enqueueMonitorJob(
-    workspaceId: string,
-    evalIds?: string[],
-    windowDays?: number
-  ): Promise<EnqueueResult> {
-    const payload: MonitorJobPayload = {
-      type: 'monitor',
-      eval_ids: evalIds,
-      window_days: windowDays
-    };
-
-    return this.enqueueJob('monitor' as JobType, workspaceId, payload);
-  }
-
-  /**
-   * Enqueue an auto-refinement job
-   */
-  async enqueueAutoRefineJob(
-    workspaceId: string,
-    evalId: string,
-    alertId: string,
-    triggerMetrics: AutoRefineJobPayload['trigger_metrics']
-  ): Promise<EnqueueResult> {
-    const payload: AutoRefineJobPayload = {
-      type: 'auto_refine',
-      eval_id: evalId,
-      alert_id: alertId,
-      trigger_metrics: triggerMetrics
-    };
-
-    return this.enqueueJob('auto_refine' as JobType, workspaceId, payload);
   }
 
   /**
@@ -208,19 +175,15 @@ export class QueueProducer {
 
     try {
       // Create job record in database first
-      await this.db
-        .prepare(
-          `INSERT INTO jobs (id, workspace_id, type, status, progress, created_at, metadata)
-           VALUES (?, ?, ?, 'queued', 0, ?, ?)`
-        )
-        .bind(
-          jobId,
-          workspaceId,
-          type,
-          now,
-          JSON.stringify({ workspaceId, ...payload })
-        )
-        .run();
+      await this.drizzle.insert(jobs).values({
+        id: jobId,
+        workspaceId,
+        type,
+        status: 'queued',
+        progress: 0,
+        createdAt: now,
+        metadata: { workspaceId, ...payload }
+      });
 
       // Create queue message
       const message: QueueMessage = {
@@ -247,12 +210,14 @@ export class QueueProducer {
 
       // Try to mark the job as failed if it was created
       try {
-        await this.db
-          .prepare(
-            `UPDATE jobs SET status = 'failed', error = ?, completed_at = ? WHERE id = ?`
-          )
-          .bind(errorMessage, now, jobId)
-          .run();
+        await this.drizzle
+          .update(jobs)
+          .set({
+            status: 'failed',
+            error: errorMessage,
+            completedAt: now
+          })
+          .where(eq(jobs.id, jobId));
       } catch {
         // Ignore cleanup errors
       }
@@ -309,16 +274,17 @@ export class QueueProducer {
 
     try {
       // Batch insert job records
-      const statements = jobRecords.map(record =>
-        this.db
-          .prepare(
-            `INSERT INTO jobs (id, workspace_id, type, status, progress, created_at, metadata)
-             VALUES (?, ?, ?, 'queued', 0, ?, ?)`
-          )
-          .bind(record.id, record.workspaceId, record.type, now, record.metadata)
-      );
+      const jobValues = jobRecords.map(record => ({
+        id: record.id,
+        workspaceId: record.workspaceId,
+        type: record.type,
+        status: 'queued' as const,
+        progress: 0,
+        createdAt: now,
+        metadata: JSON.parse(record.metadata)
+      }));
 
-      await this.db.batch(statements);
+      await this.drizzle.insert(jobs).values(jobValues);
 
       // Send all messages to queue
       await this.queue.sendBatch(messages);

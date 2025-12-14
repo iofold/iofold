@@ -20,6 +20,10 @@ import type {
   CreateAgentVersionRequest,
 } from '../types/agent';
 
+import { createDb } from '../db/client';
+import { eq, and, desc, max, sql } from 'drizzle-orm';
+import { agents, agentVersions } from '../db/schema';
+
 export interface Env {
   DB: D1Database;
 }
@@ -38,43 +42,41 @@ export async function listAgentVersions(request: Request, env: Env, agentId: str
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    const db = createDb(env.DB);
 
     // Verify agent exists and belongs to workspace
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const agent = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1)
+      .then(r => r[0] ?? null);
 
     if (!agent) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // Get all versions
-    const versionsResult = await env.DB.prepare(
-      `SELECT id, agent_id, version, prompt_template, variables, source,
-              parent_version_id, accuracy, status, created_at
-       FROM agent_versions
-       WHERE agent_id = ?
-       ORDER BY version DESC`
-    )
-      .bind(agentId)
-      .all();
+    const versions = await db
+      .select()
+      .from(agentVersions)
+      .where(eq(agentVersions.agentId, agentId))
+      .orderBy(desc(agentVersions.version));
 
-    const versions: AgentVersion[] = versionsResult.results.map((row: any) => ({
-      id: row.id,
-      agent_id: row.agent_id,
-      version: row.version,
-      prompt_template: row.prompt_template,
-      variables: row.variables ? JSON.parse(row.variables) : [],
-      source: row.source,
-      parent_version_id: row.parent_version_id,
-      accuracy: row.accuracy,
-      status: row.status,
-      created_at: row.created_at,
+    const formattedVersions: AgentVersion[] = versions.map((v) => ({
+      id: v.id,
+      agent_id: v.agentId,
+      version: v.version,
+      prompt_template: v.promptTemplate,
+      variables: Array.isArray(v.variables) ? v.variables : [],
+      source: v.source,
+      parent_version_id: v.parentVersionId,
+      accuracy: v.accuracy,
+      status: v.status,
+      created_at: v.createdAt,
     }));
 
-    return createSuccessResponse({ versions });
+    return createSuccessResponse({ versions: formattedVersions });
   } catch (error: any) {
     if (error.message === 'Missing X-Workspace-Id header') {
       return createErrorResponse('VALIDATION_ERROR', error.message, 400);
@@ -103,13 +105,15 @@ export async function getAgentVersion(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    const db = createDb(env.DB);
 
     // Verify agent exists and belongs to workspace
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const agent = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1)
+      .then(r => r[0] ?? null);
 
     if (!agent) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
@@ -122,30 +126,28 @@ export async function getAgentVersion(
     }
 
     // Get specific version
-    const versionResult = await env.DB.prepare(
-      `SELECT id, agent_id, version, prompt_template, variables, source,
-              parent_version_id, accuracy, status, created_at
-       FROM agent_versions
-       WHERE agent_id = ? AND version = ?`
-    )
-      .bind(agentId, version)
-      .first();
+    const versionResult = await db
+      .select()
+      .from(agentVersions)
+      .where(and(eq(agentVersions.agentId, agentId), eq(agentVersions.version, version)))
+      .limit(1)
+      .then(r => r[0] ?? null);
 
     if (!versionResult) {
       return createErrorResponse('NOT_FOUND', 'Version not found', 404);
     }
 
     const versionData: AgentVersion = {
-      id: versionResult.id as string,
-      agent_id: versionResult.agent_id as string,
-      version: versionResult.version as number,
-      prompt_template: versionResult.prompt_template as string,
-      variables: versionResult.variables ? JSON.parse(versionResult.variables as string) : [],
-      source: versionResult.source as any,
-      parent_version_id: versionResult.parent_version_id as string | null,
-      accuracy: versionResult.accuracy as number | null,
-      status: versionResult.status as any,
-      created_at: versionResult.created_at as string,
+      id: versionResult.id,
+      agent_id: versionResult.agentId,
+      version: versionResult.version,
+      prompt_template: versionResult.promptTemplate,
+      variables: Array.isArray(versionResult.variables) ? versionResult.variables : [],
+      source: versionResult.source,
+      parent_version_id: versionResult.parentVersionId,
+      accuracy: versionResult.accuracy,
+      status: versionResult.status,
+      created_at: versionResult.createdAt,
     };
 
     return createSuccessResponse(versionData);
@@ -175,6 +177,7 @@ export async function createAgentVersion(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    const db = createDb(env.DB);
 
     const body = await parseJsonBody<CreateAgentVersionRequest>(request);
 
@@ -187,47 +190,42 @@ export async function createAgentVersion(
     }
 
     // Verify agent exists and belongs to workspace
-    const agent = await env.DB.prepare(
-      'SELECT id, active_version_id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const agent = await db
+      .select({ id: agents.id, activeVersionId: agents.activeVersionId })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1)
+      .then(r => r[0] ?? null);
 
     if (!agent) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // Get the next version number
-    const maxVersionResult = await env.DB.prepare(
-      'SELECT MAX(version) as max_version FROM agent_versions WHERE agent_id = ?'
-    )
-      .bind(agentId)
-      .first();
+    const maxVersionResult = await db
+      .select({ maxVersion: max(agentVersions.version) })
+      .from(agentVersions)
+      .where(eq(agentVersions.agentId, agentId))
+      .then(r => r[0] ?? null);
 
-    const nextVersion = (maxVersionResult?.max_version as number || 0) + 1;
+    const nextVersion = (maxVersionResult?.maxVersion ?? 0) + 1;
 
     // Create new version
     const versionId = `ver_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     const variables = body.variables || [];
 
-    await env.DB.prepare(
-      `INSERT INTO agent_versions (id, agent_id, version, prompt_template, variables, source,
-                                    parent_version_id, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-      .bind(
-        versionId,
-        agentId,
-        nextVersion,
-        body.prompt_template.trim(),
-        JSON.stringify(variables),
-        'manual',
-        agent.active_version_id || null,
-        'candidate',
-        now
-      )
-      .run();
+    await db.insert(agentVersions).values({
+      id: versionId,
+      agentId: agentId,
+      version: nextVersion,
+      promptTemplate: body.prompt_template.trim(),
+      variables: variables as any,
+      source: 'manual',
+      parentVersionId: agent.activeVersionId,
+      status: 'candidate',
+      createdAt: now,
+    });
 
     const newVersion: AgentVersion = {
       id: versionId,
@@ -236,7 +234,7 @@ export async function createAgentVersion(
       prompt_template: body.prompt_template.trim(),
       variables,
       source: 'manual',
-      parent_version_id: (agent.active_version_id as string) || null,
+      parent_version_id: agent.activeVersionId,
       accuracy: null,
       status: 'candidate',
       created_at: now,
@@ -277,13 +275,15 @@ export async function promoteAgentVersion(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    const db = createDb(env.DB);
 
     // Verify agent exists and belongs to workspace
-    const agent = await env.DB.prepare(
-      'SELECT id, active_version_id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const agent = await db
+      .select({ id: agents.id, activeVersionId: agents.activeVersionId })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1)
+      .then(r => r[0] ?? null);
 
     if (!agent) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
@@ -296,11 +296,12 @@ export async function promoteAgentVersion(
     }
 
     // Get version to promote
-    const versionResult = await env.DB.prepare(
-      'SELECT id, status FROM agent_versions WHERE agent_id = ? AND version = ?'
-    )
-      .bind(agentId, version)
-      .first();
+    const versionResult = await db
+      .select({ id: agentVersions.id, status: agentVersions.status })
+      .from(agentVersions)
+      .where(and(eq(agentVersions.agentId, agentId), eq(agentVersions.version, version)))
+      .limit(1)
+      .then(r => r[0] ?? null);
 
     if (!versionResult) {
       return createErrorResponse('NOT_FOUND', 'Version not found', 404);
@@ -324,27 +325,27 @@ export async function promoteAgentVersion(
 
     // Begin transaction-like updates
     // 1. Demote current active version if exists
-    if (agent.active_version_id) {
-      await env.DB.prepare(
-        'UPDATE agent_versions SET status = ? WHERE id = ?'
-      )
-        .bind('archived', agent.active_version_id)
-        .run();
+    if (agent.activeVersionId) {
+      await db
+        .update(agentVersions)
+        .set({ status: 'archived' })
+        .where(eq(agentVersions.id, agent.activeVersionId));
     }
 
     // 2. Promote new version
-    await env.DB.prepare(
-      'UPDATE agent_versions SET status = ? WHERE id = ?'
-    )
-      .bind('active', versionResult.id)
-      .run();
+    await db
+      .update(agentVersions)
+      .set({ status: 'active' })
+      .where(eq(agentVersions.id, versionResult.id));
 
     // 3. Update agent's active_version_id
-    await env.DB.prepare(
-      'UPDATE agents SET active_version_id = ?, updated_at = ? WHERE id = ?'
-    )
-      .bind(versionResult.id, new Date().toISOString(), agentId)
-      .run();
+    await db
+      .update(agents)
+      .set({
+        activeVersionId: versionResult.id,
+        updatedAt: new Date().toISOString()
+      })
+      .where(eq(agents.id, agentId));
 
     // Return the promoted version
     return getAgentVersion(request, env, agentId, versionNumber);
@@ -376,13 +377,15 @@ export async function rejectAgentVersion(
   try {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
+    const db = createDb(env.DB);
 
     // Verify agent exists and belongs to workspace
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const agent = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1)
+      .then(r => r[0] ?? null);
 
     if (!agent) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
@@ -395,11 +398,12 @@ export async function rejectAgentVersion(
     }
 
     // Get version to reject
-    const versionResult = await env.DB.prepare(
-      'SELECT id, status FROM agent_versions WHERE agent_id = ? AND version = ?'
-    )
-      .bind(agentId, version)
-      .first();
+    const versionResult = await db
+      .select({ id: agentVersions.id, status: agentVersions.status })
+      .from(agentVersions)
+      .where(and(eq(agentVersions.agentId, agentId), eq(agentVersions.version, version)))
+      .limit(1)
+      .then(r => r[0] ?? null);
 
     if (!versionResult) {
       return createErrorResponse('NOT_FOUND', 'Version not found', 404);
@@ -414,11 +418,10 @@ export async function rejectAgentVersion(
     }
 
     // Reject the version
-    await env.DB.prepare(
-      'UPDATE agent_versions SET status = ? WHERE id = ?'
-    )
-      .bind('rejected', versionResult.id)
-      .run();
+    await db
+      .update(agentVersions)
+      .set({ status: 'rejected' })
+      .where(eq(agentVersions.id, versionResult.id));
 
     // Return the rejected version
     return getAgentVersion(request, env, agentId, versionNumber);

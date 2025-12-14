@@ -6,6 +6,9 @@
 
 /// <reference types="@cloudflare/workers-types" />
 
+import { eq, and, isNull, desc, sql } from 'drizzle-orm';
+import { createDb, type Database } from '../db/client';
+import { evals, agents, performanceAlerts, refinementHistory } from '../db/schema';
 import {
   createErrorResponse,
   createSuccessResponse,
@@ -14,7 +17,6 @@ import {
   parseJsonBody,
 } from './utils';
 import { PerformanceMonitor, DEFAULT_THRESHOLDS } from '../monitoring/performance-monitor';
-import { PromptManager } from '../prompts/manager';
 
 export interface Env {
   DB: D1Database;
@@ -32,12 +34,13 @@ async function verifyEvalWorkspaceAccess(
     return false;
   }
 
-  const result = await db
-    .prepare(
-      'SELECT e.id FROM evals e INNER JOIN agents a ON e.agent_id = a.id WHERE e.id = ? AND a.workspace_id = ?'
-    )
-    .bind(evalId, workspaceId)
-    .first();
+  const drizzle = createDb(db);
+  const result = await drizzle
+    .select({ id: evals.id })
+    .from(evals)
+    .innerJoin(agents, eq(evals.agentId, agents.id))
+    .where(and(eq(evals.id, evalId), eq(agents.workspaceId, workspaceId)))
+    .get();
 
   return !!result;
 }
@@ -157,29 +160,34 @@ export async function getEvalAlerts(
       return createErrorResponse('NOT_FOUND', 'Eval not found', 404);
     }
 
-    let query = `SELECT * FROM performance_alerts WHERE eval_id = ?`;
+    const drizzle = createDb(env.DB);
+    const conditions = [eq(performanceAlerts.evalId, evalId)];
     if (status === 'unresolved') {
-      query += ' AND resolved_at IS NULL';
+      conditions.push(isNull(performanceAlerts.resolvedAt));
     }
-    query += ' ORDER BY triggered_at DESC';
 
-    const result = await env.DB.prepare(query).bind(evalId).all();
+    const result = await drizzle
+      .select()
+      .from(performanceAlerts)
+      .where(and(...conditions))
+      .orderBy(desc(performanceAlerts.triggeredAt))
+      .all();
 
     return createSuccessResponse({
       eval_id: evalId,
       status,
-      alerts: result.results.map(a => ({
+      alerts: result.map(a => ({
         id: a.id,
-        alert_type: a.alert_type,
+        alert_type: a.alertType,
         severity: a.severity,
-        current_value: a.current_value,
-        threshold_value: a.threshold_value,
+        current_value: a.currentValue,
+        threshold_value: a.thresholdValue,
         message: a.message,
-        prompt_id: a.prompt_id,
-        triggered_at: a.triggered_at,
-        acknowledged_at: a.acknowledged_at,
-        resolved_at: a.resolved_at,
-        auto_action_taken: a.auto_action_taken
+        prompt_id: a.promptId,
+        triggered_at: a.triggeredAt,
+        acknowledged_at: a.acknowledgedAt,
+        resolved_at: a.resolvedAt,
+        auto_action_taken: a.autoActionTaken
       }))
     });
   } catch (error: any) {
@@ -262,18 +270,15 @@ export async function updateEvalSettings(
       monitoring_thresholds?: Partial<typeof DEFAULT_THRESHOLDS>;
     }>(request);
 
-    // Build update query
-    const updates: string[] = [];
-    const params: any[] = [];
+    // Build update object
+    const updateData: Record<string, any> = {};
 
     if (body.auto_execute_enabled !== undefined) {
-      updates.push('auto_execute_enabled = ?');
-      params.push(body.auto_execute_enabled ? 1 : 0);
+      updateData.autoExecuteEnabled = body.auto_execute_enabled;
     }
 
     if (body.auto_refine_enabled !== undefined) {
-      updates.push('auto_refine_enabled = ?');
-      params.push(body.auto_refine_enabled ? 1 : 0);
+      updateData.autoRefineEnabled = body.auto_refine_enabled;
     }
 
     if (body.monitoring_thresholds) {
@@ -282,83 +287,36 @@ export async function updateEvalSettings(
         ...DEFAULT_THRESHOLDS,
         ...body.monitoring_thresholds
       };
-      updates.push('monitoring_thresholds = ?');
-      params.push(JSON.stringify(thresholds));
+      updateData.monitoringThresholds = thresholds;
     }
 
-    if (updates.length === 0) {
+    if (Object.keys(updateData).length === 0) {
       return createErrorResponse('VALIDATION_ERROR', 'No settings to update', 400);
     }
 
-    params.push(evalId);
-
-    await env.DB.prepare(
-      `UPDATE evals SET ${updates.join(', ')} WHERE id = ?`
-    ).bind(...params).run();
+    const drizzle = createDb(env.DB);
+    await drizzle
+      .update(evals)
+      .set(updateData)
+      .where(eq(evals.id, evalId));
 
     // Return updated settings
-    const updated = await env.DB.prepare(
-      `SELECT auto_execute_enabled, auto_refine_enabled, monitoring_thresholds
-       FROM evals WHERE id = ?`
-    ).bind(evalId).first();
+    const updated = await drizzle
+      .select({
+        autoExecuteEnabled: evals.autoExecuteEnabled,
+        autoRefineEnabled: evals.autoRefineEnabled,
+        monitoringThresholds: evals.monitoringThresholds
+      })
+      .from(evals)
+      .where(eq(evals.id, evalId))
+      .get();
 
     return createSuccessResponse({
       eval_id: evalId,
       settings: {
-        auto_execute_enabled: Boolean(updated?.auto_execute_enabled),
-        auto_refine_enabled: Boolean(updated?.auto_refine_enabled),
-        monitoring_thresholds: updated?.monitoring_thresholds
-          ? JSON.parse(updated.monitoring_thresholds as string)
-          : DEFAULT_THRESHOLDS
-      }
-    });
-  } catch (error: any) {
-    return createErrorResponse('INTERNAL_ERROR', error.message || 'Internal server error', 500);
-  }
-}
-
-/**
- * GET /api/evals/:id/prompt-coverage
- *
- * Get eval performance broken down by prompt version.
- */
-export async function getPromptCoverage(
-  request: Request,
-  env: Env,
-  evalId: string
-): Promise<Response> {
-  try {
-    const workspaceId = getWorkspaceId(request) || 'workspace_default';
-    validateWorkspaceAccess(workspaceId);
-
-    // Verify eval exists and belongs to workspace
-    const hasAccess = await verifyEvalWorkspaceAccess(env.DB, evalId, workspaceId);
-    if (!hasAccess) {
-      return createErrorResponse('NOT_FOUND', 'Eval not found', 404);
-    }
-
-    const promptManager = new PromptManager(env.DB);
-    const coverage = await promptManager.getPromptCoverage(evalId);
-
-    // Check for drift
-    const driftResult = await promptManager.detectPromptDrift(evalId);
-
-    return createSuccessResponse({
-      eval_id: evalId,
-      prompt_coverage: coverage.map(c => ({
-        prompt_id: c.prompt_id,
-        execution_count: c.execution_count,
-        pass_count: c.pass_count,
-        fail_count: c.fail_count,
-        error_count: c.error_count,
-        accuracy: c.accuracy,
-        first_execution_at: c.first_execution_at,
-        last_execution_at: c.last_execution_at
-      })),
-      drift_analysis: {
-        has_drift: driftResult.hasDrift,
-        baseline_accuracy: driftResult.baseline_accuracy,
-        drifted_prompts: driftResult.drifted_prompts
+        auto_execute_enabled: Boolean(updated?.autoExecuteEnabled),
+        auto_refine_enabled: Boolean(updated?.autoRefineEnabled),
+        monitoring_thresholds: updated?.monitoringThresholds || DEFAULT_THRESHOLDS
       }
     });
   } catch (error: any) {
@@ -386,33 +344,45 @@ export async function getRefinementHistory(
       return createErrorResponse('NOT_FOUND', 'Eval not found', 404);
     }
 
-    const result = await env.DB.prepare(
-      `SELECT
-         rh.*,
-         pa.alert_type as trigger_alert_type,
-         pa.message as trigger_alert_message
-       FROM refinement_history rh
-       LEFT JOIN performance_alerts pa ON rh.trigger_alert_id = pa.id
-       WHERE rh.eval_id = ?
-       ORDER BY rh.created_at DESC`
-    ).bind(evalId).all();
+    const drizzle = createDb(env.DB);
+    const result = await drizzle
+      .select({
+        id: refinementHistory.id,
+        parentVersion: refinementHistory.parentVersion,
+        newVersion: refinementHistory.newVersion,
+        triggerType: refinementHistory.triggerType,
+        triggerMetrics: refinementHistory.triggerMetrics,
+        resultAccuracy: refinementHistory.resultAccuracy,
+        improvementDelta: refinementHistory.improvementDelta,
+        status: refinementHistory.status,
+        createdAt: refinementHistory.createdAt,
+        completedAt: refinementHistory.completedAt,
+        deployedAt: refinementHistory.deployedAt,
+        triggerAlertType: performanceAlerts.alertType,
+        triggerAlertMessage: performanceAlerts.message
+      })
+      .from(refinementHistory)
+      .leftJoin(performanceAlerts, eq(refinementHistory.triggerAlertId, performanceAlerts.id))
+      .where(eq(refinementHistory.evalId, evalId))
+      .orderBy(desc(refinementHistory.createdAt))
+      .all();
 
     return createSuccessResponse({
       eval_id: evalId,
-      refinements: result.results.map(r => ({
+      refinements: result.map(r => ({
         id: r.id,
-        parent_version: r.parent_version,
-        new_version: r.new_version,
-        trigger_type: r.trigger_type,
-        trigger_alert_type: r.trigger_alert_type,
-        trigger_alert_message: r.trigger_alert_message,
-        trigger_metrics: r.trigger_metrics ? JSON.parse(r.trigger_metrics as string) : null,
-        result_accuracy: r.result_accuracy,
-        improvement_delta: r.improvement_delta,
+        parent_version: r.parentVersion,
+        new_version: r.newVersion,
+        trigger_type: r.triggerType,
+        trigger_alert_type: r.triggerAlertType,
+        trigger_alert_message: r.triggerAlertMessage,
+        trigger_metrics: r.triggerMetrics || null,
+        result_accuracy: r.resultAccuracy,
+        improvement_delta: r.improvementDelta,
         status: r.status,
-        created_at: r.created_at,
-        completed_at: r.completed_at,
-        deployed_at: r.deployed_at
+        created_at: r.createdAt,
+        completed_at: r.completedAt,
+        deployed_at: r.deployedAt
       }))
     });
   } catch (error: any) {

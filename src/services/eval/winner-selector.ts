@@ -6,6 +6,9 @@
 import { TestResult } from './candidate-tester';
 import { EvalCandidate } from './auto-eval-generator';
 import { D1Database } from '@cloudflare/workers-types';
+import { createDb, type Database } from '../../db/client';
+import { eq, and, sql } from 'drizzle-orm';
+import { evalCandidates, agents } from '../../db/schema';
 
 /**
  * Criteria for selecting a winning eval candidate
@@ -59,7 +62,11 @@ export interface SelectionResult {
  * - max_cost_per_trace: $0.02
  */
 export class WinnerSelector {
-  constructor(private db: D1Database) {}
+  private drizzle: Database;
+
+  constructor(private db: D1Database) {
+    this.drizzle = createDb(db);
+  }
 
   /**
    * Select the best candidate that meets thresholds
@@ -225,39 +232,43 @@ export class WinnerSelector {
 
     try {
       // 1. Insert into eval_candidates as active
-      await this.db.prepare(`
-        INSERT INTO eval_candidates (
-          id, agent_id, code, variation,
-          agreement_rate, accuracy, cohen_kappa, f1_score,
-          confusion_matrix, status, created_at, activated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
-      `).bind(
-        evalId,
-        agentId,
-        candidate.code,
-        candidate.variation,
-        metrics.agreement_rate,
-        metrics.accuracy,
-        metrics.cohen_kappa,
-        metrics.f1_score,
-        JSON.stringify(metrics.confusion_matrix)
-      ).run();
+      const now = sql`datetime('now')`;
+      await this.drizzle
+        .insert(evalCandidates)
+        .values({
+          id: evalId,
+          agentId,
+          code: candidate.code,
+          variation: candidate.variation,
+          agreementRate: metrics.agreement_rate,
+          accuracy: metrics.accuracy,
+          cohenKappa: metrics.cohen_kappa,
+          f1Score: metrics.f1_score,
+          confusionMatrix: metrics.confusion_matrix,
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          activatedAt: new Date().toISOString()
+        });
 
       console.log(`[WinnerSelector] Inserted eval candidate ${evalId}`);
 
       // 2. Archive previous active eval for this agent
-      const archiveResult = await this.db.prepare(`
-        UPDATE eval_candidates
-        SET status = 'archived'
-        WHERE agent_id = ? AND status = 'active' AND id != ?
-      `).bind(agentId, evalId).run();
+      const archiveResult = await this.drizzle
+        .update(evalCandidates)
+        .set({ status: 'archived' })
+        .where(and(
+          eq(evalCandidates.agentId, agentId),
+          eq(evalCandidates.status, 'active'),
+          sql`${evalCandidates.id} != ${evalId}`
+        ));
 
-      console.log(`[WinnerSelector] Archived ${archiveResult.meta.changes || 0} previous active evals`);
+      console.log(`[WinnerSelector] Archived previous active evals`);
 
       // 3. Update agent's active_eval_id
-      await this.db.prepare(`
-        UPDATE agents SET active_eval_id = ? WHERE id = ?
-      `).bind(evalId, agentId).run();
+      await this.drizzle
+        .update(agents)
+        .set({ activeEvalId: evalId })
+        .where(eq(agents.id, agentId));
 
       console.log(`[WinnerSelector] Updated agent ${agentId} active_eval_id to ${evalId}`);
 

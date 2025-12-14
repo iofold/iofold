@@ -35,7 +35,6 @@ import {
 } from 'lucide-react'
 import { formatDate, formatDuration, cn } from '@/lib/utils'
 import { TraceFeedback } from '@/components/trace-feedback'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 
@@ -1010,18 +1009,11 @@ export default function TraceDetailPage() {
   const traceId = params.id as string
   const [selectedObservation, setSelectedObservation] = useState<Observation | null>(null)
   const [viewMode, setViewMode] = useState<'tree' | 'timeline'>('tree')
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
 
   // Fetch trace data
   const { data: trace, isLoading, error } = useQuery({
     queryKey: ['trace', traceId],
     queryFn: () => apiClient.getTrace(traceId),
-  })
-
-  // Fetch agents for feedback
-  const { data: agentsData } = useQuery({
-    queryKey: ['agents'],
-    queryFn: () => apiClient.listAgents(),
   })
 
   // Build observation tree from raw_data or convert steps
@@ -1072,9 +1064,6 @@ export default function TraceDetailPage() {
       totalDuration: calculatedDuration,
     }
   }, [trace])
-
-  // Auto-select first agent if none is selected
-  const effectiveAgentId = selectedAgentId || trace?.feedback?.agent_id || agentsData?.agents?.[0]?.id
 
   if (isLoading) {
     return (
@@ -1257,57 +1246,15 @@ export default function TraceDetailPage() {
               {trace.feedback.notes && (
                 <div className="text-sm text-muted-foreground mb-2">{trace.feedback.notes}</div>
               )}
-              {trace.feedback.agent_id && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 border-t border-border/50">
-                  <Bot className="h-3 w-3" />
-                  <span>Agent:</span>
-                  <span className="font-medium">
-                    {agentsData?.agents?.find((a: any) => a.id === trace.feedback?.agent_id)?.name || trace.feedback?.agent_id}
-                  </span>
-                </div>
-              )}
             </div>
           )}
 
-          {/* Agent Selector */}
-          {!trace.feedback && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-muted-foreground mb-2">
-                Select Agent
-              </label>
-              <Select
-                value={selectedAgentId || ''}
-                onValueChange={(value) => setSelectedAgentId(value)}
-              >
-                <SelectTrigger className="w-full max-w-xs">
-                  <SelectValue placeholder="Select an agent..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {agentsData?.agents?.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Feedback Buttons */}
-          {effectiveAgentId ? (
-            <TraceFeedback
-              traceId={trace.id}
-              agentId={effectiveAgentId}
-              currentRating={trace.feedback?.rating}
-              feedbackId={trace.feedback?.id}
-            />
-          ) : (
-            <div className="text-sm text-muted-foreground">
-              {agentsData?.agents?.length === 0
-                ? 'Create an agent first to enable feedback.'
-                : 'Select an agent above to enable feedback buttons.'}
-            </div>
-          )}
+          {/* Feedback Buttons - agent_id is optional, feedback is directly on traces */}
+          <TraceFeedback
+            traceId={trace.id}
+            currentRating={trace.feedback?.rating}
+            feedbackId={trace.feedback?.id}
+          />
         </Card>
       </div>
     </TooltipProvider>

@@ -3,6 +3,9 @@ import type { Sandbox } from '@cloudflare/sandbox';
 import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
 import { createGatewayClient, chatCompletion, DEFAULT_MODEL } from '../ai/gateway';
+import { createDb, type Database } from '../db/client';
+import { eq, and, asc } from 'drizzle-orm';
+import { tasksetRuns, tasksetTasks, tasksetRunResults, agents, agentVersions } from '../db/schema';
 
 export interface TasksetRunJobConfig {
   jobId: string;
@@ -54,12 +57,14 @@ export interface TasksetRunJobResult {
 export class TasksetRunJob {
   private jobManager: JobManager;
   private stream?: SSEStream;
+  private drizzle: Database;
 
   constructor(
     private config: TasksetRunJobConfig,
     private deps: TasksetRunJobDeps
   ) {
     this.jobManager = new JobManager(deps.db);
+    this.drizzle = createDb(deps.db);
   }
 
   async execute(stream?: SSEStream): Promise<TasksetRunJobResult> {
@@ -71,14 +76,13 @@ export class TasksetRunJob {
       this.emitProgress('initializing', 0);
 
       // Step 1: Update run status to 'running' and set started_at
-      await this.deps.db
-        .prepare(
-          `UPDATE taskset_runs
-           SET status = 'running', started_at = ?
-           WHERE id = ?`
-        )
-        .bind(new Date().toISOString(), this.config.runId)
-        .run();
+      await this.drizzle
+        .update(tasksetRuns)
+        .set({
+          status: 'running',
+          startedAt: new Date().toISOString()
+        })
+        .where(eq(tasksetRuns.id, this.config.runId));
 
       this.emitProgress('fetching_agent', 5);
 
@@ -124,14 +128,10 @@ export class TasksetRunJob {
           totalExecutionTime += result.execution_time_ms;
 
           // Update run progress
-          await this.deps.db
-            .prepare(
-              `UPDATE taskset_runs
-               SET completed_count = ?
-               WHERE id = ?`
-            )
-            .bind(completedCount, this.config.runId)
-            .run();
+          await this.drizzle
+            .update(tasksetRuns)
+            .set({ completedCount })
+            .where(eq(tasksetRuns.id, this.config.runId));
         } catch (error: any) {
           console.error(`[TasksetRunJob] Task ${task.id} failed:`, error);
 
@@ -141,14 +141,10 @@ export class TasksetRunJob {
           await this.recordFailedResult(task.id, error.message);
 
           // Update run progress
-          await this.deps.db
-            .prepare(
-              `UPDATE taskset_runs
-               SET failed_count = ?
-               WHERE id = ?`
-            )
-            .bind(failedCount, this.config.runId)
-            .run();
+          await this.drizzle
+            .update(tasksetRuns)
+            .set({ failedCount })
+            .where(eq(tasksetRuns.id, this.config.runId));
         }
       }
 
@@ -161,14 +157,13 @@ export class TasksetRunJob {
       // Step 6: Update run status to final state
       const finalStatus = failedCount === 0 ? 'completed' : failedCount < tasks.length ? 'partial' : 'failed';
 
-      await this.deps.db
-        .prepare(
-          `UPDATE taskset_runs
-           SET status = ?, completed_at = ?
-           WHERE id = ?`
-        )
-        .bind(finalStatus, new Date().toISOString(), this.config.runId)
-        .run();
+      await this.drizzle
+        .update(tasksetRuns)
+        .set({
+          status: finalStatus,
+          completedAt: new Date().toISOString()
+        })
+        .where(eq(tasksetRuns.id, this.config.runId));
 
       const result: TasksetRunJobResult = {
         run_id: this.config.runId,
@@ -189,14 +184,14 @@ export class TasksetRunJob {
       console.error('[TasksetRunJob] Job failed:', error);
 
       // Update run status to failed
-      await this.deps.db
-        .prepare(
-          `UPDATE taskset_runs
-           SET status = 'failed', error = ?, completed_at = ?
-           WHERE id = ?`
-        )
-        .bind(error.message, new Date().toISOString(), this.config.runId)
-        .run();
+      await this.drizzle
+        .update(tasksetRuns)
+        .set({
+          status: 'failed',
+          error: error.message,
+          completedAt: new Date().toISOString()
+        })
+        .where(eq(tasksetRuns.id, this.config.runId));
 
       await this.jobManager.failJob(this.config.jobId, error.message);
 
@@ -217,23 +212,28 @@ export class TasksetRunJob {
     prompt_template: string;
     active_version_id: string | null;
   } | null> {
-    const result = await this.deps.db
-      .prepare(
-        `SELECT a.id, a.name, a.active_version_id, av.prompt_template
-         FROM agents a
-         LEFT JOIN agent_versions av ON a.active_version_id = av.id
-         WHERE a.id = ? AND a.workspace_id = ?`
-      )
-      .bind(this.config.agentId, this.config.workspaceId)
-      .first();
+    const result = await this.drizzle
+      .select({
+        id: agents.id,
+        name: agents.name,
+        activeVersionId: agents.activeVersionId,
+        promptTemplate: agentVersions.promptTemplate
+      })
+      .from(agents)
+      .leftJoin(agentVersions, eq(agents.activeVersionId, agentVersions.id))
+      .where(and(
+        eq(agents.id, this.config.agentId),
+        eq(agents.workspaceId, this.config.workspaceId)
+      ))
+      .limit(1);
 
-    if (!result) return null;
+    if (!result[0]) return null;
 
     return {
-      id: result.id as string,
-      name: result.name as string,
-      prompt_template: (result.prompt_template as string) || '',
-      active_version_id: result.active_version_id as string | null
+      id: result[0].id,
+      name: result[0].name,
+      prompt_template: result[0].promptTemplate || '',
+      active_version_id: result[0].activeVersionId
     };
   }
 
@@ -249,22 +249,24 @@ export class TasksetRunJob {
       metadata: any;
     }>
   > {
-    const results = await this.deps.db
-      .prepare(
-        `SELECT id, user_message, expected_output, source, metadata
-         FROM taskset_tasks
-         WHERE taskset_id = ?
-         ORDER BY created_at ASC`
-      )
-      .bind(this.config.tasksetId)
-      .all();
+    const results = await this.drizzle
+      .select({
+        id: tasksetTasks.id,
+        userMessage: tasksetTasks.userMessage,
+        expectedOutput: tasksetTasks.expectedOutput,
+        source: tasksetTasks.source,
+        metadata: tasksetTasks.metadata
+      })
+      .from(tasksetTasks)
+      .where(eq(tasksetTasks.tasksetId, this.config.tasksetId))
+      .orderBy(asc(tasksetTasks.createdAt));
 
-    return results.results.map(record => ({
-      id: record.id as string,
-      user_message: record.user_message as string,
-      expected_output: record.expected_output as string | null,
-      source: record.source as string,
-      metadata: record.metadata ? JSON.parse(record.metadata as string) : null
+    return results.map(record => ({
+      id: record.id,
+      user_message: record.userMessage,
+      expected_output: record.expectedOutput,
+      source: record.source,
+      metadata: record.metadata
     }));
   }
 
@@ -345,28 +347,21 @@ export class TasksetRunJob {
     const resultId = this.generateId('trr');
     const status = score >= 0.7 ? 'completed' : 'failed';
 
-    await this.deps.db
-      .prepare(
-        `INSERT INTO taskset_run_results (
-          id, run_id, task_id, status, response, expected_output,
-          score, score_reason, trace_id, execution_time_ms, created_at
-         )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        resultId,
-        this.config.runId,
-        task.id,
+    await this.drizzle
+      .insert(tasksetRunResults)
+      .values({
+        id: resultId,
+        runId: this.config.runId,
+        taskId: task.id,
         status,
         response,
-        task.expected_output,
+        expectedOutput: task.expected_output,
         score,
         scoreReason,
         traceId,
         executionTimeMs,
-        new Date().toISOString()
-      )
-      .run();
+        createdAt: new Date().toISOString()
+      });
 
     return { score, execution_time_ms: executionTimeMs };
   }
@@ -509,21 +504,17 @@ Respond with JSON only:
   private async recordFailedResult(taskId: string, errorMessage: string): Promise<void> {
     const resultId = this.generateId('trr');
 
-    await this.deps.db
-      .prepare(
-        `INSERT INTO taskset_run_results (
-          id, run_id, task_id, status, error, score, created_at
-         )
-         VALUES (?, ?, ?, 'failed', ?, 0.0, ?)`
-      )
-      .bind(
-        resultId,
-        this.config.runId,
+    await this.drizzle
+      .insert(tasksetRunResults)
+      .values({
+        id: resultId,
+        runId: this.config.runId,
         taskId,
-        errorMessage,
-        new Date().toISOString()
-      )
-      .run();
+        status: 'failed',
+        error: errorMessage,
+        score: 0.0,
+        createdAt: new Date().toISOString()
+      });
   }
 
   /**
