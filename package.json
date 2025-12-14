@@ -12,9 +12,11 @@
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:pull": "drizzle-kit pull",
+    "db:studio": "drizzle-kit studio",
+    "db:apply": "wrangler d1 migrations apply DB",
+    "db:apply:local": "wrangler d1 migrations apply DB --local"
   },
   "repository": {
     "type": "git",

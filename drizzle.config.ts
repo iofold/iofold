@@ -1,7 +1,20 @@
-import type { Config } from 'drizzle-kit';
+import { defineConfig } from 'drizzle-kit';
 
-export default {
+export default defineConfig({
+  // Drizzle schema is the source of truth
   schema: './src/db/schema/index.ts',
-  out: './src/db/drizzle-migrations',
+
+  // Output directory for generated migrations (used by wrangler d1 migrations)
+  out: './drizzle',
+
   dialect: 'sqlite',
-} satisfies Config;
+
+  // D1 HTTP driver for push/pull/studio commands
+  // Requires: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_DATABASE_ID, CLOUDFLARE_D1_TOKEN
+  driver: 'd1-http',
+  dbCredentials: {
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID!,
+    databaseId: process.env.CLOUDFLARE_DATABASE_ID!,
+    token: process.env.CLOUDFLARE_D1_TOKEN!,
+  },
+});
