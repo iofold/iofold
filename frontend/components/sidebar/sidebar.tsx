@@ -59,7 +59,7 @@ const navSections: NavSection[] = [
       { href: '/setup', label: 'Setup Guide', icon: HelpCircle },
       { href: '/review', label: 'Quick Review', icon: Zap },
       { href: '/matrix', label: 'Matrix Analysis', icon: Grid3X3 },
-      { href: '/integrations', label: 'IOFold Integration', icon: Plug },
+      { href: '/integrations', label: 'Integrations', icon: Plug },
     ],
   },
   {
