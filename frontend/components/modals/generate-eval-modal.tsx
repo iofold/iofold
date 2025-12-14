@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from '@/hooks/use-router-with-progress'
 import { apiClient } from '@/lib/api-client'
-import { SSEClient } from '@/lib/sse-client'
 import {
   Dialog,
   DialogContent,
@@ -16,10 +15,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Progress } from '@/components/ui/progress'
-import { getStatusColor } from '@/lib/utils'
-import { AlertCircle, CheckCircle2, Loader2, Sparkles } from 'lucide-react'
-import type { JobResponse, Job } from '@/types/api'
+import { AlertCircle, CheckCircle2, Sparkles } from 'lucide-react'
+import { LiveJobMonitor } from '@/components/jobs/live-job-monitor'
+import type { JobResponse } from '@/types/api'
 
 interface GenerateEvalModalProps {
   open: boolean
@@ -35,10 +33,8 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
   const [model, setModel] = useState('claude-3-5-sonnet-20241022')
   const [customInstructions, setCustomInstructions] = useState('')
   const [jobId, setJobId] = useState<string | null>(null)
-  const [jobData, setJobData] = useState<Job | null>(null)
-  const [isStreaming, setIsStreaming] = useState(false)
+  const [jobStatus, setJobStatus] = useState<'running' | 'completed' | 'failed' | null>(null)
   const [generatedEvalId, setGeneratedEvalId] = useState<string | null>(null)
-  const sseClientRef = useRef<SSEClient | null>(null)
 
   // Generate mutation
   const generateMutation = useMutation({
@@ -58,88 +54,46 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
     },
     onSuccess: (data) => {
       setJobId(data.job_id)
-      setIsStreaming(true)
-
-      // Set initial job state
-      setJobData({
-        id: data.job_id,
-        type: 'generate',
-        status: 'queued',
-        progress: 0,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-      })
-
-      // Connect to SSE stream
-      connectToJobStream(data.job_id)
+      setJobStatus('running')
     },
     onError: (error: any) => {
       console.error('Generate eval failed:', error)
     },
   })
 
-  // Connect to SSE stream for job updates
-  const connectToJobStream = (jobId: string) => {
-    try {
-      const eventSource = apiClient.streamJob(jobId)
+  // Listen for job completion via polling (LiveJobMonitor handles SSE)
+  useEffect(() => {
+    if (!jobId || jobStatus !== 'running') return
 
-      const client = new SSEClient(eventSource, {
-        jobId,
-        apiBaseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787/v1',
-        onProgress: (update) => {
-          setJobData((prev) => prev ? { ...prev, ...update } : null)
-        },
-        onCompleted: (result) => {
-          setJobData((prev) => prev ? { ...prev, status: 'completed', result } : null)
-          setIsStreaming(false)
+    // Poll job status to detect completion and extract eval_id
+    const pollInterval = setInterval(async () => {
+      try {
+        const job = await apiClient.getJob(jobId)
+
+        if (job.status === 'completed') {
+          setJobStatus('completed')
 
           // Extract eval_id from result
-          if (result?.eval_id) {
-            setGeneratedEvalId(result.eval_id)
+          if (job.result?.eval_id) {
+            setGeneratedEvalId(job.result.eval_id)
           }
 
           // Refetch agent to show the new eval
           queryClient.invalidateQueries({ queryKey: ['agent', agentId] })
           queryClient.invalidateQueries({ queryKey: ['evals'] })
-        },
-        onFailed: (error, details) => {
-          setJobData((prev) => prev ? { ...prev, status: 'failed', error } : null)
-          setIsStreaming(false)
-        },
-        onError: (error) => {
-          console.error('SSE connection error:', error)
-          // Don't set isStreaming to false here - let the polling fallback handle it
-        },
-        onOpen: () => {
-          console.log('SSE connection established for job:', jobId)
+
+          clearInterval(pollInterval)
+        } else if (job.status === 'failed' || job.status === 'cancelled') {
+          setJobStatus('failed')
+          clearInterval(pollInterval)
         }
-      })
-
-      sseClientRef.current = client
-    } catch (error) {
-      console.error('Failed to connect to SSE stream:', error)
-      setIsStreaming(false)
-    }
-  }
-
-  // Clean up SSE connection when component unmounts or modal closes
-  useEffect(() => {
-    return () => {
-      if (sseClientRef.current) {
-        sseClientRef.current.close()
-        sseClientRef.current = null
+      } catch (error) {
+        console.error('Failed to poll job status:', error)
       }
-    }
-  }, [])
+    }, 2000)
 
-  // Close SSE connection when modal closes
-  useEffect(() => {
-    if (!open && sseClientRef.current) {
-      sseClientRef.current.close()
-      sseClientRef.current = null
-    }
-  }, [open])
+    return () => clearInterval(pollInterval)
+  }, [jobId, jobStatus, agentId, queryClient])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -150,25 +104,23 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
   }
 
   const handleClose = () => {
-    // Close SSE connection if open
-    if (sseClientRef.current) {
-      sseClientRef.current.close()
-      sseClientRef.current = null
+    if (jobStatus === 'running') {
+      const confirmed = window.confirm(
+        'Eval generation is still running. Closing this window will not cancel the generation. Continue?'
+      )
+      if (!confirmed) return
     }
 
     // Reset state when closing
-    if (!generateMutation.isPending && !isStreaming) {
-      setName('')
-      setDescription('')
-      setModel('claude-3-5-sonnet-20241022')
-      setCustomInstructions('')
-      setJobId(null)
-      setJobData(null)
-      setIsStreaming(false)
-      setGeneratedEvalId(null)
-      generateMutation.reset()
-      onOpenChange(false)
-    }
+    setName('')
+    setDescription('')
+    setModel('claude-3-5-sonnet-20241022')
+    setCustomInstructions('')
+    setJobId(null)
+    setJobStatus(null)
+    setGeneratedEvalId(null)
+    generateMutation.reset()
+    onOpenChange(false)
   }
 
   const handleViewEval = () => {
@@ -178,8 +130,7 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
     }
   }
 
-  const canSubmit = !generateMutation.isPending && !isStreaming && !!name.trim()
-  const isProcessing = generateMutation.isPending || isStreaming
+  const canSubmit = !generateMutation.isPending && jobStatus !== 'running' && !!name.trim()
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -194,71 +145,36 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
           </DialogDescription>
         </DialogHeader>
 
-        {/* Show job status if generation started */}
-        {jobId && (
-          <div className="my-4 p-4 rounded-lg border bg-muted/50">
-            <div className="flex items-center gap-2 mb-2">
-              {jobData?.status === 'completed' && (
-                <CheckCircle2 className="h-5 w-5 text-success" aria-hidden="true" />
-              )}
-              {jobData?.status === 'failed' && (
-                <AlertCircle className="h-5 w-5 text-destructive" aria-hidden="true" />
-              )}
-              {(jobData?.status === 'running' || jobData?.status === 'queued') && (
-                <Loader2 className="h-5 w-5 animate-spin text-primary" aria-hidden="true" />
-              )}
-              <span className="font-medium">Generation Status</span>
+        {/* Show LiveJobMonitor if generation started */}
+        {jobId && jobStatus === 'running' && (
+          <div className="my-4">
+            <LiveJobMonitor jobId={jobId} jobType="generate" />
+          </div>
+        )}
+
+        {/* Show success message when completed */}
+        {jobId && jobStatus === 'completed' && (
+          <div className="my-4 p-4 rounded-lg border bg-success/10 border-success/30">
+            <div className="flex items-center gap-2 mb-3">
+              <CheckCircle2 className="h-5 w-5 text-success" />
+              <span className="font-medium text-success">Eval Generated Successfully!</span>
             </div>
+            <p className="text-sm text-muted-foreground">
+              Your eval has been created and is ready to use. You can view and manage it from the evals page.
+            </p>
+          </div>
+        )}
 
-            <div className="space-y-3">
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Job ID:</span>
-                  <span className="font-mono text-xs">{jobId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Status:</span>
-                  <span className={getStatusColor(jobData?.status || 'queued')}>
-                    {jobData?.status || 'queued'}
-                  </span>
-                </div>
-              </div>
-
-              {jobData?.progress !== undefined && jobData.status !== 'completed' && (
-                <Progress
-                  value={jobData.progress}
-                  showLabel={true}
-                  label="Generation Progress"
-                />
-              )}
-
-              {jobData?.error && (
-                <div className="p-3 bg-destructive/10 border border-destructive/30 rounded text-destructive text-sm">
-                  <p className="font-medium mb-1">Generation Failed</p>
-                  <p>{jobData.error}</p>
-                </div>
-              )}
-
-              {jobData?.status === 'completed' && jobData?.result && (
-                <div className="p-3 bg-success/10 border border-success/30 rounded text-success text-sm">
-                  <p className="font-medium mb-1">Eval Generated Successfully!</p>
-                  <div className="space-y-1">
-                    {jobData.result.eval_name && (
-                      <div className="flex justify-between">
-                        <span>Name:</span>
-                        <span className="font-medium">{jobData.result.eval_name}</span>
-                      </div>
-                    )}
-                    {jobData.result.accuracy !== undefined && (
-                      <div className="flex justify-between">
-                        <span>Accuracy:</span>
-                        <span className="font-medium">{Math.round(jobData.result.accuracy * 100)}%</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+        {/* Show error message when failed */}
+        {jobId && jobStatus === 'failed' && (
+          <div className="my-4 p-4 rounded-lg border bg-destructive/10 border-destructive/30">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              <span className="font-medium text-destructive">Generation Failed</span>
             </div>
+            <p className="text-sm text-muted-foreground">
+              The eval generation failed. Please check the logs above for details and try again.
+            </p>
           </div>
         )}
 
@@ -344,7 +260,6 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
                 type="button"
                 variant="outline"
                 onClick={handleClose}
-                disabled={isProcessing}
               >
                 Cancel
               </Button>
@@ -357,12 +272,12 @@ export function GenerateEvalModal({ open, onOpenChange, agentId }: GenerateEvalM
         )}
 
         {/* Action buttons when job is done */}
-        {jobId && ['completed', 'failed', 'cancelled'].includes(jobData?.status || '') && (
+        {jobId && (jobStatus === 'completed' || jobStatus === 'failed') && (
           <DialogFooter>
             <Button variant="outline" onClick={handleClose}>
               Close
             </Button>
-            {jobData?.status === 'completed' && generatedEvalId && (
+            {jobStatus === 'completed' && generatedEvalId && (
               <Button onClick={handleViewEval}>
                 View Eval
               </Button>
