@@ -10,6 +10,9 @@
 
 import { buildTools, type ToolDefinition, type ToolContext } from './registry';
 import type { StructuredTool } from '@langchain/core/tools';
+import { createDb, type Database } from '../../db/client';
+import { agentTools, tools } from '../../db/schema';
+import { eq, inArray } from 'drizzle-orm';
 
 // Re-export ToolContext for external use
 export type { ToolContext };
@@ -23,13 +26,14 @@ export type { ToolContext };
  */
 export async function loadAgentTools(db: D1Database, agentId: string): Promise<string[]> {
   try {
-    const result = await db.prepare(
-      'SELECT tool_id FROM agent_tools WHERE agent_id = ? ORDER BY tool_id'
-    )
-      .bind(agentId)
-      .all();
+    const drizzle = createDb(db);
+    const result = await drizzle
+      .select({ toolId: agentTools.toolId })
+      .from(agentTools)
+      .where(eq(agentTools.agentId, agentId))
+      .orderBy(agentTools.toolId);
 
-    return result.results.map(row => row.tool_id as string);
+    return result.map(row => row.toolId);
   } catch (error) {
     console.warn(`Failed to load tools for agent ${agentId}:`, error);
     return [];
@@ -49,27 +53,21 @@ export async function loadToolDefinitions(db: D1Database, toolIds: string[]): Pr
   }
 
   try {
-    // Build IN clause with placeholders
-    const placeholders = toolIds.map(() => '?').join(',');
-    const query = `
-      SELECT id, name, description, parameters_schema, handler_key, category
-      FROM tools
-      WHERE id IN (${placeholders})
-      ORDER BY category, name
-    `;
+    const drizzle = createDb(db);
+    const result = await drizzle
+      .select({
+        id: tools.id,
+        name: tools.name,
+        description: tools.description,
+        parameters_schema: tools.parametersSchema,
+        handler_key: tools.handlerKey,
+        category: tools.category,
+      })
+      .from(tools)
+      .where(inArray(tools.id, toolIds))
+      .orderBy(tools.category, tools.name);
 
-    const result = await db.prepare(query)
-      .bind(...toolIds)
-      .all();
-
-    return result.results.map(row => ({
-      id: row.id as string,
-      name: row.name as string,
-      description: row.description as string,
-      parameters_schema: row.parameters_schema as string,
-      handler_key: row.handler_key as string,
-      category: row.category as string | undefined,
-    }));
+    return result;
   } catch (error) {
     console.warn(`Failed to load tool definitions for IDs ${toolIds.join(', ')}:`, error);
     return [];

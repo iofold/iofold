@@ -16,6 +16,9 @@ import {
   validateWorkspaceAccess,
   parseJsonBody,
 } from './utils';
+import { createDb, Database } from '../db/client';
+import { eq, and, asc } from 'drizzle-orm';
+import { tools, agentTools, agents } from '../db/schema';
 
 export interface Env {
   DB: D1Database;
@@ -65,37 +68,41 @@ export async function listTools(request: Request, env: Env): Promise<Response> {
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    const db = createDb(env.DB);
+
     // Parse optional category filter
     const url = new URL(request.url);
     const category = url.searchParams.get('category');
 
-    let query = `SELECT id, name, description, parameters_schema, handler_key, category, created_at
-                 FROM tools`;
-    const params: string[] = [];
+    let query = db
+      .select({
+        id: tools.id,
+        name: tools.name,
+        description: tools.description,
+        parameters_schema: tools.parametersSchema,
+        handler_key: tools.handlerKey,
+        category: tools.category,
+        created_at: tools.createdAt,
+      })
+      .from(tools);
 
     if (category) {
-      query += ' WHERE category = ?';
-      params.push(category);
+      query = query.where(eq(tools.category, category as any));
     }
 
-    query += ' ORDER BY category, name';
+    const results = await query.orderBy(asc(tools.category), asc(tools.name));
 
-    const result = await (params.length > 0
-      ? env.DB.prepare(query).bind(...params)
-      : env.DB.prepare(query)
-    ).all();
-
-    const tools: Tool[] = result.results.map((row: any) => ({
+    const toolsList: Tool[] = results.map((row) => ({
       id: row.id,
       name: row.name,
       description: row.description,
       parameters_schema: row.parameters_schema,
       handler_key: row.handler_key,
-      category: row.category,
+      category: row.category || undefined,
       created_at: row.created_at,
     }));
 
-    return createSuccessResponse({ tools });
+    return createSuccessResponse({ tools: toolsList });
   } catch (error: any) {
     if (error.message === 'Missing X-Workspace-Id header') {
       return createErrorResponse('VALIDATION_ERROR', error.message, 400);
@@ -119,13 +126,23 @@ export async function getToolById(request: Request, env: Env, toolId: string): P
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    const tool = await env.DB.prepare(
-      `SELECT id, name, description, parameters_schema, handler_key, category, created_at
-       FROM tools
-       WHERE id = ?`
-    )
-      .bind(toolId)
-      .first();
+    const db = createDb(env.DB);
+
+    const result = await db
+      .select({
+        id: tools.id,
+        name: tools.name,
+        description: tools.description,
+        parameters_schema: tools.parametersSchema,
+        handler_key: tools.handlerKey,
+        category: tools.category,
+        created_at: tools.createdAt,
+      })
+      .from(tools)
+      .where(eq(tools.id, toolId))
+      .limit(1);
+
+    const tool = result[0];
 
     if (!tool) {
       return createErrorResponse('NOT_FOUND', 'Tool not found', 404);
@@ -163,29 +180,37 @@ export async function getAgentTools(request: Request, env: Env, agentId: string)
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify agent exists and belongs to workspace
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const db = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists and belongs to workspace
+    const agentResult = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // Get tools for this agent
-    const result = await env.DB.prepare(
-      `SELECT t.id, t.name, t.description, t.parameters_schema, t.handler_key, t.category, t.created_at, at.config
-       FROM tools t
-       JOIN agent_tools at ON t.id = at.tool_id
-       WHERE at.agent_id = ?
-       ORDER BY t.category, t.name`
-    )
-      .bind(agentId)
-      .all();
+    const results = await db
+      .select({
+        id: tools.id,
+        name: tools.name,
+        description: tools.description,
+        parameters_schema: tools.parametersSchema,
+        handler_key: tools.handlerKey,
+        category: tools.category,
+        created_at: tools.createdAt,
+        config: agentTools.config,
+      })
+      .from(tools)
+      .innerJoin(agentTools, eq(tools.id, agentTools.toolId))
+      .where(eq(agentTools.agentId, agentId))
+      .orderBy(asc(tools.category), asc(tools.name));
 
-    const tools = result.results.map((row: any) => ({
+    const toolsList = results.map((row) => ({
       id: row.id,
       name: row.name,
       description: row.description,
@@ -193,10 +218,10 @@ export async function getAgentTools(request: Request, env: Env, agentId: string)
       handler_key: row.handler_key,
       category: row.category,
       created_at: row.created_at,
-      config: row.config ? JSON.parse(row.config) : null,
+      config: row.config || null,
     }));
 
-    return createSuccessResponse({ tools });
+    return createSuccessResponse({ tools: toolsList });
   } catch (error: any) {
     if (error.message === 'Missing X-Workspace-Id header') {
       return createErrorResponse('VALIDATION_ERROR', error.message, 400);
@@ -226,67 +251,74 @@ export async function attachToolToAgent(request: Request, env: Env, agentId: str
       return createErrorResponse('VALIDATION_ERROR', 'tool_id is required', 400);
     }
 
-    // Verify agent exists and belongs to workspace
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const db = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists and belongs to workspace
+    const agentResult = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // Verify tool exists
-    const tool = await env.DB.prepare(
-      'SELECT id FROM tools WHERE id = ?'
-    )
-      .bind(body.tool_id)
-      .first();
+    const toolResult = await db
+      .select({ id: tools.id })
+      .from(tools)
+      .where(eq(tools.id, body.tool_id))
+      .limit(1);
 
-    if (!tool) {
+    if (toolResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Tool not found', 404);
     }
 
     // Check if already attached
-    const existing = await env.DB.prepare(
-      'SELECT agent_id FROM agent_tools WHERE agent_id = ? AND tool_id = ?'
-    )
-      .bind(agentId, body.tool_id)
-      .first();
+    const existingResult = await db
+      .select({ agentId: agentTools.agentId })
+      .from(agentTools)
+      .where(and(eq(agentTools.agentId, agentId), eq(agentTools.toolId, body.tool_id)))
+      .limit(1);
 
-    if (existing) {
+    if (existingResult.length > 0) {
       return createErrorResponse('ALREADY_EXISTS', 'Tool already attached to agent', 409);
     }
 
     // Attach tool to agent
-    const configJson = body.config ? JSON.stringify(body.config) : null;
-
-    await env.DB.prepare(
-      `INSERT INTO agent_tools (agent_id, tool_id, config)
-       VALUES (?, ?, ?)`
-    )
-      .bind(agentId, body.tool_id, configJson)
-      .run();
+    await db.insert(agentTools).values({
+      agentId,
+      toolId: body.tool_id,
+      config: body.config || null,
+    });
 
     // Return the attached tool with config
-    const attachedTool = await env.DB.prepare(
-      `SELECT t.id, t.name, t.description, t.parameters_schema, t.handler_key, t.category, t.created_at
-       FROM tools t
-       WHERE t.id = ?`
-    )
-      .bind(body.tool_id)
-      .first();
+    const attachedToolResult = await db
+      .select({
+        id: tools.id,
+        name: tools.name,
+        description: tools.description,
+        parameters_schema: tools.parametersSchema,
+        handler_key: tools.handlerKey,
+        category: tools.category,
+        created_at: tools.createdAt,
+      })
+      .from(tools)
+      .where(eq(tools.id, body.tool_id))
+      .limit(1);
+
+    const attachedTool = attachedToolResult[0];
 
     return createSuccessResponse(
       {
-        id: attachedTool!.id,
-        name: attachedTool!.name,
-        description: attachedTool!.description,
-        parameters_schema: attachedTool!.parameters_schema,
-        handler_key: attachedTool!.handler_key,
-        category: attachedTool!.category,
-        created_at: attachedTool!.created_at,
+        id: attachedTool.id,
+        name: attachedTool.name,
+        description: attachedTool.description,
+        parameters_schema: attachedTool.parameters_schema,
+        handler_key: attachedTool.handler_key,
+        category: attachedTool.category,
+        created_at: attachedTool.created_at,
         config: body.config || null,
       },
       201
@@ -323,34 +355,34 @@ export async function detachToolFromAgent(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify agent exists and belongs to workspace
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const db = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists and belongs to workspace
+    const agentResult = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // Verify tool is attached to agent
-    const existing = await env.DB.prepare(
-      'SELECT agent_id FROM agent_tools WHERE agent_id = ? AND tool_id = ?'
-    )
-      .bind(agentId, toolId)
-      .first();
+    const existingResult = await db
+      .select({ agentId: agentTools.agentId })
+      .from(agentTools)
+      .where(and(eq(agentTools.agentId, agentId), eq(agentTools.toolId, toolId)))
+      .limit(1);
 
-    if (!existing) {
+    if (existingResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Tool not attached to agent', 404);
     }
 
     // Detach tool
-    await env.DB.prepare(
-      'DELETE FROM agent_tools WHERE agent_id = ? AND tool_id = ?'
-    )
-      .bind(agentId, toolId)
-      .run();
+    await db
+      .delete(agentTools)
+      .where(and(eq(agentTools.agentId, agentId), eq(agentTools.toolId, toolId)));
 
     return new Response(null, { status: 204 });
   } catch (error: any) {

@@ -8,6 +8,8 @@
 
 import { createErrorResponse } from './utils';
 import type { Queue } from '../queue/producer';
+import { logger } from '../utils/logger';
+import { handleError } from '../utils/errors';
 
 // Import endpoint handlers
 import {
@@ -44,7 +46,6 @@ import {
   acknowledgeAlert,
   resolveAlert,
   updateEvalSettings,
-  getPromptCoverage,
   getRefinementHistory,
 } from './monitoring';
 
@@ -141,16 +142,19 @@ export interface Env {
  * Route HTTP request to appropriate handler
  */
 export async function handleApiRequest(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
+  const startTime = Date.now();
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
+  const workspaceId = request.headers.get('X-Workspace-Id') || 'workspace_default';
 
-  // ============================================================================
-  // Health Check Endpoint
-  // ============================================================================
+  try {
+    // ============================================================================
+    // Health Check Endpoint
+    // ============================================================================
 
-  // GET /api/health - Health check endpoint (no auth required)
-  if (path === '/api/health' && method === 'GET') {
+    // GET /api/health - Health check endpoint (no auth required)
+    if (path === '/api/health' && method === 'GET') {
     return new Response(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -445,12 +449,6 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
   const settingsMatch = path.match(/^\/api\/evals\/([^\/]+)\/settings$/);
   if (settingsMatch && method === 'PATCH') {
     return updateEvalSettings(request, env, settingsMatch[1]);
-  }
-
-  // GET /api/evals/:id/prompt-coverage - Get performance by prompt version
-  const coverageMatch = path.match(/^\/api\/evals\/([^\/]+)\/prompt-coverage$/);
-  if (coverageMatch && method === 'GET') {
-    return getPromptCoverage(request, env, coverageMatch[1]);
   }
 
   // GET /api/evals/:id/refinement-history - Get auto-refinement audit log
@@ -761,13 +759,25 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
     return getBatchStatus(request, env, batchStatusMatch[1]);
   }
 
-  // ============================================================================
-  // Not Found
-  // ============================================================================
+    // ============================================================================
+    // Not Found
+    // ============================================================================
 
-  return createErrorResponse(
-    'NOT_FOUND',
-    `Endpoint ${method} ${path} not found`,
-    404
-  );
+    return createErrorResponse(
+      'NOT_FOUND',
+      `Endpoint ${method} ${path} not found`,
+      404
+    );
+  } catch (error) {
+    // Log the error with full context and stack trace
+    const durationMs = Date.now() - startTime;
+    logger.error(
+      `Unhandled error in API router: ${method} ${path}`,
+      { method, path, workspaceId, durationMs },
+      error
+    );
+
+    // Return a proper error response
+    return handleError(error, request, { workspaceId });
+  }
 }

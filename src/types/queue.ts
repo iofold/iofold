@@ -12,7 +12,7 @@ export interface QueueMessage {
   /** Unique job identifier */
   job_id: string;
   /** Job type determines which handler processes the message */
-  type: JobType | 'monitor' | 'auto_refine' | 'agent_discovery' | 'prompt_improvement' | 'prompt_evaluation' | 'template_drift' | 'eval_revalidation' | 'rollout_task' | 'gepa_optimization' | 'taskset_run';
+  type: JobType | 'agent_discovery' | 'rollout_task' | 'gepa_optimization' | 'taskset_run';
   /** Workspace this job belongs to */
   workspace_id: string;
   /** Job-specific payload data */
@@ -49,11 +49,7 @@ export type JobPayload =
   | ImportJobPayload
   | GenerateJobPayload
   | ExecuteJobPayload
-  | MonitorJobPayload
-  | AutoRefineJobPayload
   | AgentDiscoveryJobPayload
-  | PromptImprovementJobPayload
-  | PromptEvaluationJobPayload
   | RolloutTaskPayload
   | GEPAOptimizationJobPayload
   | TasksetRunJobPayload;
@@ -98,33 +94,6 @@ export interface ExecuteJobPayload {
 }
 
 /**
- * Payload for monitoring jobs (triggered by cron)
- */
-export interface MonitorJobPayload {
-  type: 'monitor';
-  /** Specific eval IDs to monitor, or all active if not specified */
-  eval_ids?: string[];
-  /** Time window for metrics calculation in days */
-  window_days?: number;
-}
-
-/**
- * Payload for auto-refinement jobs
- */
-export interface AutoRefineJobPayload {
-  type: 'auto_refine';
-  eval_id: string;
-  /** Alert that triggered this refinement */
-  alert_id: string;
-  /** Metrics that triggered the refinement */
-  trigger_metrics: {
-    accuracy?: number;
-    contradiction_rate?: number;
-    error_rate?: number;
-  };
-}
-
-/**
  * Payload for agent discovery jobs
  */
 export interface AgentDiscoveryJobPayload {
@@ -134,28 +103,6 @@ export interface AgentDiscoveryJobPayload {
   /** Minimum cluster size to create an agent (default: 5) */
   min_cluster_size?: number;
   /** Maximum traces to process in one job (default: 100) */
-  max_traces?: number;
-}
-
-/**
- * Payload for prompt improvement jobs
- */
-export interface PromptImprovementJobPayload {
-  type: 'prompt_improvement';
-  /** Agent ID to improve */
-  agent_id: string;
-  /** Maximum contradictions to analyze (default: 20) */
-  max_contradictions?: number;
-}
-
-/**
- * Payload for prompt evaluation jobs
- */
-export interface PromptEvaluationJobPayload {
-  type: 'prompt_evaluation';
-  /** Agent version ID (candidate) to evaluate */
-  agent_version_id: string;
-  /** Maximum traces to evaluate (default: 50) */
   max_traces?: number;
 }
 

@@ -1,10 +1,10 @@
 // src/db/schema/evals.ts
-import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, sqliteView, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { evalStatus, evalCandidateStatus } from './enums';
 import { agents } from './agents';
 import { traces } from './traces';
-import { systemPrompts } from './prompts';
+import { feedback } from './feedback';
 
 export const evals = sqliteTable('evals', {
   id: text('id').primaryKey(),
@@ -101,61 +101,41 @@ export const evalExecutions = sqliteTable('eval_executions', {
   executedTraceIdx: index('idx_eval_executions_executed_trace').on(table.evalId, table.executedAt, table.traceId),
 }));
 
-export const evalCvResults = sqliteTable('eval_cv_results', {
-  id: text('id').primaryKey(),
-  candidateId: text('candidate_id').notNull().references(() => evalCandidates.id, { onDelete: 'cascade' }),
-  kFolds: integer('k_folds').default(5).notNull(),
-  meanAccuracy: real('mean_accuracy'),
-  meanKappa: real('mean_kappa'),
-  meanF1: real('mean_f1'),
-  meanAgreementRate: real('mean_agreement_rate'),
-  stdAccuracy: real('std_accuracy'),
-  stdKappa: real('std_kappa'),
-  isStable: integer('is_stable', { mode: 'boolean' }),
-  foldResults: text('fold_results', { mode: 'json' }).$type<unknown[]>(),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => ({
-  candidateIdx: index('idx_cv_results_candidate').on(table.candidateId),
-  accuracyIdx: index('idx_cv_results_accuracy').on(table.meanAccuracy),
-  stableIdx: index('idx_cv_results_stable').on(table.isStable),
-}));
+// =============================================================================
+// Views
+// =============================================================================
 
-export const evalLlmCache = sqliteTable('eval_llm_cache', {
-  id: text('id').primaryKey(),
-  promptHash: text('prompt_hash').notNull(),
-  model: text('model').notNull(),
-  responseText: text('response_text').notNull(),
-  tokensInput: integer('tokens_input'),
-  tokensOutput: integer('tokens_output'),
-  costUsd: real('cost_usd'),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
-  expiresAt: text('expires_at'),
-}, (table) => ({
-  hashIdx: index('idx_llm_cache_hash').on(table.promptHash),
-  modelIdx: index('idx_llm_cache_model').on(table.model),
-  createdIdx: index('idx_llm_cache_created').on(table.createdAt),
-  expiresIdx: index('idx_llm_cache_expires').on(table.expiresAt),
-  promptModelUnique: uniqueIndex('eval_llm_cache_prompt_model_unique').on(table.promptHash, table.model),
-}));
-
-export const evalPromptCoverage = sqliteTable('eval_prompt_coverage', {
-  id: text('id').primaryKey(),
-  evalId: text('eval_id').notNull().references(() => evals.id, { onDelete: 'cascade' }),
-  systemPromptId: text('system_prompt_id').notNull().references(() => systemPrompts.id, { onDelete: 'cascade' }),
-  executionCount: integer('execution_count').default(0),
-  passCount: integer('pass_count').default(0),
-  failCount: integer('fail_count').default(0),
-  errorCount: integer('error_count').default(0),
-  accuracy: real('accuracy'),
-  firstExecutionAt: text('first_execution_at'),
-  lastExecutionAt: text('last_execution_at'),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
-  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => ({
-  evalIdx: index('idx_eval_prompt_coverage_eval').on(table.evalId),
-  promptIdx: index('idx_eval_prompt_coverage_prompt').on(table.systemPromptId),
-  evalPromptUnique: uniqueIndex('eval_prompt_coverage_eval_prompt_unique').on(table.evalId, table.systemPromptId),
-}));
+/**
+ * eval_comparison view - Links eval executions to human feedback with contradiction detection.
+ *
+ * A contradiction occurs when:
+ * - Human rated 'positive' but eval predicted false (0)
+ * - Human rated 'negative' but eval predicted true (1)
+ *
+ * 'neutral' ratings are never contradictions.
+ */
+export const evalComparison = sqliteView('eval_comparison', {
+  evalId: text('eval_id'),
+  traceId: text('trace_id'),
+  predictedResult: integer('predicted_result'),
+  rating: text('rating'),
+  isContradiction: integer('is_contradiction'),
+  executedAt: text('executed_at'),
+}).as(sql`
+  SELECT
+    ee.eval_id,
+    ee.trace_id,
+    ee.predicted_result,
+    f.rating,
+    CASE
+      WHEN f.rating = 'positive' AND ee.predicted_result = 0 THEN 1
+      WHEN f.rating = 'negative' AND ee.predicted_result = 1 THEN 1
+      ELSE 0
+    END as is_contradiction,
+    ee.executed_at
+  FROM eval_executions ee
+  LEFT JOIN feedback f ON ee.trace_id = f.trace_id
+`);
 
 // Type exports
 export type Eval = typeof evals.$inferSelect;
@@ -166,9 +146,4 @@ export type EvalCandidateExecution = typeof evalCandidateExecutions.$inferSelect
 export type NewEvalCandidateExecution = typeof evalCandidateExecutions.$inferInsert;
 export type EvalExecution = typeof evalExecutions.$inferSelect;
 export type NewEvalExecution = typeof evalExecutions.$inferInsert;
-export type EvalCvResult = typeof evalCvResults.$inferSelect;
-export type NewEvalCvResult = typeof evalCvResults.$inferInsert;
-export type EvalLlmCache = typeof evalLlmCache.$inferSelect;
-export type NewEvalLlmCache = typeof evalLlmCache.$inferInsert;
-export type EvalPromptCoverage = typeof evalPromptCoverage.$inferSelect;
-export type NewEvalPromptCoverage = typeof evalPromptCoverage.$inferInsert;
+export type EvalComparison = typeof evalComparison.$inferSelect;

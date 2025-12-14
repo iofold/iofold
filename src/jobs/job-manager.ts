@@ -1,9 +1,16 @@
+import { eq, and, desc, lte, isNotNull, sql } from 'drizzle-orm';
 import type { D1Database } from '@cloudflare/workers-types';
 import type { Job, JobType, JobStatus, JobMetadata } from '../types/api';
 import type { ErrorCategory } from '../errors/classifier';
+import { createDb, type Database } from '../db/client';
+import { jobs, jobRetryHistory } from '../db/schema';
 
 export class JobManager {
-  constructor(private db: D1Database) {}
+  private drizzle: Database;
+
+  constructor(private db: D1Database) {
+    this.drizzle = createDb(db);
+  }
 
   async createJob(
     type: JobType,
@@ -20,23 +27,17 @@ export class JobManager {
       ...metadata
     };
 
-    await this.db
-      .prepare(
-        `INSERT INTO jobs (id, workspace_id, type, status, progress, metadata, max_retries, priority, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        id,
-        workspaceId,
-        type,
-        'queued',
-        0,
-        JSON.stringify(fullMetadata),
-        maxRetries,
-        priority,
-        now
-      )
-      .run();
+    await this.drizzle.insert(jobs).values({
+      id,
+      workspaceId,
+      type: type as typeof jobs.$inferInsert['type'],
+      status: 'queued',
+      progress: 0,
+      metadata: fullMetadata as unknown as Record<string, unknown>,
+      maxRetries,
+      priority,
+      createdAt: now,
+    });
 
     return {
       id,
@@ -51,14 +52,15 @@ export class JobManager {
   }
 
   async getJob(id: string): Promise<Job | null> {
-    const result = await this.db
-      .prepare('SELECT * FROM jobs WHERE id = ?')
-      .bind(id)
-      .first();
+    const result = await this.drizzle
+      .select()
+      .from(jobs)
+      .where(eq(jobs.id, id))
+      .limit(1);
 
-    if (!result) return null;
+    if (result.length === 0) return null;
 
-    return this.jobFromRecord(result);
+    return this.jobFromRecord(result[0]);
   }
 
   async updateJobStatus(
@@ -67,64 +69,63 @@ export class JobManager {
     progress?: number,
     error?: string
   ): Promise<void> {
-    const updates: string[] = ['status = ?'];
-    const bindings: any[] = [status];
+    const updateData: Partial<typeof jobs.$inferInsert> = {
+      status: status as any,
+    };
 
     if (progress !== undefined) {
-      updates.push('progress = ?');
-      bindings.push(progress);
+      updateData.progress = progress;
     }
 
     if (status === 'running' && progress === 0) {
-      updates.push('started_at = ?');
-      bindings.push(new Date().toISOString());
+      updateData.startedAt = new Date().toISOString();
     }
 
     if (status === 'completed' || status === 'failed' || status === 'cancelled') {
-      updates.push('completed_at = ?');
-      bindings.push(new Date().toISOString());
+      updateData.completedAt = new Date().toISOString();
     }
 
     if (error) {
-      updates.push('error = ?');
-      bindings.push(error);
+      updateData.error = error;
     }
 
-    bindings.push(id);
-
-    await this.db
-      .prepare(`UPDATE jobs SET ${updates.join(', ')} WHERE id = ?`)
-      .bind(...bindings)
-      .run();
+    await this.drizzle
+      .update(jobs)
+      .set(updateData)
+      .where(eq(jobs.id, id));
   }
 
   async updateJobProgress(id: string, progress: number): Promise<void> {
-    await this.db
-      .prepare('UPDATE jobs SET progress = ?, status = ? WHERE id = ?')
-      .bind(progress, progress > 0 ? 'running' : 'queued', id)
-      .run();
+    await this.drizzle
+      .update(jobs)
+      .set({
+        progress,
+        status: progress > 0 ? 'running' : 'queued',
+      })
+      .where(eq(jobs.id, id));
   }
 
   async completeJob(id: string, result: any): Promise<void> {
-    await this.db
-      .prepare(
-        `UPDATE jobs
-         SET status = ?, progress = ?, completed_at = ?, result = ?
-         WHERE id = ?`
-      )
-      .bind('completed', 100, new Date().toISOString(), JSON.stringify(result), id)
-      .run();
+    await this.drizzle
+      .update(jobs)
+      .set({
+        status: 'completed',
+        progress: 100,
+        completedAt: new Date().toISOString(),
+        result,
+      })
+      .where(eq(jobs.id, id));
   }
 
   async failJob(id: string, error: string): Promise<void> {
-    await this.db
-      .prepare(
-        `UPDATE jobs
-         SET status = ?, completed_at = ?, error = ?
-         WHERE id = ?`
-      )
-      .bind('failed', new Date().toISOString(), error, id)
-      .run();
+    await this.drizzle
+      .update(jobs)
+      .set({
+        status: 'failed',
+        completedAt: new Date().toISOString(),
+        error,
+      })
+      .where(eq(jobs.id, id));
   }
 
   async cancelJob(id: string): Promise<boolean> {
@@ -148,44 +149,38 @@ export class JobManager {
       limit?: number;
     } = {}
   ): Promise<Job[]> {
-    const conditions: string[] = ['workspace_id = ?'];
-    const bindings: any[] = [workspaceId];
+    const conditions = [eq(jobs.workspaceId, workspaceId)];
 
     if (filters.type) {
-      conditions.push('type = ?');
-      bindings.push(filters.type);
+      conditions.push(eq(jobs.type, filters.type as any));
     }
 
     if (filters.status) {
-      conditions.push('status = ?');
-      bindings.push(filters.status);
+      conditions.push(eq(jobs.status, filters.status as any));
     }
 
     const limit = filters.limit || 20;
-    bindings.push(limit);
 
-    const results = await this.db
-      .prepare(
-        `SELECT * FROM jobs
-         WHERE ${conditions.join(' AND ')}
-         ORDER BY created_at DESC
-         LIMIT ?`
-      )
-      .bind(...bindings)
-      .all();
+    const results = await this.drizzle
+      .select()
+      .from(jobs)
+      .where(and(...conditions))
+      .orderBy(desc(jobs.createdAt))
+      .limit(limit);
 
-    return results.results.map(r => this.jobFromRecord(r));
+    return results.map(r => this.jobFromRecord(r));
   }
 
   async getJobMetadata(id: string): Promise<JobMetadata | null> {
-    const result = await this.db
-      .prepare('SELECT metadata FROM jobs WHERE id = ?')
-      .bind(id)
-      .first();
+    const result = await this.drizzle
+      .select({ metadata: jobs.metadata })
+      .from(jobs)
+      .where(eq(jobs.id, id))
+      .limit(1);
 
-    if (!result || !result.metadata) return null;
+    if (result.length === 0 || !result[0].metadata) return null;
 
-    return JSON.parse(result.metadata as string);
+    return result[0].metadata as unknown as JobMetadata;
   }
 
   /**
@@ -198,22 +193,24 @@ export class JobManager {
     delay_ms: number;
     created_at: string;
   }>> {
-    const results = await this.db
-      .prepare(
-        `SELECT attempt, error, error_category, delay_ms, created_at
-         FROM job_retry_history
-         WHERE job_id = ?
-         ORDER BY attempt ASC`
-      )
-      .bind(jobId)
-      .all();
+    const results = await this.drizzle
+      .select({
+        attempt: jobRetryHistory.attempt,
+        error: jobRetryHistory.error,
+        error_category: jobRetryHistory.errorCategory,
+        delay_ms: jobRetryHistory.delayMs,
+        created_at: jobRetryHistory.createdAt,
+      })
+      .from(jobRetryHistory)
+      .where(eq(jobRetryHistory.jobId, jobId))
+      .orderBy(jobRetryHistory.attempt);
 
-    return results.results.map(r => ({
-      attempt: r.attempt as number,
-      error: r.error as string,
+    return results.map(r => ({
+      attempt: r.attempt,
+      error: r.error,
       error_category: r.error_category as ErrorCategory,
-      delay_ms: r.delay_ms as number,
-      created_at: r.created_at as string
+      delay_ms: r.delay_ms,
+      created_at: r.created_at
     }));
   }
 
@@ -221,30 +218,31 @@ export class JobManager {
    * List jobs that are pending retry
    */
   async listJobsPendingRetry(workspaceId: string, limit = 50): Promise<Job[]> {
-    const results = await this.db
-      .prepare(
-        `SELECT * FROM jobs
-         WHERE workspace_id = ?
-         AND status = 'queued'
-         AND next_retry_at IS NOT NULL
-         AND next_retry_at <= datetime('now')
-         ORDER BY priority DESC, next_retry_at ASC
-         LIMIT ?`
+    const results = await this.drizzle
+      .select()
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.workspaceId, workspaceId),
+          eq(jobs.status, 'queued'),
+          isNotNull(jobs.nextRetryAt),
+          lte(jobs.nextRetryAt, sql`datetime('now')`)
+        )
       )
-      .bind(workspaceId, limit)
-      .all();
+      .orderBy(desc(jobs.priority), jobs.nextRetryAt)
+      .limit(limit);
 
-    return results.results.map(r => this.jobFromRecord(r));
+    return results.map(r => this.jobFromRecord(r));
   }
 
   /**
    * Update job error category
    */
   async updateJobErrorCategory(id: string, category: ErrorCategory): Promise<void> {
-    await this.db
-      .prepare('UPDATE jobs SET error_category = ? WHERE id = ?')
-      .bind(category, id)
-      .run();
+    await this.drizzle
+      .update(jobs)
+      .set({ errorCategory: category })
+      .where(eq(jobs.id, id));
   }
 
   /**
@@ -255,32 +253,33 @@ export class JobManager {
     category: ErrorCategory,
     limit = 50
   ): Promise<Job[]> {
-    const results = await this.db
-      .prepare(
-        `SELECT * FROM jobs
-         WHERE workspace_id = ?
-         AND error_category = ?
-         ORDER BY created_at DESC
-         LIMIT ?`
+    const results = await this.drizzle
+      .select()
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.workspaceId, workspaceId),
+          eq(jobs.errorCategory, category)
+        )
       )
-      .bind(workspaceId, category, limit)
-      .all();
+      .orderBy(desc(jobs.createdAt))
+      .limit(limit);
 
-    return results.results.map(r => this.jobFromRecord(r));
+    return results.map(r => this.jobFromRecord(r));
   }
 
-  private jobFromRecord(record: any): Job {
+  private jobFromRecord(record: typeof jobs.$inferSelect): Job {
     return {
-      id: record.id as string,
-      workspace_id: record.workspace_id as string,
+      id: record.id,
+      workspace_id: record.workspaceId,
       type: record.type as JobType,
       status: record.status as JobStatus,
-      progress: record.progress as number,
-      created_at: record.created_at as string,
-      started_at: record.started_at as string | null,
-      completed_at: record.completed_at as string | null,
-      result: record.result ? JSON.parse(record.result as string) : undefined,
-      error: record.error as string | undefined
+      progress: record.progress,
+      created_at: record.createdAt,
+      started_at: record.startedAt ?? null,
+      completed_at: record.completedAt ?? null,
+      result: record.result as any,
+      error: record.error ?? undefined
     };
   }
 }

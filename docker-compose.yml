@@ -34,9 +34,12 @@ services:
 
   # ==========================================================================
   # Backend - Cloudflare Workers (wrangler dev)
+  # Custom Dockerfile with CA certificates for TLS support
   # ==========================================================================
   backend:
-    image: node:22-slim
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
     container_name: iofold-backend
     working_dir: /app
     volumes:
@@ -56,13 +59,16 @@ services:
       - NODE_ENV=development
       - PNPM_HOME=/root/.local/share/pnpm
       - PATH=/root/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin
+      # TLS certificate environment variables
+      - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+      - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+      - SSL_CERT_DIR=/etc/ssl/certs
     env_file:
       - .dev.vars
     command: >
       sh -c "
-        corepack enable &&
-        corepack prepare pnpm@9.15.0 --activate &&
         pnpm install --frozen-lockfile --prefer-offline &&
+        sh /app/docker/init-db.sh &&
         pnpm dev -- --var PYTHON_EXECUTOR_URL:http://python-sandbox:9999 --persist-to=/app/.wrangler/state
       "
     restart: unless-stopped
@@ -82,8 +88,6 @@ services:
   # ==========================================================================
   # Frontend - Next.js
   # ==========================================================================
-  # Note: Backend (wrangler dev) runs on host to avoid TLS certificate issues
-  #       with workerd in Docker. See README.md for instructions.
   frontend:
     image: node:22-slim
     container_name: iofold-frontend

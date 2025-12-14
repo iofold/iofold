@@ -1,11 +1,14 @@
 import type { D1Database, DurableObjectNamespace } from '@cloudflare/workers-types';
 import type { Sandbox } from '@cloudflare/sandbox';
+import { eq, sql } from 'drizzle-orm';
 import { EvalGenerator } from '../eval-generator/generator';
 import { EvalTester, type TestCaseResult } from '../eval-generator/tester';
 import type { Trace } from '../types/trace';
 import type { GenerateEvalJobResult } from '../types/api';
 import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
+import { createDb, type Database } from '../db/client';
+import { evals, feedback, traces, evalCandidateExecutions } from '../db/schema';
 
 export interface EvalGenerationJobConfig {
   jobId: string;
@@ -37,12 +40,14 @@ export class EvalGenerationJob {
   private generator: EvalGenerator;
   private tester: EvalTester;
   private stream?: SSEStream;
+  private drizzle: Database;
 
   constructor(
     private config: EvalGenerationJobConfig,
     private deps: EvalGenerationJobDeps
   ) {
     this.jobManager = new JobManager(deps.db);
+    this.drizzle = createDb(deps.db);
     this.generator = new EvalGenerator({
       cfAccountId: deps.cfAccountId,
       cfGatewayId: deps.cfGatewayId,
@@ -130,36 +135,31 @@ export class EvalGenerationJob {
       const evalId = `eval_${crypto.randomUUID()}`;
 
       // Get next version number for this agent
-      const versionResult = await this.deps.db
-        .prepare('SELECT COALESCE(MAX(version), 0) + 1 as next_version FROM evals WHERE agent_id = ?')
-        .bind(this.config.agentId)
-        .first();
-      const version = (versionResult?.next_version as number) || 1;
+      const versionResult = await this.drizzle
+        .select({
+          nextVersion: sql<number>`COALESCE(MAX(${evals.version}), 0) + 1`
+        })
+        .from(evals)
+        .where(eq(evals.agentId, this.config.agentId))
+        .limit(1);
+      const version = versionResult[0]?.nextVersion || 1;
 
-      await this.deps.db
-        .prepare(
-          `INSERT INTO evals (
-            id, agent_id, version, name, description, code, model_used,
-            accuracy, test_results, execution_count, contradiction_count,
-            created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          evalId,
-          this.config.agentId,
-          version,
-          this.config.name,
-          this.config.description || null,
-          generationResult.code,
-          generationResult.metadata.model,
-          testResult.accuracy,
-          JSON.stringify(testResult),
-          0,
-          0,
-          new Date().toISOString(),
-          new Date().toISOString()
-        )
-        .run();
+      const now = new Date().toISOString();
+      await this.drizzle.insert(evals).values({
+        id: evalId,
+        agentId: this.config.agentId,
+        version,
+        name: this.config.name,
+        description: this.config.description || null,
+        code: generationResult.code,
+        modelUsed: generationResult.metadata.model,
+        accuracy: testResult.accuracy,
+        testResults: testResult as unknown as Record<string, unknown>,
+        executionCount: 0,
+        contradictionCount: 0,
+        createdAt: now,
+        updatedAt: now
+      });
 
       // Step 5: Test execution results are stored in evals.test_results JSON
       // Note: eval_executions table is for GEPA eval_candidates flow, not simple evals
@@ -215,21 +215,26 @@ export class EvalGenerationJob {
     negative: Trace[];
   }> {
     // Fetch all feedback for the agent
-    const feedbackRecords = await this.deps.db
-      .prepare(
-        `SELECT f.trace_id, f.rating, t.id, t.trace_id as external_trace_id,
-                t.source, t.steps, t.raw_data
-         FROM feedback f
-         JOIN traces t ON f.trace_id = t.id
-         WHERE f.agent_id = ? AND f.rating IN ('positive', 'negative')`
-      )
-      .bind(this.config.agentId)
-      .all();
+    const feedbackRecords = await this.drizzle
+      .select({
+        traceId: feedback.traceId,
+        rating: feedback.rating,
+        id: traces.id,
+        externalTraceId: traces.traceId,
+        source: traces.source,
+        steps: traces.steps,
+        rawData: traces.rawData
+      })
+      .from(feedback)
+      .innerJoin(traces, eq(feedback.traceId, traces.id))
+      .where(
+        sql`${feedback.agentId} = ${this.config.agentId} AND ${feedback.rating} IN ('positive', 'negative')`
+      );
 
     const positive: Trace[] = [];
     const negative: Trace[] = [];
 
-    for (const record of feedbackRecords.results) {
+    for (const record of feedbackRecords) {
       // Parse steps - can be stored as JSON string or as raw data
       let steps = [];
       try {
@@ -244,17 +249,17 @@ export class EvalGenerationJob {
       // Parse raw_data - can be null or JSON string
       let rawData = null;
       try {
-        rawData = record.raw_data
-          ? (typeof record.raw_data === 'string' ? JSON.parse(record.raw_data) : record.raw_data)
+        rawData = record.rawData
+          ? (typeof record.rawData === 'string' ? JSON.parse(record.rawData) : record.rawData)
           : null;
       } catch (e) {
         console.warn(`Failed to parse raw_data for trace ${record.id}:`, e);
       }
 
       const trace: Trace = {
-        id: record.id as string,
-        trace_id: record.external_trace_id as string,
-        source: record.source as 'langfuse' | 'langsmith' | 'openai',
+        id: record.id,
+        trace_id: record.externalTraceId,
+        source: record.source,
         steps,
         raw_data: rawData
       };
@@ -275,28 +280,24 @@ export class EvalGenerationJob {
   ): Promise<void> {
     // Store test executions in eval_candidate_executions table (GEPA flow)
     // Maps: eval_id -> eval_candidate_id, predictedScore -> score, feedback -> feedback
-    const statements = results.map(result =>
-      this.deps.db
-        .prepare(
-          `INSERT OR REPLACE INTO eval_candidate_executions (
-            id, eval_candidate_id, trace_id, score, feedback, success, duration_ms, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          crypto.randomUUID(),
-          evalId,
-          result.traceId,
-          result.predictedScore,
-          result.feedback,
-          result.error ? 0 : 1,
-          result.executionTimeMs,
-          new Date().toISOString()
-        )
-    );
+    if (results.length === 0) return;
 
-    if (statements.length > 0) {
-      await this.deps.db.batch(statements);
-    }
+    const now = new Date().toISOString();
+    const values = results.map(result => ({
+      id: crypto.randomUUID(),
+      evalCandidateId: evalId,
+      traceId: result.traceId,
+      score: result.predictedScore,
+      feedback: result.feedback,
+      success: result.error ? false : true,
+      durationMs: result.executionTimeMs,
+      createdAt: now
+    }));
+
+    // Note: Drizzle doesn't support INSERT OR REPLACE directly
+    // We would need to handle this with individual upserts or accept insert-only
+    // For now, using insert-only to maintain compatibility
+    await this.drizzle.insert(evalCandidateExecutions).values(values);
   }
 
   private emitProgress(status: string, progress: number, extra?: any) {

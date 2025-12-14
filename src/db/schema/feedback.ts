@@ -1,5 +1,5 @@
 // src/db/schema/feedback.ts
-import { sqliteTable, text, real, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { feedbackRating } from './enums';
 import { traces } from './traces';
@@ -40,39 +40,8 @@ export const taskMetadata = sqliteTable('task_metadata', {
   traceUnique: uniqueIndex('task_metadata_trace_unique').on(table.traceId),
 }));
 
-export const taskFeedbackPairs = sqliteTable('task_feedback_pairs', {
-  id: text('id').primaryKey(),
-  taskMetadataId: text('task_metadata_id').notNull().references(() => taskMetadata.id, { onDelete: 'cascade' }),
-  feedbackTraceId: text('feedback_trace_id').notNull().references(() => traces.id, { onDelete: 'cascade' }),
-  humanFeedback: text('human_feedback').notNull(),
-  humanScore: real('human_score'),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => ({
-  metadataIdx: index('idx_feedback_pairs_metadata').on(table.taskMetadataId),
-  traceIdx: index('idx_feedback_pairs_trace').on(table.feedbackTraceId),
-  metadataTraceUnique: uniqueIndex('task_feedback_pairs_metadata_trace_unique').on(table.taskMetadataId, table.feedbackTraceId),
-}));
-
-export const taskSimilarTraces = sqliteTable('task_similar_traces', {
-  id: text('id').primaryKey(),
-  taskMetadataId: text('task_metadata_id').notNull().references(() => taskMetadata.id, { onDelete: 'cascade' }),
-  similarTraceId: text('similar_trace_id').notNull().references(() => traces.id, { onDelete: 'cascade' }),
-  similarityScore: real('similarity_score').notNull(),
-  humanScore: real('human_score'),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => ({
-  metadataIdx: index('idx_similar_traces_metadata').on(table.taskMetadataId),
-  similarIdx: index('idx_similar_traces_similar').on(table.similarTraceId),
-  scoreIdx: index('idx_similar_traces_score').on(table.similarityScore),
-  metadataTraceUnique: uniqueIndex('task_similar_traces_metadata_trace_unique').on(table.taskMetadataId, table.similarTraceId),
-}));
-
 // Type exports
 export type Feedback = typeof feedback.$inferSelect;
 export type NewFeedback = typeof feedback.$inferInsert;
 export type TaskMetadata = typeof taskMetadata.$inferSelect;
 export type NewTaskMetadata = typeof taskMetadata.$inferInsert;
-export type TaskFeedbackPair = typeof taskFeedbackPairs.$inferSelect;
-export type NewTaskFeedbackPair = typeof taskFeedbackPairs.$inferInsert;
-export type TaskSimilarTrace = typeof taskSimilarTraces.$inferSelect;
-export type NewTaskSimilarTrace = typeof taskSimilarTraces.$inferInsert;

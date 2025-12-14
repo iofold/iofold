@@ -76,6 +76,16 @@ export function getStreamingClient(config: StreamingModelConfig): StreamingCompl
 }
 
 /**
+ * Check if a model is an OpenAI gpt-5 model that requires max_completion_tokens
+ * These models don't accept max_tokens parameter
+ */
+function isOpenAIReasoningModel(modelId: string): boolean {
+  // Extract bare model name from provider-prefixed ID (e.g., "openai/gpt-5-nano" -> "gpt-5-nano")
+  const bareModel = modelId.includes('/') ? modelId.split('/').pop() || modelId : modelId;
+  return bareModel.startsWith('gpt-5') || bareModel.startsWith('o1') || bareModel.startsWith('o3');
+}
+
+/**
  * Stream a chat completion
  *
  * @param completion - Streaming completion config
@@ -86,13 +96,21 @@ export async function* streamCompletion(
   completion: StreamingCompletion,
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
 ): AsyncGenerator<string, void, unknown> {
-  const stream = await completion.client.chat.completions.create({
+  // Build request params - use max_completion_tokens for OpenAI gpt-5/o1/o3 models
+  const requestParams: OpenAI.Chat.ChatCompletionCreateParams = {
     model: completion.model,
     messages,
-    max_tokens: completion.maxTokens,
     temperature: completion.temperature,
-    stream: true,
-  });
+    stream: true as const,
+  };
+
+  if (isOpenAIReasoningModel(completion.model)) {
+    requestParams.max_completion_tokens = completion.maxTokens;
+  } else {
+    requestParams.max_tokens = completion.maxTokens;
+  }
+
+  const stream = await completion.client.chat.completions.create(requestParams);
 
   for await (const chunk of stream) {
     const content = chunk.choices[0]?.delta?.content;
@@ -214,11 +232,18 @@ export function getChatModel(config: ChatModelConfig) {
   // Use ChatOpenAI for all providers - the gateway routes based on model prefix
   // The gateway's /compat endpoint accepts OpenAI-compatible requests and routes
   // to the correct provider based on the model name prefix
+  //
+  // For OpenAI gpt-5/o1/o3 models, use maxCompletionTokens instead of maxTokens
+  // because these models require the max_completion_tokens parameter
+  const tokenConfig = isOpenAIReasoningModel(fullModelId)
+    ? { maxCompletionTokens: maxTokens }
+    : { maxTokens };
+
   return new ChatOpenAI({
     model: fullModelId,
     openAIApiKey: env.CF_AI_GATEWAY_TOKEN,
     temperature,
-    maxTokens,
+    ...tokenConfig,
     configuration: {
       baseURL: `${gatewayUrl}/compat`,
     },

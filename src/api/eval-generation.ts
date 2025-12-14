@@ -24,6 +24,13 @@ import { AutoEvalGenerator, type LabeledTrace, type EvalCandidate, type PatternA
 import { CandidateTester, type TestResult } from '../services/eval/candidate-tester';
 import { WinnerSelector, type SelectionCriteria, type SelectionResult } from '../services/eval/winner-selector';
 import type { DataInst } from '../types/datainst';
+import { createDb, type Database } from '../db/client';
+import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { agents, agentVersions } from '../db/schema/agents';
+import { traces } from '../db/schema/traces';
+import { feedback } from '../db/schema/feedback';
+import { taskMetadata } from '../db/schema/feedback';
+import { evalCandidates } from '../db/schema/evals';
 
 export interface Env {
   DB: D1Database;
@@ -56,14 +63,16 @@ export async function extractTasks(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify agent exists
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists
+    const agentResult = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
@@ -72,18 +81,19 @@ export async function extractTasks(
     const options = body.options || {};
 
     // Fetch traces for this agent (via agent_versions)
-    const tracesResult = await env.DB.prepare(`
-      SELECT t.id, t.trace_id, t.steps
-      FROM traces t
-      JOIN agent_versions av ON t.agent_version_id = av.id
-      WHERE av.agent_id = ?
-      ORDER BY t.imported_at DESC
-      LIMIT 100
-    `)
-      .bind(agentId)
-      .all();
+    const tracesResult = await drizzle
+      .select({
+        id: traces.id,
+        trace_id: traces.traceId,
+        steps: traces.steps,
+      })
+      .from(traces)
+      .innerJoin(agentVersions, eq(traces.agentVersionId, agentVersions.id))
+      .where(eq(agentVersions.agentId, agentId))
+      .orderBy(desc(traces.importedAt))
+      .limit(100);
 
-    if (!tracesResult.results || tracesResult.results.length === 0) {
+    if (tracesResult.length === 0) {
       return createSuccessResponse({
         extracted: 0,
         skipped: 0,
@@ -93,10 +103,10 @@ export async function extractTasks(
     }
 
     // Parse traces to match expected format
-    const traces = tracesResult.results.map((row: any): any => ({
+    const tracesList = tracesResult.map((row): any => ({
       id: row.id,
       trace_id: row.trace_id,
-      steps: row.steps ? JSON.parse(row.steps) : [],
+      steps: row.steps || [],
       workspace_id: workspaceId,
       integration_id: '',
       source: 'unknown',
@@ -106,7 +116,7 @@ export async function extractTasks(
 
     // Extract tasks using SingleStepTaskExtractor
     const extractor = new SingleStepTaskExtractor();
-    const extractionResult = extractor.extractBatch(traces);
+    const extractionResult = extractor.extractBatch(tracesList);
 
     // Return extracted tasks (enrichment will be done separately with proper bindings)
     // For now, just return the extracted tasks without full enrichment
@@ -115,30 +125,27 @@ export async function extractTasks(
     // Store basic task info in database
     for (let i = 0; i < extractedTasks.length; i++) {
       const dataInst = extractedTasks[i];
-      const trace = traces[i]; // Match trace to task by index
+      const trace = tracesList[i]; // Match trace to task by index
       if (trace) {
         const taskId = `task_${crypto.randomUUID()}`;
-        await env.DB.prepare(`
-          INSERT OR REPLACE INTO task_metadata (
-            id, trace_id, user_message,
-            task_type, difficulty, domain,
-            custom_metadata, created_at, updated_at
-          ) VALUES (
-            COALESCE((SELECT id FROM task_metadata WHERE trace_id = ?), ?),
-            ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now')
-          )
-        `)
-          .bind(
-            trace.id,  // for COALESCE subquery WHERE trace_id = ?
-            taskId,    // for COALESCE fallback (new id if not exists)
-            trace.id,  // trace_id column
-            dataInst.task.user_message,
-            null, // task_type (enrichment phase)
-            null, // difficulty (enrichment phase)
-            null, // domain (enrichment phase)
-            JSON.stringify({})
-          )
-          .run();
+        await drizzle
+          .insert(taskMetadata)
+          .values({
+            id: taskId,
+            traceId: trace.id,
+            userMessage: dataInst.task.user_message,
+            taskType: null,
+            difficulty: null,
+            domain: null,
+            customMetadata: {},
+          })
+          .onConflictDoUpdate({
+            target: taskMetadata.traceId,
+            set: {
+              userMessage: sql`excluded.user_message`,
+              updatedAt: sql`CURRENT_TIMESTAMP`,
+            },
+          });
       }
     }
 
@@ -176,39 +183,39 @@ export async function listTasks(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify agent exists
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists
+    const agentResult = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // Get tasks with their trace associations (via agent_versions)
-    const tasksResult = await env.DB.prepare(`
-      SELECT
-        tm.id,
-        tm.trace_id,
-        tm.user_message,
-        tm.task_type,
-        tm.difficulty,
-        tm.domain,
-        tm.custom_metadata,
-        tm.created_at
-      FROM task_metadata tm
-      JOIN traces t ON tm.trace_id = t.id
-      JOIN agent_versions av ON t.agent_version_id = av.id
-      WHERE av.agent_id = ?
-      ORDER BY tm.created_at DESC
-      LIMIT 100
-    `)
-      .bind(agentId)
-      .all();
+    const tasksResult = await drizzle
+      .select({
+        id: taskMetadata.id,
+        trace_id: taskMetadata.traceId,
+        user_message: taskMetadata.userMessage,
+        task_type: taskMetadata.taskType,
+        difficulty: taskMetadata.difficulty,
+        domain: taskMetadata.domain,
+        custom_metadata: taskMetadata.customMetadata,
+        created_at: taskMetadata.createdAt,
+      })
+      .from(taskMetadata)
+      .innerJoin(traces, eq(taskMetadata.traceId, traces.id))
+      .innerJoin(agentVersions, eq(traces.agentVersionId, agentVersions.id))
+      .where(eq(agentVersions.agentId, agentId))
+      .orderBy(desc(taskMetadata.createdAt))
+      .limit(100);
 
-    const tasks = tasksResult.results.map((row: any) => ({
+    const tasks = tasksResult.map((row) => ({
       id: row.id,
       trace_id: row.trace_id,
       task: {
@@ -218,7 +225,7 @@ export async function listTasks(
         task_type: row.task_type || undefined,
         difficulty: row.difficulty || undefined,
         domain: row.domain || undefined,
-        custom: row.custom_metadata ? JSON.parse(row.custom_metadata) : undefined
+        custom: row.custom_metadata || undefined
       },
       created_at: row.created_at
     }));
@@ -259,14 +266,16 @@ export async function generateEvals(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify agent exists
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists
+    const agentResult = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
@@ -285,33 +294,34 @@ export async function generateEvals(
     const minLabeledTraces = body.min_labeled_traces || 10;
 
     // Get labeled traces (traces with feedback)
-    const labeledTracesResult = await env.DB.prepare(`
-      SELECT
-        t.id as trace_id,
-        t.steps,
-        f.rating,
-        f.rating_detail
-      FROM traces t
-      JOIN agent_versions av ON t.agent_version_id = av.id
-      JOIN feedback f ON t.id = f.trace_id
-      WHERE av.agent_id = ? AND (f.agent_id = ? OR f.agent_id IS NULL)
-      ORDER BY t.imported_at DESC
-      LIMIT 100
-    `)
-      .bind(agentId, agentId)
-      .all();
+    const labeledTracesResult = await drizzle
+      .select({
+        trace_id: traces.id,
+        steps: traces.steps,
+        rating: feedback.rating,
+        rating_detail: feedback.ratingDetail,
+      })
+      .from(traces)
+      .innerJoin(agentVersions, eq(traces.agentVersionId, agentVersions.id))
+      .innerJoin(feedback, eq(traces.id, feedback.traceId))
+      .where(and(
+        eq(agentVersions.agentId, agentId),
+        sql`(${feedback.agentId} = ${agentId} OR ${feedback.agentId} IS NULL)`
+      ))
+      .orderBy(desc(traces.importedAt))
+      .limit(100);
 
-    if (!labeledTracesResult.results || labeledTracesResult.results.length < minLabeledTraces) {
+    if (labeledTracesResult.length < minLabeledTraces) {
       return createErrorResponse(
         'VALIDATION_ERROR',
-        `Need at least ${minLabeledTraces} labeled traces, found ${labeledTracesResult.results?.length || 0}`,
+        `Need at least ${minLabeledTraces} labeled traces, found ${labeledTracesResult.length}`,
         400
       );
     }
 
     // Transform to LabeledTrace format
-    const labeledTraces: LabeledTrace[] = labeledTracesResult.results.map((row: any) => {
-      const steps = row.steps ? JSON.parse(row.steps) : [];
+    const labeledTraces: LabeledTrace[] = labeledTracesResult.map((row) => {
+      const steps = row.steps || [];
 
       // Extract user message from first step
       let userMessage = '';
@@ -354,14 +364,13 @@ export async function generateEvals(
 
     // Store candidates in database
     for (const candidate of candidates) {
-      await env.DB.prepare(`
-        INSERT INTO eval_candidates (
-          id, agent_id, code, variation,
-          status, created_at
-        ) VALUES (?, ?, ?, ?, 'candidate', datetime('now'))
-      `)
-        .bind(candidate.id, agentId, candidate.code, candidate.variation)
-        .run();
+      await drizzle.insert(evalCandidates).values({
+        id: candidate.id,
+        agentId: agentId,
+        code: candidate.code,
+        variation: candidate.variation,
+        status: 'candidate',
+      });
     }
 
     // Get pattern analysis
@@ -404,14 +413,16 @@ export async function testEvalCandidates(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify agent exists
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists
+    const agentResult = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
@@ -437,49 +448,53 @@ export async function testEvalCandidates(
     }
 
     // Fetch candidates from database
-    const placeholders = body.candidate_ids.map(() => '?').join(',');
-    const candidatesResult = await env.DB.prepare(`
-      SELECT id, code, variation
-      FROM eval_candidates
-      WHERE id IN (${placeholders}) AND agent_id = ?
-    `)
-      .bind(...body.candidate_ids, agentId)
-      .all();
+    const candidatesResult = await drizzle
+      .select({
+        id: evalCandidates.id,
+        code: evalCandidates.code,
+        variation: evalCandidates.variation,
+      })
+      .from(evalCandidates)
+      .where(and(
+        inArray(evalCandidates.id, body.candidate_ids),
+        eq(evalCandidates.agentId, agentId)
+      ));
 
-    if (!candidatesResult.results || candidatesResult.results.length === 0) {
+    if (candidatesResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'No candidates found', 404);
     }
 
-    const candidates: EvalCandidate[] = candidatesResult.results.map((row: any) => ({
+    const candidates: EvalCandidate[] = candidatesResult.map((row) => ({
       id: row.id,
       code: row.code,
-      variation: row.variation
+      variation: row.variation!,
     }));
 
     // Get labeled traces (same as generate endpoint)
-    const labeledTracesResult = await env.DB.prepare(`
-      SELECT
-        t.id as trace_id,
-        t.steps,
-        f.rating,
-        f.rating_detail
-      FROM traces t
-      JOIN agent_versions av ON t.agent_version_id = av.id
-      JOIN feedback f ON t.id = f.trace_id
-      WHERE av.agent_id = ? AND (f.agent_id = ? OR f.agent_id IS NULL)
-      ORDER BY t.imported_at DESC
-      LIMIT 100
-    `)
-      .bind(agentId, agentId)
-      .all();
+    const labeledTracesResult = await drizzle
+      .select({
+        trace_id: traces.id,
+        steps: traces.steps,
+        rating: feedback.rating,
+        rating_detail: feedback.ratingDetail,
+      })
+      .from(traces)
+      .innerJoin(agentVersions, eq(traces.agentVersionId, agentVersions.id))
+      .innerJoin(feedback, eq(traces.id, feedback.traceId))
+      .where(and(
+        eq(agentVersions.agentId, agentId),
+        sql`(${feedback.agentId} = ${agentId} OR ${feedback.agentId} IS NULL)`
+      ))
+      .orderBy(desc(traces.importedAt))
+      .limit(100);
 
-    if (!labeledTracesResult.results || labeledTracesResult.results.length === 0) {
+    if (labeledTracesResult.length === 0) {
       return createErrorResponse('VALIDATION_ERROR', 'No labeled traces found', 400);
     }
 
     // Transform to LabeledTrace format
-    const labeledTraces: LabeledTrace[] = labeledTracesResult.results.map((row: any) => {
-      const steps = row.steps ? JSON.parse(row.steps) : [];
+    const labeledTraces: LabeledTrace[] = labeledTracesResult.map((row) => {
+      const steps = row.steps || [];
 
       let userMessage = '';
       for (const step of steps) {
@@ -529,35 +544,22 @@ export async function testEvalCandidates(
 
     const testResults = await tester.testAndRankCandidates(candidates, labeledTraces);
 
-    // Update candidates in database with test results using batch transaction
-    const updateStatements = testResults.results.map(result =>
-      env.DB.prepare(`
-        UPDATE eval_candidates
-        SET
-          agreement_rate = ?,
-          accuracy = ?,
-          cohen_kappa = ?,
-          f1_score = ?,
-          confusion_matrix = ?,
-          per_trace_results = ?,
-          total_cost_usd = ?,
-          avg_duration_ms = ?
-        WHERE id = ?
-      `)
-        .bind(
-          result.agreement_rate,
-          result.accuracy,
-          result.cohen_kappa,
-          result.f1_score,
-          JSON.stringify(result.confusion_matrix),
-          JSON.stringify(result.per_trace_results),
-          result.execution_stats.total_cost_usd,
-          result.execution_stats.avg_duration_ms,
-          result.candidate_id
-        )
-    );
-
-    await env.DB.batch(updateStatements);
+    // Update candidates in database with test results
+    for (const result of testResults.results) {
+      await drizzle
+        .update(evalCandidates)
+        .set({
+          agreementRate: result.agreement_rate,
+          accuracy: result.accuracy,
+          cohenKappa: result.cohen_kappa,
+          f1Score: result.f1_score,
+          confusionMatrix: result.confusion_matrix as any,
+          perTraceResults: result.per_trace_results as any,
+          totalCostUsd: result.execution_stats.total_cost_usd,
+          avgDurationMs: result.execution_stats.avg_duration_ms,
+        })
+        .where(eq(evalCandidates.id, result.candidate_id));
+    }
 
     return createSuccessResponse({
       results: testResults.results,
@@ -600,14 +602,16 @@ export async function selectWinner(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify agent exists
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists
+    const agentResult = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
@@ -639,20 +643,28 @@ export async function selectWinner(
     // Fetch candidates with test results
     // Note: We don't filter by status='tested' since that value is not in the schema.
     // Instead, we check for the presence of test metrics (accuracy, etc.)
-    const placeholders = body.candidate_ids.map(() => '?').join(',');
-    const candidatesResult = await env.DB.prepare(`
-      SELECT
-        id, code, variation,
-        agreement_rate, accuracy, cohen_kappa, f1_score,
-        confusion_matrix, per_trace_results,
-        total_cost_usd, avg_duration_ms
-      FROM eval_candidates
-      WHERE id IN (${placeholders}) AND agent_id = ? AND accuracy IS NOT NULL
-    `)
-      .bind(...body.candidate_ids, agentId)
-      .all();
+    const candidatesResult = await drizzle
+      .select({
+        id: evalCandidates.id,
+        code: evalCandidates.code,
+        variation: evalCandidates.variation,
+        agreement_rate: evalCandidates.agreementRate,
+        accuracy: evalCandidates.accuracy,
+        cohen_kappa: evalCandidates.cohenKappa,
+        f1_score: evalCandidates.f1Score,
+        confusion_matrix: evalCandidates.confusionMatrix,
+        per_trace_results: evalCandidates.perTraceResults,
+        total_cost_usd: evalCandidates.totalCostUsd,
+        avg_duration_ms: evalCandidates.avgDurationMs,
+      })
+      .from(evalCandidates)
+      .where(and(
+        inArray(evalCandidates.id, body.candidate_ids),
+        eq(evalCandidates.agentId, agentId),
+        sql`${evalCandidates.accuracy} IS NOT NULL`
+      ));
 
-    if (!candidatesResult.results || candidatesResult.results.length === 0) {
+    if (candidatesResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'No tested candidates found', 404);
     }
 
@@ -660,27 +672,27 @@ export async function selectWinner(
     const candidates: EvalCandidate[] = [];
     const testResults: TestResult[] = [];
 
-    for (const row of candidatesResult.results) {
+    for (const row of candidatesResult) {
       const candidate: EvalCandidate = {
-        id: row.id as string,
-        code: row.code as string,
-        variation: row.variation as string
+        id: row.id,
+        code: row.code,
+        variation: row.variation!
       };
       candidates.push(candidate);
 
       const testResult: TestResult = {
-        candidate_id: row.id as string,
-        agreement_rate: row.agreement_rate as number,
-        accuracy: row.accuracy as number,
-        cohen_kappa: row.cohen_kappa as number,
+        candidate_id: row.id,
+        agreement_rate: row.agreement_rate!,
+        accuracy: row.accuracy!,
+        cohen_kappa: row.cohen_kappa!,
         precision: 0, // Calculated from confusion matrix
         recall: 0,
-        f1_score: row.f1_score as number,
-        confusion_matrix: JSON.parse(row.confusion_matrix as string),
-        per_trace_results: JSON.parse(row.per_trace_results as string),
+        f1_score: row.f1_score!,
+        confusion_matrix: row.confusion_matrix as any,
+        per_trace_results: row.per_trace_results as any,
         execution_stats: {
-          total_cost_usd: row.total_cost_usd as number,
-          avg_duration_ms: row.avg_duration_ms as number,
+          total_cost_usd: row.total_cost_usd!,
+          avg_duration_ms: row.avg_duration_ms!,
           failures: 0
         }
       };
@@ -755,74 +767,81 @@ export async function activateEval(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify agent exists
-    const agent = await env.DB.prepare(
-      'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists
+    const agentResult = await drizzle
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
     // Verify eval candidate exists and belongs to agent
-    const candidate = await env.DB.prepare(`
-      SELECT
-        id, code, variation,
-        agreement_rate, accuracy, cohen_kappa, f1_score,
-        confusion_matrix, per_trace_results
-      FROM eval_candidates
-      WHERE id = ? AND agent_id = ? AND accuracy IS NOT NULL
-    `)
-      .bind(evalId, agentId)
-      .first();
+    const candidateResult = await drizzle
+      .select({
+        id: evalCandidates.id,
+        code: evalCandidates.code,
+        variation: evalCandidates.variation,
+        agreement_rate: evalCandidates.agreementRate,
+        accuracy: evalCandidates.accuracy,
+        cohen_kappa: evalCandidates.cohenKappa,
+        f1_score: evalCandidates.f1Score,
+        confusion_matrix: evalCandidates.confusionMatrix,
+        per_trace_results: evalCandidates.perTraceResults,
+      })
+      .from(evalCandidates)
+      .where(and(
+        eq(evalCandidates.id, evalId),
+        eq(evalCandidates.agentId, agentId),
+        sql`${evalCandidates.accuracy} IS NOT NULL`
+      ))
+      .limit(1);
 
-    if (!candidate) {
+    if (candidateResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Eval candidate not found or not tested', 404);
     }
 
     // Get previous active eval
-    const previousActive = await env.DB.prepare(`
-      SELECT id FROM eval_candidates
-      WHERE agent_id = ? AND status = 'active'
-    `)
-      .bind(agentId)
-      .first();
+    const previousActiveResult = await drizzle
+      .select({ id: evalCandidates.id })
+      .from(evalCandidates)
+      .where(and(
+        eq(evalCandidates.agentId, agentId),
+        eq(evalCandidates.status, 'active')
+      ))
+      .limit(1);
 
     // Archive previous active eval
-    if (previousActive) {
-      await env.DB.prepare(`
-        UPDATE eval_candidates
-        SET status = 'archived'
-        WHERE id = ?
-      `)
-        .bind(previousActive.id)
-        .run();
+    if (previousActiveResult.length > 0) {
+      await drizzle
+        .update(evalCandidates)
+        .set({ status: 'archived' })
+        .where(eq(evalCandidates.id, previousActiveResult[0].id));
     }
 
     // Activate new eval
-    await env.DB.prepare(`
-      UPDATE eval_candidates
-      SET status = 'active', activated_at = datetime('now')
-      WHERE id = ?
-    `)
-      .bind(evalId)
-      .run();
+    await drizzle
+      .update(evalCandidates)
+      .set({
+        status: 'active',
+        activatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(evalCandidates.id, evalId));
 
     // Update agent's active_eval_id
-    await env.DB.prepare(`
-      UPDATE agents
-      SET active_eval_id = ?
-      WHERE id = ?
-    `)
-      .bind(evalId, agentId)
-      .run();
+    await drizzle
+      .update(agents)
+      .set({ activeEvalId: evalId })
+      .where(eq(agents.id, agentId));
 
     return createSuccessResponse({
       success: true,
       activated_eval_id: evalId,
-      previous_eval_id: previousActive?.id || null,
+      previous_eval_id: previousActiveResult.length > 0 ? previousActiveResult[0].id : null,
       message: 'Eval activated successfully'
     });
 
@@ -853,16 +872,23 @@ export async function getActiveEval(
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify agent exists
-    const agent = await env.DB.prepare(
-      'SELECT id, active_eval_id FROM agents WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(agentId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
 
-    if (!agent) {
+    // Verify agent exists
+    const agentResult = await drizzle
+      .select({
+        id: agents.id,
+        active_eval_id: agents.activeEvalId,
+      })
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (agentResult.length === 0) {
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
+
+    const agent = agentResult[0];
 
     if (!agent.active_eval_id) {
       return createSuccessResponse({
@@ -873,20 +899,31 @@ export async function getActiveEval(
     }
 
     // Get active eval with metrics
-    const evalResult = await env.DB.prepare(`
-      SELECT
-        id, code, variation,
-        agreement_rate, accuracy, cohen_kappa, f1_score,
-        confusion_matrix, per_trace_results,
-        total_cost_usd, avg_duration_ms,
-        activated_at, created_at
-      FROM eval_candidates
-      WHERE id = ? AND agent_id = ? AND status = 'active'
-    `)
-      .bind(agent.active_eval_id, agentId)
-      .first();
+    const evalResult = await drizzle
+      .select({
+        id: evalCandidates.id,
+        code: evalCandidates.code,
+        variation: evalCandidates.variation,
+        agreement_rate: evalCandidates.agreementRate,
+        accuracy: evalCandidates.accuracy,
+        cohen_kappa: evalCandidates.cohenKappa,
+        f1_score: evalCandidates.f1Score,
+        confusion_matrix: evalCandidates.confusionMatrix,
+        per_trace_results: evalCandidates.perTraceResults,
+        total_cost_usd: evalCandidates.totalCostUsd,
+        avg_duration_ms: evalCandidates.avgDurationMs,
+        activated_at: evalCandidates.activatedAt,
+        created_at: evalCandidates.createdAt,
+      })
+      .from(evalCandidates)
+      .where(and(
+        eq(evalCandidates.id, agent.active_eval_id),
+        eq(evalCandidates.agentId, agentId),
+        eq(evalCandidates.status, 'active')
+      ))
+      .limit(1);
 
-    if (!evalResult) {
+    if (evalResult.length === 0) {
       return createSuccessResponse({
         eval: null,
         metrics: null,
@@ -894,25 +931,27 @@ export async function getActiveEval(
       });
     }
 
+    const evalRow = evalResult[0];
+
     const evalCandidate: EvalCandidate = {
-      id: evalResult.id as string,
-      code: evalResult.code as string,
-      variation: evalResult.variation as string
+      id: evalRow.id,
+      code: evalRow.code,
+      variation: evalRow.variation!
     };
 
-    const metrics: TestResult | null = evalResult.accuracy !== null ? {
-      candidate_id: evalResult.id as string,
-      agreement_rate: evalResult.agreement_rate as number,
-      accuracy: evalResult.accuracy as number,
-      cohen_kappa: evalResult.cohen_kappa as number,
+    const metrics: TestResult | null = evalRow.accuracy !== null ? {
+      candidate_id: evalRow.id,
+      agreement_rate: evalRow.agreement_rate!,
+      accuracy: evalRow.accuracy,
+      cohen_kappa: evalRow.cohen_kappa!,
       precision: 0,
       recall: 0,
-      f1_score: evalResult.f1_score as number,
-      confusion_matrix: JSON.parse(evalResult.confusion_matrix as string),
-      per_trace_results: JSON.parse(evalResult.per_trace_results as string),
+      f1_score: evalRow.f1_score!,
+      confusion_matrix: evalRow.confusion_matrix as any,
+      per_trace_results: evalRow.per_trace_results as any,
       execution_stats: {
-        total_cost_usd: evalResult.total_cost_usd as number,
-        avg_duration_ms: evalResult.avg_duration_ms as number,
+        total_cost_usd: evalRow.total_cost_usd!,
+        avg_duration_ms: evalRow.avg_duration_ms!,
         failures: 0
       }
     } : null;
@@ -931,8 +970,8 @@ export async function getActiveEval(
     return createSuccessResponse({
       eval: evalCandidate,
       metrics,
-      activated_at: evalResult.activated_at,
-      created_at: evalResult.created_at
+      activated_at: evalRow.activated_at,
+      created_at: evalRow.created_at
     });
 
   } catch (error: any) {

@@ -10,6 +10,9 @@ import { DataInst, TraceSummary, TraceFeedbackPair } from '../../types/datainst'
 import { VectorService } from '../vector-service';
 import { EmbeddingService } from '../embedding-service';
 import { Trace } from '../../types/trace';
+import { createDb, type Database } from '../../db/client';
+import { eq, and, isNotNull, ne, desc, inArray, sql } from 'drizzle-orm';
+import { traces, traceSummaries, feedback, agentVersions } from '../../db/schema';
 
 /**
  * Configuration options for enrichment
@@ -78,12 +81,16 @@ interface TraceSummaryRow {
  * 4. Caching trace summaries for reuse
  */
 export class TaskMetadataEnricher {
+  private drizzle: Database;
+
   constructor(
     private db: D1Database,
     private vectorService: VectorService,
     private embeddingService: EmbeddingService,
     private ai: Ai
-  ) {}
+  ) {
+    this.drizzle = createDb(db);
+  }
 
   /**
    * Enrich a DataInst with metadata
@@ -174,35 +181,36 @@ export class TaskMetadataEnricher {
       }
 
       // Query database for traces with positive feedback and matching agent
-      const placeholders = candidateTraceIds.map(() => '?').join(',');
-      const query = `
-        SELECT t.id, t.trace_id, f.rating
-        FROM traces t
-        INNER JOIN feedback f ON t.id = f.trace_id
-        INNER JOIN agent_versions av ON t.agent_version_id = av.id
-        WHERE t.id IN (${placeholders})
-          AND av.agent_id = ?
-          AND f.rating = 'positive'
-        LIMIT ?
-      `;
+      const results = await this.drizzle
+        .select({
+          id: traces.id,
+          traceId: traces.traceId,
+          rating: feedback.rating
+        })
+        .from(traces)
+        .innerJoin(feedback, eq(traces.id, feedback.traceId))
+        .innerJoin(agentVersions, eq(traces.agentVersionId, agentVersions.id))
+        .where(
+          and(
+            inArray(traces.id, candidateTraceIds),
+            eq(agentVersions.agentId, agentId),
+            eq(feedback.rating, 'positive')
+          )
+        )
+        .limit(limit);
 
-      const result = await this.db
-        .prepare(query)
-        .bind(...candidateTraceIds, agentId, limit)
-        .all<{ id: string; trace_id: string; rating: string }>();
-
-      if (!result.results || result.results.length === 0) {
+      if (results.length === 0) {
         return [];
       }
 
       // Get or generate summaries for these traces
       const summaries = await Promise.all(
-        result.results.map(async (row) => {
+        results.map(async (row) => {
           const summary = await this.getOrGenerateTraceSummary(row.id);
           const matchScore = vectorResults.matches.find(m => m.id === row.id)?.score ?? 0;
 
           return {
-            trace_id: row.trace_id,
+            trace_id: row.traceId,
             summary: summary.summary,
             human_score: 1.0, // Positive rating maps to 1.0
             key_behaviors: summary.key_behaviors,
@@ -229,30 +237,32 @@ export class TaskMetadataEnricher {
     limit: number
   ): Promise<TraceFeedbackPair[]> {
     try {
-      const query = `
-        SELECT t.trace_id, f.rating, f.rating_detail
-        FROM traces t
-        INNER JOIN feedback f ON t.id = f.trace_id
-        INNER JOIN agent_versions av ON t.agent_version_id = av.id
-        WHERE av.agent_id = ?
-          AND f.rating_detail IS NOT NULL
-          AND f.rating_detail != ''
-        ORDER BY f.created_at DESC
-        LIMIT ?
-      `;
+      const results = await this.drizzle
+        .select({
+          traceId: traces.traceId,
+          rating: feedback.rating,
+          ratingDetail: feedback.ratingDetail
+        })
+        .from(traces)
+        .innerJoin(feedback, eq(traces.id, feedback.traceId))
+        .innerJoin(agentVersions, eq(traces.agentVersionId, agentVersions.id))
+        .where(
+          and(
+            eq(agentVersions.agentId, agentId),
+            isNotNull(feedback.ratingDetail),
+            ne(feedback.ratingDetail, '')
+          )
+        )
+        .orderBy(desc(feedback.createdAt))
+        .limit(limit);
 
-      const result = await this.db
-        .prepare(query)
-        .bind(agentId, limit)
-        .all<{ trace_id: string; rating: string; rating_detail: string }>();
-
-      if (!result.results || result.results.length === 0) {
+      if (results.length === 0) {
         return [];
       }
 
-      return result.results.map(row => ({
-        trace_id: row.trace_id,
-        human_feedback: row.rating_detail,
+      return results.map(row => ({
+        trace_id: row.traceId,
+        human_feedback: row.ratingDetail!,
         human_score: this.ratingToScore(row.rating),
       }));
     } catch (error) {
@@ -357,41 +367,58 @@ export class TaskMetadataEnricher {
     traceId: string
   ): Promise<{ summary: string; key_behaviors: string[] }> {
     // Check cache first
-    const cached = await this.db
-      .prepare('SELECT summary, key_behaviors FROM trace_summaries WHERE trace_id = ?')
-      .bind(traceId)
-      .first<TraceSummaryRow>();
+    const cached = await this.drizzle
+      .select({
+        summary: traceSummaries.summary,
+        keyBehaviors: traceSummaries.keyBehaviors
+      })
+      .from(traceSummaries)
+      .where(eq(traceSummaries.traceId, traceId))
+      .limit(1);
 
-    if (cached) {
+    if (cached.length > 0 && cached[0]) {
       return {
-        summary: cached.summary,
-        key_behaviors: cached.key_behaviors ? JSON.parse(cached.key_behaviors) : [],
+        summary: cached[0].summary,
+        key_behaviors: cached[0].keyBehaviors ?? [],
       };
     }
 
     // Generate new summary
-    const trace = await this.db
-      .prepare('SELECT id, trace_id, steps, metadata FROM traces WHERE id = ?')
-      .bind(traceId)
-      .first<TraceRow>();
+    const traceResults = await this.drizzle
+      .select({
+        id: traces.id,
+        traceId: traces.traceId,
+        steps: traces.steps,
+        metadata: traces.metadata
+      })
+      .from(traces)
+      .where(eq(traces.id, traceId))
+      .limit(1);
 
-    if (!trace) {
+    if (traceResults.length === 0) {
       return {
         summary: 'Trace not found',
         key_behaviors: [],
       };
     }
 
-    const summary = await this.generateTraceSummary(trace);
+    const trace = traceResults[0];
+    const summary = await this.generateTraceSummary({
+      id: trace.id,
+      trace_id: trace.traceId,
+      steps: JSON.stringify(trace.steps),
+      metadata: trace.metadata ? JSON.stringify(trace.metadata) : null
+    });
 
     // Cache the summary
     try {
-      await this.db
-        .prepare(
-          'INSERT INTO trace_summaries (trace_id, summary, key_behaviors) VALUES (?, ?, ?)'
-        )
-        .bind(traceId, summary.summary, JSON.stringify(summary.key_behaviors))
-        .run();
+      await this.drizzle
+        .insert(traceSummaries)
+        .values({
+          traceId: traceId,
+          summary: summary.summary,
+          keyBehaviors: summary.key_behaviors
+        });
     } catch (error) {
       console.error('Error caching trace summary:', error);
     }

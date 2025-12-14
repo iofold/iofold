@@ -2,6 +2,8 @@
  * Shared utilities for API endpoints
  */
 
+import { logger, type LogContext } from '../utils/logger';
+
 /**
  * Standard API error response format
  */
@@ -23,12 +25,15 @@ export function generateRequestId(): string {
 
 /**
  * Create a standardized error response
+ * Automatically logs errors for 5xx status codes
  */
 export function createErrorResponse(
   code: string,
   message: string,
   status: number,
-  details?: any
+  details?: any,
+  error?: unknown,
+  context?: LogContext
 ): Response {
   const requestId = generateRequestId();
   const errorBody: APIError = {
@@ -39,6 +44,25 @@ export function createErrorResponse(
       request_id: requestId,
     },
   };
+
+  // Log server errors (5xx) with full context
+  if (status >= 500) {
+    const logContext: LogContext = {
+      errorCode: code,
+      requestId,
+      ...context,
+    };
+
+    if (error) {
+      logger.error(`API Error [${code}]: ${message}`, logContext, error);
+    } else {
+      // Log even without error object for visibility
+      logger.error(`API Error [${code}]: ${message}`, { ...logContext, details });
+    }
+  } else if (status >= 400) {
+    // Log 4xx as warnings (useful for debugging)
+    logger.warn(`API Warning [${code}]: ${message}`, { errorCode: code, requestId, ...context });
+  }
 
   return new Response(JSON.stringify(errorBody), {
     status,

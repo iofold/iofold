@@ -13,6 +13,9 @@ import { QueueConsumer, type MessageBatch } from './queue/consumer';
 import { QueueProducer, type Queue } from './queue/producer';
 import type { QueueMessage } from './types/queue';
 import type { DurableObjectNamespace } from '@cloudflare/workers-types';
+import { createDb } from './db/client';
+import { eq } from 'drizzle-orm';
+import { traces, evals, evalExecutions } from './db/schema';
 
 // Re-export Sandbox Durable Object class for wrangler
 // This is required for the SANDBOX binding to work
@@ -244,10 +247,12 @@ export default {
           baseUrl: env.LANGFUSE_BASE_URL
         });
 
-        const traces = await adapter.fetchTraces({ limit });
+        const fetchedTraces = await adapter.fetchTraces({ limit });
 
         // Store traces in D1 using batch API
-        const statements = traces.map(trace =>
+        // Note: Kept as raw SQL because D1 batch() is more efficient than individual Drizzle inserts
+        // and this legacy endpoint uses old column names (raw_data, normalized_data) not in current schema
+        const statements = fetchedTraces.map(trace =>
           env.DB.prepare(
             'INSERT OR REPLACE INTO traces (id, trace_id, source, raw_data, normalized_data) VALUES (?, ?, ?, ?, ?)'
           ).bind(
@@ -265,8 +270,8 @@ export default {
 
         return new Response(JSON.stringify({
           success: true,
-          count: traces.length,
-          traces: traces.map(t => ({
+          count: fetchedTraces.length,
+          traces: fetchedTraces.map(t => ({
             id: t.id,
             trace_id: t.trace_id,
             steps_count: t.steps.length,
@@ -299,21 +304,25 @@ export default {
         const { name, positiveTraceIds, negativeTraceIds } = validatedBody;
 
         // Fetch traces from database
+        const drizzle = createDb(env.DB);
         const fetchTrace = async (id: string) => {
-          const result = await env.DB.prepare(
-            'SELECT * FROM traces WHERE id = ?'
-          ).bind(id).first();
+          const result = await drizzle
+            .select()
+            .from(traces)
+            .where(eq(traces.id, id))
+            .limit(1);
 
-          if (!result) {
+          if (result.length === 0) {
             throw new Error(`Trace ${id} not found`);
           }
 
+          const trace = result[0];
           return {
-            id: result.id as string,
-            trace_id: result.trace_id as string,
-            source: result.source as 'langfuse' | 'langsmith' | 'openai',
-            steps: JSON.parse(result.normalized_data as string),
-            raw_data: JSON.parse(result.raw_data as string)
+            id: trace.id,
+            trace_id: trace.traceId,
+            source: trace.source as 'langfuse' | 'langsmith' | 'openai',
+            steps: trace.steps as any,
+            raw_data: trace.rawData
           };
         };
 
@@ -352,19 +361,16 @@ export default {
 
         // Store eval in database (with dummy agent_id for legacy support)
         const evalId = crypto.randomUUID();
-        await env.DB.prepare(
-          'INSERT INTO evals (id, agent_id, name, code, model_used, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        )
-          .bind(
-            evalId,
-            'legacy',
-            name,
-            result.code,
-            result.metadata.model,
-            new Date().toISOString(),
-            new Date().toISOString()
-          )
-          .run();
+        await drizzle
+          .insert(evals)
+          .values({
+            id: evalId,
+            agentId: 'legacy',
+            version: 1,
+            name: name,
+            code: result.code,
+            modelUsed: result.metadata.model
+          });
 
         return new Response(JSON.stringify({
           success: true,
@@ -383,13 +389,16 @@ export default {
     if (url.pathname.startsWith('/api/evals/') && url.pathname.endsWith('/test') && request.method === 'POST') {
       try {
         const evalId = url.pathname.split('/')[3];
+        const drizzle = createDb(env.DB);
 
         // Fetch eval
-        const evalRecord = await env.DB.prepare(
-          'SELECT * FROM evals WHERE id = ?'
-        ).bind(evalId).first();
+        const evalResults = await drizzle
+          .select()
+          .from(evals)
+          .where(eq(evals.id, evalId))
+          .limit(1);
 
-        if (!evalRecord) {
+        if (evalResults.length === 0) {
           return new Response(JSON.stringify({
             success: false,
             error: 'Eval not found'
@@ -399,6 +408,8 @@ export default {
           });
         }
 
+        const evalRecord = evalResults[0];
+
         // Fetch test cases from request
         const body = await request.json();
         const validatedBody = TestEvalRequestSchema.parse(body);
@@ -406,21 +417,24 @@ export default {
 
         const testCases = await Promise.all(
           traceIds.map(async (item: { traceId: string; expectedScore: number }) => {
-            const traceRecord = await env.DB.prepare(
-              'SELECT * FROM traces WHERE id = ?'
-            ).bind(item.traceId).first();
+            const traceResults = await drizzle
+              .select()
+              .from(traces)
+              .where(eq(traces.id, item.traceId))
+              .limit(1);
 
-            if (!traceRecord) {
+            if (traceResults.length === 0) {
               throw new Error(`Trace ${item.traceId} not found`);
             }
 
+            const traceRecord = traceResults[0];
             return {
               trace: {
-                id: traceRecord.id as string,
-                trace_id: traceRecord.trace_id as string,
+                id: traceRecord.id,
+                trace_id: traceRecord.traceId,
                 source: traceRecord.source as 'langfuse' | 'langsmith' | 'openai' | 'playground',
-                steps: JSON.parse(traceRecord.normalized_data as string),
-                raw_data: JSON.parse(traceRecord.raw_data as string)
+                steps: traceRecord.steps as any,
+                raw_data: traceRecord.rawData
               },
               expectedScore: item.expectedScore
             };
@@ -429,30 +443,31 @@ export default {
 
         // Test eval
         const tester = new EvalTester({ sandboxBinding: env.SANDBOX });
-        const result = await tester.test(evalRecord.code as string, testCases);
+        const result = await tester.test(evalRecord.code, testCases);
 
         // Update eval with accuracy
-        await env.DB.prepare(
-          'UPDATE evals SET accuracy = ?, test_results = ? WHERE id = ?'
-        ).bind(result.accuracy, JSON.stringify(result), evalId).run();
+        await drizzle
+          .update(evals)
+          .set({
+            accuracy: result.accuracy,
+            testResults: result as any
+          })
+          .where(eq(evals.id, evalId));
 
         // Store execution results
         for (const detail of result.details) {
           const executionId = crypto.randomUUID();
-          await env.DB.prepare(
-            'INSERT INTO eval_executions (id, eval_id, trace_id, result, reason, execution_time_ms, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-          )
-            .bind(
-              executionId,
-              evalId,
-              detail.traceId,
-              detail.predictedScore,
-              detail.feedback,
-              detail.executionTimeMs,
-              detail.error || null,
-              new Date().toISOString()
-            )
-            .run();
+          await drizzle
+            .insert(evalExecutions)
+            .values({
+              id: executionId,
+              evalId: evalId,
+              traceId: detail.traceId,
+              predictedResult: detail.predictedScore > 0.5,
+              predictedReason: detail.feedback,
+              executionTimeMs: detail.executionTimeMs,
+              error: detail.error || null
+            });
         }
 
         return new Response(JSON.stringify({
@@ -496,36 +511,4 @@ export default {
     await consumer.processBatch(batch);
   },
 
-  /**
-   * Scheduled handler for cron-triggered monitoring jobs
-   * Runs every 6 hours to check eval performance and trigger auto-refinement
-   */
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    console.log(`[Scheduled] Cron triggered at ${new Date(event.scheduledTime).toISOString()}`);
-
-    // Only run monitoring if queue is available
-    if (!env.JOB_QUEUE) {
-      console.warn('[Scheduled] JOB_QUEUE not configured, skipping monitoring');
-      return;
-    }
-
-    const producer = new QueueProducer({
-      queue: env.JOB_QUEUE,
-      db: env.DB
-    });
-
-    // Enqueue monitoring job for all workspaces
-    // In production, you might want to enumerate workspaces and create separate jobs
-    const result = await producer.enqueueMonitorJob(
-      'workspace_default', // Default workspace
-      undefined, // Monitor all evals
-      7 // 7-day window
-    );
-
-    if (result.success) {
-      console.log(`[Scheduled] Monitoring job enqueued: ${result.job_id}`);
-    } else {
-      console.error(`[Scheduled] Failed to enqueue monitoring job: ${result.error}`);
-    }
-  }
 };

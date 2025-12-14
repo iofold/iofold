@@ -1,6 +1,9 @@
 import type { D1Database, DurableObjectNamespace } from '@cloudflare/workers-types';
 import type { Sandbox } from '@cloudflare/sandbox';
 import { z } from 'zod';
+import { eq, sql } from 'drizzle-orm';
+import { createDb, type Database } from '../db/client';
+import { jobs } from '../db/schema';
 import { JobManager } from '../jobs/job-manager';
 import { JobWorker } from '../jobs/job-worker';
 import { createAPIError, handleError, notFoundError } from '../utils/errors';
@@ -262,20 +265,19 @@ export class JobsAPI {
       }
 
       // Reset job status to queued
-      await this.db
-        .prepare(
-          `UPDATE jobs SET
-           status = 'queued',
-           progress = 0,
-           error = NULL,
-           error_category = NULL,
-           retry_count = retry_count + 1,
-           next_retry_at = datetime('now'),
-           completed_at = NULL
-           WHERE id = ?`
-        )
-        .bind(jobId)
-        .run();
+      const drizzle = createDb(this.db);
+      await drizzle
+        .update(jobs)
+        .set({
+          status: 'queued',
+          progress: 0,
+          error: null,
+          errorCategory: null,
+          retryCount: sql`${jobs.retryCount} + 1`,
+          nextRetryAt: sql`datetime('now')`,
+          completedAt: null
+        })
+        .where(eq(jobs.id, jobId));
 
       // Re-enqueue to queue (if queue binding available)
       // This would typically be done via the producer
@@ -364,9 +366,12 @@ export class JobsAPI {
   async processQueuedJobs(): Promise<Response> {
     try {
       // Count queued jobs first
-      const countResult = await this.db
-        .prepare(`SELECT COUNT(*) as count FROM jobs WHERE status = 'queued'`)
-        .first<{ count: number }>();
+      const drizzle = createDb(this.db);
+      const countResult = await drizzle
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(jobs)
+        .where(eq(jobs.status, 'queued'))
+        .get();
 
       const queuedCount = countResult?.count || 0;
 
@@ -394,9 +399,11 @@ export class JobsAPI {
       await worker.processJobs();
 
       // Get updated count
-      const afterResult = await this.db
-        .prepare(`SELECT COUNT(*) as count FROM jobs WHERE status = 'queued'`)
-        .first<{ count: number }>();
+      const afterResult = await drizzle
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(jobs)
+        .where(eq(jobs.status, 'queued'))
+        .get();
 
       const processedCount = queuedCount - (afterResult?.count || 0);
 

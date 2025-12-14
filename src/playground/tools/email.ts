@@ -5,6 +5,9 @@
  * Designed for building and testing email search agents.
  */
 
+import { createDb, type Database } from '../../db/client';
+import { sql } from 'drizzle-orm';
+
 /**
  * Context interface for email tool handlers
  */
@@ -116,68 +119,53 @@ export async function emailSearchHandler(
   }
 
   try {
-    // Use FTS5 for full-text search
-    // FTS5 snippet() function returns highlighted text snippets
-    // If inbox_id is provided, filter by inbox; otherwise search all inboxes
-    const searchQuery = inbox_id
-      ? `
-        SELECT
-          e.message_id,
-          e.subject,
-          e.sender,
-          e.date,
-          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
-          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
-        FROM emails_fts
-        INNER JOIN emails e ON emails_fts.rowid = e.rowid
-        WHERE emails_fts MATCH ?
-          AND e.inbox = ?
-        ORDER BY rank
-        LIMIT ?
-      `
-      : `
-        SELECT
-          e.message_id,
-          e.subject,
-          e.sender,
-          e.date,
-          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
-          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
-        FROM emails_fts
-        INNER JOIN emails e ON emails_fts.rowid = e.rowid
-        WHERE emails_fts MATCH ?
-        ORDER BY rank
-        LIMIT ?
-      `;
+    const drizzle = createDb(context.BENCHMARKS_DB);
 
-    const results = inbox_id
-      ? await context.BENCHMARKS_DB.prepare(searchQuery)
-          .bind(query, inbox_id, limit)
-          .all<{
-            message_id: string;
-            subject: string | null;
-            sender: string | null;
-            date: string | null;
-            subject_snippet: string;
-            body_snippet: string;
-          }>()
-      : await context.BENCHMARKS_DB.prepare(searchQuery)
-          .bind(query, limit)
-          .all<{
-            message_id: string;
-            subject: string | null;
-            sender: string | null;
-            date: string | null;
-            subject_snippet: string;
-            body_snippet: string;
-          }>();
+    // Use FTS5 for full-text search with raw SQL
+    // Keep as raw SQL since FTS5 is not directly supported by Drizzle
+    // Note: Using sql`` template for safe parameter binding
+    const searchQuerySql = inbox_id
+      ? sql`
+          SELECT
+            e.message_id,
+            e.subject,
+            e.sender,
+            e.date,
+            snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
+            snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
+          FROM emails_fts
+          INNER JOIN emails e ON emails_fts.rowid = e.rowid
+          WHERE emails_fts MATCH ${query}
+            AND e.inbox = ${inbox_id}
+          ORDER BY rank
+          LIMIT ${limit}
+        `
+      : sql`
+          SELECT
+            e.message_id,
+            e.subject,
+            e.sender,
+            e.date,
+            snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
+            snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
+          FROM emails_fts
+          INNER JOIN emails e ON emails_fts.rowid = e.rowid
+          WHERE emails_fts MATCH ${query}
+          ORDER BY rank
+          LIMIT ${limit}
+        `;
 
-    if (!results.success) {
-      throw new Error(`Database query failed: ${results.error || 'unknown error'}`);
-    }
+    const results = await drizzle.all<{
+      message_id: string;
+      subject: string | null;
+      sender: string | null;
+      date: string | null;
+      subject_snippet: string;
+      body_snippet: string;
+    }>(searchQuerySql);
 
     // Format results
-    const emails: EmailSearchResult[] = results.results.map((row) => ({
+    const emails: EmailSearchResult[] = results.map((row) => ({
       message_id: row.message_id,
       subject: row.subject,
       sender: row.sender,
@@ -231,7 +219,9 @@ export async function emailGetHandler(
   }
 
   try {
-    const query = `
+    const drizzle = createDb(context.BENCHMARKS_DB);
+
+    const querySql = sql`
       SELECT
         message_id,
         inbox,
@@ -241,21 +231,21 @@ export async function emailGetHandler(
         date,
         body
       FROM emails
-      WHERE message_id = ?
+      WHERE message_id = ${message_id}
       LIMIT 1
     `;
 
-    const result = await context.BENCHMARKS_DB.prepare(query)
-      .bind(message_id)
-      .first<{
-        message_id: string;
-        inbox: string;
-        subject: string | null;
-        sender: string | null;
-        recipients: string | null;
-        date: string | null;
-        body: string | null;
-      }>();
+    const results = await drizzle.all<{
+      message_id: string;
+      inbox: string;
+      subject: string | null;
+      sender: string | null;
+      recipients: string | null;
+      date: string | null;
+      body: string | null;
+    }>(querySql);
+
+    const result = results[0];
 
     if (!result) {
       throw new Error(`Email not found: ${message_id}`);

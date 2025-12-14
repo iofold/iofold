@@ -13,6 +13,9 @@ import {
   validateWorkspaceAccess,
   parseJsonBody,
 } from './utils';
+import { createDb } from '../db/client';
+import { eq, and, gt, SQL } from 'drizzle-orm';
+import { feedback, traces, agents } from '../db/schema';
 
 export interface Env {
   DB: D1Database;
@@ -57,55 +60,60 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
       );
     }
 
-    // Verify trace exists and belongs to workspace
-    const trace = await env.DB.prepare(
-      'SELECT id FROM traces WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(body.trace_id, workspaceId)
-      .first();
+    const db = createDb(env.DB);
 
-    if (!trace) {
+    // Verify trace exists and belongs to workspace
+    const traceResult = await db
+      .select({ id: traces.id })
+      .from(traces)
+      .where(and(eq(traces.id, body.trace_id), eq(traces.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (!traceResult[0]) {
       return createErrorResponse('NOT_FOUND', 'Trace not found', 404);
     }
 
     // Verify agent exists and belongs to workspace (only if agent_id provided)
     if (body.agent_id) {
-      const agent = await env.DB.prepare(
-        'SELECT id FROM agents WHERE id = ? AND workspace_id = ?'
-      )
-        .bind(body.agent_id, workspaceId)
-        .first();
+      const agentResult = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, body.agent_id), eq(agents.workspaceId, workspaceId)))
+        .limit(1);
 
-      if (!agent) {
+      if (!agentResult[0]) {
         return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
       }
     }
 
     // Check for existing feedback - use upsert pattern (feedback is 1:1 with trace)
-    const existing = await env.DB.prepare(
-      'SELECT id, created_at FROM feedback WHERE trace_id = ?'
-    )
-      .bind(body.trace_id)
-      .first();
+    const existingResult = await db
+      .select({ id: feedback.id, createdAt: feedback.createdAt })
+      .from(feedback)
+      .where(eq(feedback.traceId, body.trace_id))
+      .limit(1);
 
     const now = new Date().toISOString();
 
-    if (existing) {
+    if (existingResult[0]) {
       // Update existing feedback (upsert)
-      await env.DB.prepare(
-        `UPDATE feedback SET rating = ?, rating_detail = ?, agent_id = ? WHERE id = ?`
-      )
-        .bind(body.rating, body.notes || null, body.agent_id || null, existing.id)
-        .run();
+      await db
+        .update(feedback)
+        .set({
+          rating: body.rating,
+          ratingDetail: body.notes || null,
+          agentId: body.agent_id || null,
+        })
+        .where(eq(feedback.id, existingResult[0].id));
 
       return createSuccessResponse(
         {
-          id: existing.id,
+          id: existingResult[0].id,
           trace_id: body.trace_id,
           agent_id: body.agent_id || null,
           rating: body.rating,
           notes: body.notes || null,
-          created_at: existing.created_at,
+          created_at: existingResult[0].createdAt,
           updated: true,
         },
         200
@@ -115,19 +123,14 @@ export async function submitFeedback(request: Request, env: Env): Promise<Respon
     // Create new feedback
     const feedbackId = `fb_${crypto.randomUUID()}`;
 
-    await env.DB.prepare(
-      `INSERT INTO feedback (id, trace_id, agent_id, rating, rating_detail, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    )
-      .bind(
-        feedbackId,
-        body.trace_id,
-        body.agent_id || null,
-        body.rating,
-        body.notes || null,
-        now
-      )
-      .run();
+    await db.insert(feedback).values({
+      id: feedbackId,
+      traceId: body.trace_id,
+      agentId: body.agent_id || null,
+      rating: body.rating,
+      ratingDetail: body.notes || null,
+      createdAt: now,
+    });
 
     return createSuccessResponse(
       {
@@ -171,17 +174,21 @@ export async function updateFeedback(request: Request, env: Env, feedbackId: str
       notes?: string;
     }>(request);
 
-    // Verify feedback exists and belongs to workspace
-    const feedback = await env.DB.prepare(
-      `SELECT f.id, f.trace_id, f.agent_id
-       FROM feedback f
-       JOIN agents a ON f.agent_id = a.id
-       WHERE f.id = ? AND a.workspace_id = ?`
-    )
-      .bind(feedbackId, workspaceId)
-      .first();
+    const db = createDb(env.DB);
 
-    if (!feedback) {
+    // Verify feedback exists and belongs to workspace
+    const feedbackResult = await db
+      .select({
+        id: feedback.id,
+        traceId: feedback.traceId,
+        agentId: feedback.agentId,
+      })
+      .from(feedback)
+      .leftJoin(agents, eq(feedback.agentId, agents.id))
+      .where(and(eq(feedback.id, feedbackId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (!feedbackResult[0]) {
       return createErrorResponse('NOT_FOUND', 'Feedback not found', 404);
     }
 
@@ -194,60 +201,60 @@ export async function updateFeedback(request: Request, env: Env, feedbackId: str
       );
     }
 
-    // Build update query
-    const updates: string[] = [];
-    const params: any[] = [];
+    // Build update object
+    const updateData: Partial<{
+      rating: 'positive' | 'negative' | 'neutral';
+      ratingDetail: string | null;
+    }> = {};
 
     if (body.rating !== undefined) {
-      updates.push('rating = ?');
-      params.push(body.rating);
+      updateData.rating = body.rating;
     }
 
     if (body.notes !== undefined) {
-      updates.push('rating_detail = ?');
-      params.push(body.notes || null);
+      updateData.ratingDetail = body.notes || null;
     }
 
-    if (updates.length === 0) {
+    if (Object.keys(updateData).length === 0) {
       // No updates, return current state
-      const current = await env.DB.prepare(
-        'SELECT * FROM feedback WHERE id = ?'
-      )
-        .bind(feedbackId)
-        .first();
+      const currentResult = await db
+        .select()
+        .from(feedback)
+        .where(eq(feedback.id, feedbackId))
+        .limit(1);
 
+      const current = currentResult[0];
       return createSuccessResponse({
-        id: current!.id,
-        trace_id: current!.trace_id,
-        agent_id: current!.agent_id,
-        rating: current!.rating,
-        notes: current!.rating_detail,
-        created_at: current!.created_at,
+        id: current.id,
+        trace_id: current.traceId,
+        agent_id: current.agentId,
+        rating: current.rating,
+        notes: current.ratingDetail,
+        created_at: current.createdAt,
       });
     }
 
     // Execute update
-    params.push(feedbackId);
-    await env.DB.prepare(
-      `UPDATE feedback SET ${updates.join(', ')} WHERE id = ?`
-    )
-      .bind(...params)
-      .run();
+    await db
+      .update(feedback)
+      .set(updateData)
+      .where(eq(feedback.id, feedbackId));
 
     // Return updated feedback
-    const updated = await env.DB.prepare(
-      'SELECT * FROM feedback WHERE id = ?'
-    )
-      .bind(feedbackId)
-      .first();
+    const updatedResult = await db
+      .select()
+      .from(feedback)
+      .where(eq(feedback.id, feedbackId))
+      .limit(1);
 
+    const updated = updatedResult[0];
     return createSuccessResponse({
-      id: updated!.id,
-      trace_id: updated!.trace_id,
-      agent_id: updated!.agent_id,
-      rating: updated!.rating,
-      notes: updated!.rating_detail,
-      created_at: updated!.created_at,
+      id: updated.id,
+      trace_id: updated.traceId,
+      agent_id: updated.agentId,
+      rating: updated.rating,
+      notes: updated.ratingDetail,
+      created_at: updated.createdAt,
     });
   } catch (error: any) {
     if (error.message === 'Missing X-Workspace-Id header') {
@@ -275,24 +282,22 @@ export async function deleteFeedback(request: Request, env: Env, feedbackId: str
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    // Verify feedback exists and belongs to workspace
-    const feedback = await env.DB.prepare(
-      `SELECT f.id
-       FROM feedback f
-       JOIN agents a ON f.agent_id = a.id
-       WHERE f.id = ? AND a.workspace_id = ?`
-    )
-      .bind(feedbackId, workspaceId)
-      .first();
+    const db = createDb(env.DB);
 
-    if (!feedback) {
+    // Verify feedback exists and belongs to workspace
+    const feedbackResult = await db
+      .select({ id: feedback.id })
+      .from(feedback)
+      .leftJoin(agents, eq(feedback.agentId, agents.id))
+      .where(and(eq(feedback.id, feedbackId), eq(agents.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (!feedbackResult[0]) {
       return createErrorResponse('NOT_FOUND', 'Feedback not found', 404);
     }
 
     // Delete feedback
-    await env.DB.prepare('DELETE FROM feedback WHERE id = ?')
-      .bind(feedbackId)
-      .run();
+    await db.delete(feedback).where(eq(feedback.id, feedbackId));
 
     return new Response(null, { status: 204 });
   } catch (error: any) {
@@ -343,61 +348,58 @@ export async function listFeedback(request: Request, env: Env): Promise<Response
       );
     }
 
-    // Build query with filters
-    const conditions: string[] = ['a.workspace_id = ?'];
-    const params: any[] = [workspaceId];
+    const db = createDb(env.DB);
+
+    // Build dynamic query conditions
+    const conditions: SQL[] = [eq(agents.workspaceId, workspaceId)];
 
     if (trace_id) {
-      conditions.push('f.trace_id = ?');
-      params.push(trace_id);
+      conditions.push(eq(feedback.traceId, trace_id));
     }
 
     if (agent_id) {
-      conditions.push('f.agent_id = ?');
-      params.push(agent_id);
+      conditions.push(eq(feedback.agentId, agent_id));
     }
 
     if (rating) {
-      conditions.push('f.rating = ?');
-      params.push(rating);
+      conditions.push(eq(feedback.rating, rating as 'positive' | 'negative' | 'neutral'));
     }
 
     if (cursor) {
-      conditions.push('f.id > ?');
-      params.push(cursor);
+      conditions.push(gt(feedback.id, cursor));
     }
 
     // Fetch limit + 1 to determine has_more
-    const query = `
-      SELECT f.id, f.agent_id, f.trace_id, f.rating, f.rating_detail, f.created_at
-      FROM feedback f
-      JOIN agents a ON f.agent_id = a.id
-      WHERE ${conditions.join(' AND ')}
-      ORDER BY f.id ASC
-      LIMIT ?
-    `;
-    params.push(limit + 1);
+    const results = await db
+      .select({
+        id: feedback.id,
+        agentId: feedback.agentId,
+        traceId: feedback.traceId,
+        rating: feedback.rating,
+        ratingDetail: feedback.ratingDetail,
+        createdAt: feedback.createdAt,
+      })
+      .from(feedback)
+      .leftJoin(agents, eq(feedback.agentId, agents.id))
+      .where(and(...conditions))
+      .orderBy(feedback.id)
+      .limit(limit + 1);
 
-    const result = await env.DB.prepare(query)
-      .bind(...params)
-      .all();
-
-    const rows = result.results || [];
-    const has_more = rows.length > limit;
-    const feedback = rows.slice(0, limit);
+    const has_more = results.length > limit;
+    const feedbackList = results.slice(0, limit);
 
     // Format response
-    const formattedFeedback = feedback.map((row: any) => ({
+    const formattedFeedback = feedbackList.map((row) => ({
       id: row.id,
-      trace_id: row.trace_id,
-      agent_id: row.agent_id,
+      trace_id: row.traceId,
+      agent_id: row.agentId,
       rating: row.rating,
-      notes: row.rating_detail,
-      created_at: row.created_at,
+      notes: row.ratingDetail,
+      created_at: row.createdAt,
     }));
 
-    const next_cursor = has_more && feedback.length > 0
-      ? feedback[feedback.length - 1].id
+    const next_cursor = has_more && feedbackList.length > 0
+      ? feedbackList[feedbackList.length - 1].id
       : null;
 
     return createSuccessResponse({

@@ -18,6 +18,9 @@ import type {
   EditResult,
   GrepMatch,
 } from 'deepagents';
+import { createDb, type Database } from '../../db/client';
+import { playgroundSessions } from '../../db/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * Validates file path to prevent directory traversal attacks
@@ -52,22 +55,32 @@ function validatePath(path: string): string {
 }
 
 /**
- * Parse and validate file data from JSON
+ * Parse and validate file data from JSON or object
  */
-function parseFileData(json: string | null): Record<string, FileData> {
-  if (!json) {
+function parseFileData(data: Record<string, unknown> | string | null): Record<string, FileData> {
+  if (!data) {
     return {};
   }
 
-  try {
-    const parsed = JSON.parse(json);
-    if (typeof parsed !== 'object' || parsed === null) {
+  // Handle both JSON string (legacy) and object (from Drizzle)
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data);
+      if (typeof parsed !== 'object' || parsed === null) {
+        return {};
+      }
+      return parsed;
+    } catch {
       return {};
     }
-    return parsed;
-  } catch {
-    return {};
   }
+
+  // Already an object from Drizzle
+  if (typeof data === 'object' && data !== null) {
+    return data as Record<string, FileData>;
+  }
+
+  return {};
 }
 
 /**
@@ -127,6 +140,8 @@ function matchGlob(pattern: string, path: string): boolean {
  * D1Backend - Implements BackendProtocol for Cloudflare D1 storage
  */
 export class D1Backend implements BackendProtocol {
+  private drizzle: Database;
+
   constructor(
     private db: D1Database,
     private sessionId: string
@@ -137,18 +152,20 @@ export class D1Backend implements BackendProtocol {
     if (!sessionId) {
       throw new Error('sessionId is required');
     }
+    this.drizzle = createDb(db);
   }
 
   /**
    * Get session from database
    */
-  private async getSession(): Promise<{ files: string | null } | null> {
-    const result = await this.db
-      .prepare('SELECT files FROM playground_sessions WHERE id = ?')
-      .bind(this.sessionId)
-      .first<{ files: string | null }>();
+  private async getSession(): Promise<{ files: Record<string, unknown> | null } | null> {
+    const result = await this.drizzle
+      .select({ files: playgroundSessions.files })
+      .from(playgroundSessions)
+      .where(eq(playgroundSessions.id, this.sessionId))
+      .limit(1);
 
-    return result;
+    return result[0] || null;
   }
 
   /**
@@ -156,12 +173,13 @@ export class D1Backend implements BackendProtocol {
    */
   private async updateFiles(files: Record<string, FileData>): Promise<void> {
     const now = new Date().toISOString();
-    await this.db
-      .prepare(
-        'UPDATE playground_sessions SET files = ?, updated_at = ? WHERE id = ?'
-      )
-      .bind(JSON.stringify(files), now, this.sessionId)
-      .run();
+    await this.drizzle
+      .update(playgroundSessions)
+      .set({
+        files: files as unknown as Record<string, unknown>,
+        updatedAt: now
+      })
+      .where(eq(playgroundSessions.id, this.sessionId));
   }
 
   /**
@@ -173,7 +191,7 @@ export class D1Backend implements BackendProtocol {
   async lsInfo(path: string): Promise<FileInfo[]> {
     const normalized = validatePath(path);
     const session = await this.getSession();
-    const files = parseFileData(session?.files || null);
+    const files = parseFileData(session?.files ?? null);
 
     const results: FileInfo[] = [];
     const dirPath = isDirectory(normalized) ? normalized : normalized + '/';
@@ -271,7 +289,7 @@ export class D1Backend implements BackendProtocol {
     }
 
     const session = await this.getSession();
-    const files = parseFileData(session?.files || null);
+    const files = parseFileData(session?.files ?? null);
     const fileData = files[normalized];
 
     if (!fileData) {
@@ -342,7 +360,7 @@ export class D1Backend implements BackendProtocol {
   async globInfo(pattern: string, path: string = '/'): Promise<FileInfo[]> {
     const searchPath = validatePath(path);
     const session = await this.getSession();
-    const files = parseFileData(session?.files || null);
+    const files = parseFileData(session?.files ?? null);
 
     const results: FileInfo[] = [];
 

@@ -14,7 +14,6 @@ import { Feedback } from '@/types/api'
 
 interface TraceFeedbackProps {
   traceId: string
-  agentId: string
   currentRating?: 'positive' | 'negative' | 'neutral' | null
   feedbackId?: string
   onFeedbackChange?: () => void
@@ -24,7 +23,6 @@ interface TraceFeedbackProps {
 
 export function TraceFeedback({
   traceId,
-  agentId,
   currentRating,
   feedbackId,
   onFeedbackChange,
@@ -50,7 +48,6 @@ export function TraceFeedback({
       }
       return apiClient.submitFeedback({
         trace_id: traceId,
-        agent_id: agentId,
         rating: data.rating,
         notes: data.notes,
       })
@@ -59,7 +56,6 @@ export function TraceFeedback({
       setRating(data.rating)
       queryClient.invalidateQueries({ queryKey: ['traces'] })
       queryClient.invalidateQueries({ queryKey: ['trace', traceId] })
-      queryClient.invalidateQueries({ queryKey: ['agents', agentId] })
       queryClient.invalidateQueries({ queryKey: ['feedback'] })
       toast.success(`Marked as ${data.rating}`)
       onFeedbackChange?.()
@@ -104,7 +100,6 @@ export function TraceFeedback({
         <div className="flex items-center gap-3 mb-3">
           <FeedbackButtons
             traceId={traceId}
-            agentId={agentId}
             currentFeedback={currentFeedback}
             onFeedbackSubmit={onFeedbackChange}
             showNotesButton={true}
@@ -131,7 +126,6 @@ export function TraceFeedback({
         <QuickFeedbackBar
           traceId={traceId}
           currentFeedback={currentFeedback}
-          defaultAgentId={agentId}
           onFeedbackSubmit={onFeedbackChange}
         />
       )}

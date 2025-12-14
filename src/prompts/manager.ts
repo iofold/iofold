@@ -8,6 +8,9 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { PromptExtractor, type ExtractedPrompt } from './extractor';
 import type { Trace } from '../types/trace';
+import { createDb, type Database } from '../db/client';
+import { eq, and, desc, sql } from 'drizzle-orm';
+import { systemPrompts, traces, evalExecutions } from '../db/schema';
 
 /**
  * System prompt record from database
@@ -25,21 +28,6 @@ export interface SystemPrompt {
 }
 
 /**
- * Prompt coverage statistics per eval
- */
-export interface PromptCoverage {
-  prompt_id: string;
-  eval_id: string;
-  execution_count: number;
-  pass_count: number;
-  fail_count: number;
-  error_count: number;
-  accuracy: number | null;
-  first_execution_at: string | null;
-  last_execution_at: string | null;
-}
-
-/**
  * Result of storing/linking a prompt
  */
 export interface StorePromptResult {
@@ -53,9 +41,11 @@ export interface StorePromptResult {
  */
 export class PromptManager {
   private extractor: PromptExtractor;
+  private drizzle: Database;
 
   constructor(private db: D1Database) {
     this.extractor = new PromptExtractor();
+    this.drizzle = createDb(db);
   }
 
   /**
@@ -76,63 +66,55 @@ export class PromptManager {
     const promptHash = await this.extractor.hashPromptContent(extracted.content);
 
     // Try to find existing prompt with this hash
-    const existing = await this.db
-      .prepare(
-        `SELECT id, trace_count FROM system_prompts
-         WHERE workspace_id = ? AND prompt_hash = ?`
-      )
-      .bind(workspaceId, promptHash)
-      .first();
+    const existing = await this.drizzle
+      .select({ id: systemPrompts.id, traceCount: systemPrompts.traceCount })
+      .from(systemPrompts)
+      .where(and(
+        eq(systemPrompts.workspaceId, workspaceId),
+        eq(systemPrompts.promptHash, promptHash)
+      ))
+      .limit(1);
 
     let promptId: string;
     let isNew = false;
     let traceCount = 1;
 
-    if (existing) {
+    if (existing.length > 0) {
       // Update existing prompt's trace count and last_seen_at
-      promptId = existing.id as string;
-      traceCount = (existing.trace_count as number) + 1;
+      promptId = existing[0].id;
+      traceCount = (existing[0].traceCount || 0) + 1;
 
-      await this.db
-        .prepare(
-          `UPDATE system_prompts
-           SET trace_count = ?, last_seen_at = ?
-           WHERE id = ?`
-        )
-        .bind(traceCount, new Date().toISOString(), promptId)
-        .run();
+      await this.drizzle
+        .update(systemPrompts)
+        .set({
+          traceCount,
+          lastSeenAt: new Date().toISOString()
+        })
+        .where(eq(systemPrompts.id, promptId));
     } else {
       // Insert new prompt
       promptId = crypto.randomUUID();
       isNew = true;
       const now = new Date().toISOString();
 
-      await this.db
-        .prepare(
-          `INSERT INTO system_prompts
-           (id, workspace_id, agent_name, prompt_hash, content, metadata, first_seen_at, last_seen_at, trace_count)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
-        )
-        .bind(
-          promptId,
-          workspaceId,
-          extracted.agentName,
-          promptHash,
-          extracted.content,
-          extracted.metadata ? JSON.stringify(extracted.metadata) : null,
-          now,
-          now
-        )
-        .run();
+      await this.drizzle.insert(systemPrompts).values({
+        id: promptId,
+        workspaceId,
+        agentName: extracted.agentName,
+        promptHash,
+        content: extracted.content,
+        metadata: extracted.metadata || null,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        traceCount: 1
+      });
     }
 
     // Link trace to prompt
-    await this.db
-      .prepare(
-        `UPDATE traces SET system_prompt_id = ? WHERE id = ?`
-      )
-      .bind(promptId, trace.id)
-      .run();
+    await this.drizzle
+      .update(traces)
+      .set({ systemPromptId: promptId })
+      .where(eq(traces.id, trace.id));
 
     return {
       prompt_id: promptId,
@@ -145,14 +127,15 @@ export class PromptManager {
    * Get a prompt by ID
    */
   async getPrompt(promptId: string): Promise<SystemPrompt | null> {
-    const result = await this.db
-      .prepare(`SELECT * FROM system_prompts WHERE id = ?`)
-      .bind(promptId)
-      .first();
+    const result = await this.drizzle
+      .select()
+      .from(systemPrompts)
+      .where(eq(systemPrompts.id, promptId))
+      .limit(1);
 
-    if (!result) return null;
+    if (result.length === 0) return null;
 
-    return this.rowToPrompt(result);
+    return this.rowToPrompt(result[0]);
   }
 
   /**
@@ -162,17 +145,18 @@ export class PromptManager {
     workspaceId: string,
     promptHash: string
   ): Promise<SystemPrompt | null> {
-    const result = await this.db
-      .prepare(
-        `SELECT * FROM system_prompts
-         WHERE workspace_id = ? AND prompt_hash = ?`
-      )
-      .bind(workspaceId, promptHash)
-      .first();
+    const result = await this.drizzle
+      .select()
+      .from(systemPrompts)
+      .where(and(
+        eq(systemPrompts.workspaceId, workspaceId),
+        eq(systemPrompts.promptHash, promptHash)
+      ))
+      .limit(1);
 
-    if (!result) return null;
+    if (result.length === 0) return null;
 
-    return this.rowToPrompt(result);
+    return this.rowToPrompt(result[0]);
   }
 
   /**
@@ -186,147 +170,43 @@ export class PromptManager {
       offset?: number;
     }
   ): Promise<SystemPrompt[]> {
-    let query = `SELECT * FROM system_prompts WHERE workspace_id = ?`;
-    const params: any[] = [workspaceId];
-
-    if (options?.agentName) {
-      query += ' AND agent_name = ?';
-      params.push(options.agentName);
-    }
-
-    query += ' ORDER BY last_seen_at DESC';
+    let query = this.drizzle
+      .select()
+      .from(systemPrompts)
+      .where(
+        options?.agentName
+          ? and(
+              eq(systemPrompts.workspaceId, workspaceId),
+              eq(systemPrompts.agentName, options.agentName)
+            )
+          : eq(systemPrompts.workspaceId, workspaceId)
+      )
+      .orderBy(desc(systemPrompts.lastSeenAt));
 
     if (options?.limit) {
-      query += ' LIMIT ?';
-      params.push(options.limit);
+      query = query.limit(options.limit) as any;
     }
 
     if (options?.offset) {
-      query += ' OFFSET ?';
-      params.push(options.offset);
+      query = query.offset(options.offset) as any;
     }
 
-    const result = await this.db.prepare(query).bind(...params).all();
+    const result = await query;
 
-    return result.results.map(row => this.rowToPrompt(row));
+    return result.map(row => this.rowToPrompt(row));
   }
 
   /**
    * Get unique agent names in a workspace
    */
   async getAgentNames(workspaceId: string): Promise<string[]> {
-    const result = await this.db
-      .prepare(
-        `SELECT DISTINCT agent_name FROM system_prompts
-         WHERE workspace_id = ?
-         ORDER BY agent_name`
-      )
-      .bind(workspaceId)
-      .all();
+    const result = await this.drizzle
+      .selectDistinct({ agentName: systemPrompts.agentName })
+      .from(systemPrompts)
+      .where(eq(systemPrompts.workspaceId, workspaceId))
+      .orderBy(systemPrompts.agentName);
 
-    return result.results.map(row => row.agent_name as string);
-  }
-
-  /**
-   * Get prompt coverage statistics for an eval
-   */
-  async getPromptCoverage(evalId: string): Promise<PromptCoverage[]> {
-    const result = await this.db
-      .prepare(
-        `SELECT
-           epc.*,
-           sp.agent_name,
-           sp.content,
-           sp.trace_count as prompt_trace_count
-         FROM eval_prompt_coverage epc
-         JOIN system_prompts sp ON epc.system_prompt_id = sp.id
-         WHERE epc.eval_id = ?
-         ORDER BY epc.execution_count DESC`
-      )
-      .bind(evalId)
-      .all();
-
-    return result.results.map(row => ({
-      prompt_id: row.system_prompt_id as string,
-      eval_id: row.eval_id as string,
-      execution_count: row.execution_count as number,
-      pass_count: row.pass_count as number,
-      fail_count: row.fail_count as number,
-      error_count: row.error_count as number,
-      accuracy: row.accuracy as number | null,
-      first_execution_at: row.first_execution_at as string | null,
-      last_execution_at: row.last_execution_at as string | null
-    }));
-  }
-
-  /**
-   * Update prompt coverage statistics after eval execution
-   */
-  async updatePromptCoverage(
-    evalId: string,
-    promptId: string,
-    passed: boolean,
-    hadError: boolean
-  ): Promise<void> {
-    const now = new Date().toISOString();
-
-    // Try to update existing record
-    const updateResult = await this.db
-      .prepare(
-        `UPDATE eval_prompt_coverage
-         SET
-           execution_count = execution_count + 1,
-           pass_count = pass_count + ?,
-           fail_count = fail_count + ?,
-           error_count = error_count + ?,
-           last_execution_at = ?,
-           updated_at = ?
-         WHERE eval_id = ? AND system_prompt_id = ?`
-      )
-      .bind(
-        passed ? 1 : 0,
-        passed || hadError ? 0 : 1,
-        hadError ? 1 : 0,
-        now,
-        now,
-        evalId,
-        promptId
-      )
-      .run();
-
-    // If no rows updated, insert new record
-    if (!updateResult.meta.changes || updateResult.meta.changes === 0) {
-      const id = crypto.randomUUID();
-      await this.db
-        .prepare(
-          `INSERT INTO eval_prompt_coverage
-           (id, eval_id, system_prompt_id, execution_count, pass_count, fail_count, error_count, first_execution_at, last_execution_at, created_at, updated_at)
-           VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          id,
-          evalId,
-          promptId,
-          passed ? 1 : 0,
-          passed || hadError ? 0 : 1,
-          hadError ? 1 : 0,
-          now,
-          now,
-          now,
-          now
-        )
-        .run();
-    }
-
-    // Update accuracy calculation
-    await this.db
-      .prepare(
-        `UPDATE eval_prompt_coverage
-         SET accuracy = CAST(pass_count AS REAL) / CAST(execution_count AS REAL)
-         WHERE eval_id = ? AND system_prompt_id = ? AND execution_count > 0`
-      )
-      .bind(evalId, promptId)
-      .run();
+    return result.map(row => row.agentName);
   }
 
   /**
@@ -347,17 +227,22 @@ export class PromptManager {
       execution_count: number;
     }>;
   }> {
-    // Get all prompt coverage for this eval
+    // Compute prompt-level accuracy on-the-fly using executions joined to traces.
+    // Note: Using raw SQL here as Drizzle's aggregation with complex CASE is verbose
     const coverageResult = await this.db
       .prepare(
         `SELECT
-           epc.system_prompt_id,
-           epc.execution_count,
-           epc.accuracy,
-           sp.agent_name
-         FROM eval_prompt_coverage epc
-         JOIN system_prompts sp ON epc.system_prompt_id = sp.id
-         WHERE epc.eval_id = ? AND epc.execution_count >= ?
+           sp.id as system_prompt_id,
+           sp.agent_name,
+           sp.first_seen_at,
+           COUNT(*) as execution_count,
+           CAST(SUM(CASE WHEN ee.predicted_result = 1 THEN 1 ELSE 0 END) AS REAL) / CAST(COUNT(*) AS REAL) as accuracy
+         FROM eval_executions ee
+         JOIN traces t ON ee.trace_id = t.id
+         JOIN system_prompts sp ON t.system_prompt_id = sp.id
+         WHERE ee.eval_id = ?
+         GROUP BY sp.id, sp.agent_name, sp.first_seen_at
+         HAVING COUNT(*) >= ?
          ORDER BY sp.first_seen_at ASC`
       )
       .bind(evalId, minExecutions)
@@ -411,107 +296,19 @@ export class PromptManager {
   }
 
   /**
-   * Record a prompt iteration (for refinement tracking)
-   */
-  async recordIteration(
-    workspaceId: string,
-    agentName: string,
-    currentPromptId: string,
-    parentPromptId: string | null,
-    changeSummary?: string,
-    improvementMetrics?: Record<string, any>
-  ): Promise<string> {
-    // Get iteration number
-    let iterationNumber = 1;
-    if (parentPromptId) {
-      const parentIteration = await this.db
-        .prepare(
-          `SELECT MAX(iteration_number) as max_iteration
-           FROM prompt_iterations
-           WHERE workspace_id = ? AND agent_name = ?`
-        )
-        .bind(workspaceId, agentName)
-        .first();
-
-      if (parentIteration?.max_iteration) {
-        iterationNumber = (parentIteration.max_iteration as number) + 1;
-      }
-    }
-
-    const id = crypto.randomUUID();
-    await this.db
-      .prepare(
-        `INSERT INTO prompt_iterations
-         (id, workspace_id, agent_name, parent_prompt_id, current_prompt_id, iteration_number, change_summary, improvement_metrics, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        id,
-        workspaceId,
-        agentName,
-        parentPromptId,
-        currentPromptId,
-        iterationNumber,
-        changeSummary || null,
-        improvementMetrics ? JSON.stringify(improvementMetrics) : null,
-        new Date().toISOString()
-      )
-      .run();
-
-    return id;
-  }
-
-  /**
-   * Get iteration history for an agent
-   */
-  async getIterationHistory(
-    workspaceId: string,
-    agentName: string
-  ): Promise<Array<{
-    id: string;
-    parent_prompt_id: string | null;
-    current_prompt_id: string;
-    iteration_number: number;
-    change_summary: string | null;
-    improvement_metrics: Record<string, any> | null;
-    created_at: string;
-  }>> {
-    const result = await this.db
-      .prepare(
-        `SELECT * FROM prompt_iterations
-         WHERE workspace_id = ? AND agent_name = ?
-         ORDER BY iteration_number DESC`
-      )
-      .bind(workspaceId, agentName)
-      .all();
-
-    return result.results.map(row => ({
-      id: row.id as string,
-      parent_prompt_id: row.parent_prompt_id as string | null,
-      current_prompt_id: row.current_prompt_id as string,
-      iteration_number: row.iteration_number as number,
-      change_summary: row.change_summary as string | null,
-      improvement_metrics: row.improvement_metrics
-        ? JSON.parse(row.improvement_metrics as string)
-        : null,
-      created_at: row.created_at as string
-    }));
-  }
-
-  /**
    * Convert database row to SystemPrompt
    */
   private rowToPrompt(row: any): SystemPrompt {
     return {
-      id: row.id as string,
-      workspace_id: row.workspace_id as string,
-      agent_name: row.agent_name as string,
-      prompt_hash: row.prompt_hash as string,
-      content: row.content as string,
-      metadata: row.metadata ? JSON.parse(row.metadata as string) : null,
-      first_seen_at: row.first_seen_at as string,
-      last_seen_at: row.last_seen_at as string,
-      trace_count: row.trace_count as number
+      id: row.id,
+      workspace_id: row.workspaceId,
+      agent_name: row.agentName,
+      prompt_hash: row.promptHash,
+      content: row.content,
+      metadata: row.metadata || null,
+      first_seen_at: row.firstSeenAt,
+      last_seen_at: row.lastSeenAt,
+      trace_count: row.traceCount || 0
     };
   }
 }

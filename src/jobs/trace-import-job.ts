@@ -16,6 +16,9 @@ import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
 import { decryptAPIKey } from '../utils/crypto';
 import { QueueProducer, type Queue } from '../queue/producer';
+import { createDb, type Database } from '../db/client';
+import { eq, and } from 'drizzle-orm';
+import { integrations, traces } from '../db/schema';
 
 /**
  * Simple base64 decode for MVP (matching integrations.ts encryption)
@@ -56,12 +59,14 @@ export interface TraceImportJobResult {
 export class TraceImportJob {
   private jobManager: JobManager;
   private stream?: SSEStream;
+  private db: Database;
 
   constructor(
     private config: TraceImportJobConfig,
     private deps: TraceImportJobDeps
   ) {
     this.jobManager = new JobManager(deps.db);
+    this.db = createDb(deps.db);
   }
 
   async execute(stream?: SSEStream): Promise<TraceImportJobResult> {
@@ -73,14 +78,18 @@ export class TraceImportJob {
       this.emitProgress('running', 0, { imported: 0, total: 0 });
 
       // Step 1: Fetch integration credentials
-      const integration = await this.deps.db
-        .prepare(
-          `SELECT id, platform, api_key_encrypted, config, workspace_id
-           FROM integrations
-           WHERE id = ? AND workspace_id = ?`
+      const integrationResult = await this.db
+        .select()
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.id, this.config.integrationId),
+            eq(integrations.workspaceId, this.config.workspaceId)
+          )
         )
-        .bind(this.config.integrationId, this.config.workspaceId)
-        .first();
+        .limit(1);
+
+      const integration = integrationResult[0];
 
       if (!integration) {
         throw new Error(`Integration ${this.config.integrationId} not found`);
@@ -92,7 +101,7 @@ export class TraceImportJob {
 
       // Step 2: Decrypt API key
       // Try base64 first (MVP/local dev), then AES-GCM (production)
-      const apiKeyEncrypted = integration.api_key_encrypted as string;
+      const apiKeyEncrypted = integration.apiKeyEncrypted;
       let apiKey: string;
 
       // For MVP, use simple base64 decode (matching integrations.ts encryption)
@@ -114,7 +123,7 @@ export class TraceImportJob {
         throw new Error('Invalid Langfuse API key format. Expected "publicKey:secretKey"');
       }
 
-      const config = integration.config ? JSON.parse(integration.config as string) : {};
+      const config = integration.config || {};
       const adapter = new LangfuseAdapter({
         publicKey,
         secretKey,
@@ -189,17 +198,10 @@ export class TraceImportJob {
       }
 
       // Step 5: Update integration last_synced_at
-      await this.deps.db
-        .prepare(
-          `UPDATE integrations
-           SET last_synced_at = ?
-           WHERE id = ?`
-        )
-        .bind(
-          new Date().toISOString(),
-          this.config.integrationId
-        )
-        .run();
+      await this.db
+        .update(integrations)
+        .set({ lastSyncedAt: new Date().toISOString() })
+        .where(eq(integrations.id, this.config.integrationId));
 
       this.emitProgress('running', 95, {
         status: 'Finalizing import',
@@ -270,29 +272,23 @@ export class TraceImportJob {
 
     // Store trace
     const traceId = `trc_${crypto.randomUUID()}`;
-    await this.deps.db
-      .prepare(
-        `INSERT INTO traces (
-          id, workspace_id, integration_id, trace_id, source, timestamp,
-          metadata, steps, input_preview, output_preview, step_count, has_errors, imported_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        traceId,
+    await this.db
+      .insert(traces)
+      .values({
+        id: traceId,
         workspaceId,
         integrationId,
-        trace.trace_id,
-        trace.source,
+        traceId: trace.trace_id,
+        source: trace.source,
         timestamp,
-        JSON.stringify(trace.raw_data?.metadata || {}),
-        JSON.stringify(steps),
+        metadata: trace.raw_data?.metadata || {},
+        steps,
         inputPreview,
         outputPreview,
-        steps.length,
-        hasErrors ? 1 : 0,
-        now
-      )
-      .run();
+        stepCount: steps.length,
+        hasErrors,
+        importedAt: now
+      });
   }
 
   private extractInputPreview(steps: any[]): string {

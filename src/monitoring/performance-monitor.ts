@@ -7,6 +7,16 @@
 
 import type { D1Database } from '@cloudflare/workers-types';
 import { PromptManager } from '../prompts/manager';
+import { createDb, type Database } from '../db/client';
+import { eq, and, sql, isNull, gte, desc, inArray } from 'drizzle-orm';
+import {
+  evals,
+  evalExecutions,
+  evalComparison,
+  performanceAlerts,
+  performanceSnapshots,
+  autoRefineCooldowns
+} from '../db/schema';
 
 /**
  * Default monitoring thresholds
@@ -74,9 +84,11 @@ export interface MonitoringResult {
  */
 export class PerformanceMonitor {
   private promptManager: PromptManager;
+  private drizzle: Database;
 
   constructor(private db: D1Database) {
     this.promptManager = new PromptManager(db);
+    this.drizzle = createDb(db);
   }
 
   /**
@@ -90,24 +102,34 @@ export class PerformanceMonitor {
     const results: MonitoringResult[] = [];
 
     // Get evals to monitor
-    let query = `
-      SELECT id, auto_execute_enabled, auto_refine_enabled, monitoring_thresholds
-      FROM evals
-      WHERE 1=1
-    `;
-    const params: any[] = [];
-
+    let evalsResult;
     if (evalIds && evalIds.length > 0) {
-      query += ` AND id IN (${evalIds.map(() => '?').join(',')})`;
-      params.push(...evalIds);
+      evalsResult = await this.drizzle
+        .select({
+          id: evals.id,
+          autoExecuteEnabled: evals.autoExecuteEnabled,
+          autoRefineEnabled: evals.autoRefineEnabled,
+          monitoringThresholds: evals.monitoringThresholds
+        })
+        .from(evals)
+        .where(inArray(evals.id, evalIds));
+    } else {
+      evalsResult = await this.drizzle
+        .select({
+          id: evals.id,
+          autoExecuteEnabled: evals.autoExecuteEnabled,
+          autoRefineEnabled: evals.autoRefineEnabled,
+          monitoringThresholds: evals.monitoringThresholds
+        })
+        .from(evals);
     }
 
-    const evalsResult = await this.db.prepare(query).bind(...params).all();
-
-    for (const evalRecord of evalsResult.results) {
-      const evalId = evalRecord.id as string;
-      const autoRefineEnabled = Boolean(evalRecord.auto_refine_enabled);
-      const thresholds = this.parseThresholds(evalRecord.monitoring_thresholds as string);
+    for (const evalRecord of evalsResult) {
+      const evalId = evalRecord.id;
+      const autoRefineEnabled = Boolean(evalRecord.autoRefineEnabled);
+      const thresholds = this.parseThresholds(
+        evalRecord.monitoringThresholds ? JSON.stringify(evalRecord.monitoringThresholds) : null
+      );
 
       // Calculate metrics
       const metrics = await this.calculateMetrics(evalId, windowDays);
@@ -178,37 +200,37 @@ export class PerformanceMonitor {
     const startDateStr = startDate.toISOString().split('T')[0];
 
     // Get execution stats from eval_executions
-    const execResult = await this.db
-      .prepare(
-        `SELECT
-           COUNT(*) as total,
-           SUM(CASE WHEN result = 1 THEN 1 ELSE 0 END) as passes,
-           SUM(CASE WHEN result = 0 THEN 1 ELSE 0 END) as fails,
-           SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as errors
-         FROM eval_executions
-         WHERE eval_id = ?
-         AND created_at >= ?`
-      )
-      .bind(evalId, startDateStr)
-      .first();
+    const execResult = await this.drizzle
+      .select({
+        total: sql<number>`COUNT(*)`,
+        passes: sql<number>`SUM(CASE WHEN ${evalExecutions.predictedResult} = 1 THEN 1 ELSE 0 END)`,
+        fails: sql<number>`SUM(CASE WHEN ${evalExecutions.predictedResult} = 0 THEN 1 ELSE 0 END)`,
+        errors: sql<number>`SUM(CASE WHEN ${evalExecutions.error} IS NOT NULL THEN 1 ELSE 0 END)`
+      })
+      .from(evalExecutions)
+      .where(and(
+        eq(evalExecutions.evalId, evalId),
+        gte(evalExecutions.executedAt, startDateStr)
+      ))
+      .limit(1);
 
-    // Get contradiction count from eval_comparison view
-    const contradictionResult = await this.db
-      .prepare(
-        `SELECT COUNT(*) as count
-         FROM eval_comparison
-         WHERE eval_id = ?
-         AND is_contradiction = 1
-         AND execution_created_at >= ?`
-      )
-      .bind(evalId, startDateStr)
-      .first();
+    // Get contradiction count from eval_comparison view (Drizzle type-safe)
+    const contradictionResult = await this.drizzle
+      .select({
+        count: sql<number>`COUNT(*)`
+      })
+      .from(evalComparison)
+      .where(and(
+        eq(evalComparison.evalId, evalId),
+        eq(evalComparison.isContradiction, 1),
+        gte(evalComparison.executedAt, startDateStr)
+      ));
 
-    const executionCount = (execResult?.total as number) || 0;
-    const passCount = (execResult?.passes as number) || 0;
-    const failCount = (execResult?.fails as number) || 0;
-    const errorCount = (execResult?.errors as number) || 0;
-    const contradictionCount = (contradictionResult?.count as number) || 0;
+    const executionCount = execResult[0]?.total || 0;
+    const passCount = execResult[0]?.passes || 0;
+    const failCount = execResult[0]?.fails || 0;
+    const errorCount = execResult[0]?.errors || 0;
+    const contradictionCount = contradictionResult[0]?.count || 0;
 
     return {
       eval_id: evalId,
@@ -298,44 +320,41 @@ export class PerformanceMonitor {
    */
   private async persistAlert(alert: PerformanceAlert): Promise<void> {
     // Check if similar alert already exists (unresolved)
-    const existing = await this.db
-      .prepare(
-        `SELECT id FROM performance_alerts
-         WHERE eval_id = ? AND alert_type = ? AND resolved_at IS NULL`
-      )
-      .bind(alert.eval_id, alert.alert_type)
-      .first();
+    const existingResult = await this.drizzle
+      .select({ id: performanceAlerts.id })
+      .from(performanceAlerts)
+      .where(and(
+        eq(performanceAlerts.evalId, alert.eval_id),
+        eq(performanceAlerts.alertType, alert.alert_type),
+        isNull(performanceAlerts.resolvedAt)
+      ))
+      .limit(1);
 
-    if (existing) {
+    if (existingResult.length > 0) {
       // Update existing alert with new values
-      await this.db
-        .prepare(
-          `UPDATE performance_alerts
-           SET current_value = ?, message = ?, severity = ?
-           WHERE id = ?`
-        )
-        .bind(alert.current_value, alert.message, alert.severity, existing.id)
-        .run();
+      await this.drizzle
+        .update(performanceAlerts)
+        .set({
+          currentValue: alert.current_value,
+          message: alert.message,
+          severity: alert.severity
+        })
+        .where(eq(performanceAlerts.id, existingResult[0].id));
     } else {
       // Insert new alert
-      await this.db
-        .prepare(
-          `INSERT INTO performance_alerts
-           (id, eval_id, alert_type, severity, current_value, threshold_value, message, prompt_id, triggered_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          alert.id,
-          alert.eval_id,
-          alert.alert_type,
-          alert.severity,
-          alert.current_value,
-          alert.threshold_value,
-          alert.message,
-          alert.prompt_id || null,
-          new Date().toISOString()
-        )
-        .run();
+      await this.drizzle
+        .insert(performanceAlerts)
+        .values({
+          id: alert.id,
+          evalId: alert.eval_id,
+          alertType: alert.alert_type,
+          severity: alert.severity,
+          currentValue: alert.current_value,
+          thresholdValue: alert.threshold_value,
+          message: alert.message,
+          promptId: alert.prompt_id || null,
+          triggeredAt: new Date().toISOString()
+        });
     }
   }
 
@@ -346,43 +365,48 @@ export class PerformanceMonitor {
     const today = new Date().toISOString().split('T')[0];
 
     // Use INSERT OR REPLACE for upsert behavior
-    await this.db
-      .prepare(
-        `INSERT OR REPLACE INTO performance_snapshots
-         (id, eval_id, snapshot_date, accuracy, execution_count, contradiction_count, error_count, pass_count, fail_count, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        `${evalId}_${today}`,
-        evalId,
-        today,
-        metrics.accuracy,
-        metrics.execution_count,
-        metrics.contradiction_count,
-        metrics.error_count,
-        metrics.pass_count,
-        metrics.fail_count,
-        new Date().toISOString()
-      )
-      .run();
+    await this.drizzle
+      .insert(performanceSnapshots)
+      .values({
+        id: `${evalId}_${today}`,
+        evalId: evalId,
+        snapshotDate: today,
+        accuracy: metrics.accuracy,
+        executionCount: metrics.execution_count,
+        contradictionCount: metrics.contradiction_count,
+        errorCount: metrics.error_count,
+        passCount: metrics.pass_count,
+        failCount: metrics.fail_count,
+        createdAt: new Date().toISOString()
+      })
+      .onConflictDoUpdate({
+        target: performanceSnapshots.id,
+        set: {
+          accuracy: metrics.accuracy,
+          executionCount: metrics.execution_count,
+          contradictionCount: metrics.contradiction_count,
+          errorCount: metrics.error_count,
+          passCount: metrics.pass_count,
+          failCount: metrics.fail_count
+        }
+      });
   }
 
   /**
    * Check if auto-refine is allowed (cooldown check)
    */
   private async checkAutoRefineCooldown(evalId: string): Promise<boolean> {
-    const cooldown = await this.db
-      .prepare(
-        `SELECT next_allowed_at FROM auto_refine_cooldowns WHERE eval_id = ?`
-      )
-      .bind(evalId)
-      .first();
+    const cooldownResult = await this.drizzle
+      .select({ nextAllowedAt: autoRefineCooldowns.nextAllowedAt })
+      .from(autoRefineCooldowns)
+      .where(eq(autoRefineCooldowns.evalId, evalId))
+      .limit(1);
 
-    if (!cooldown) {
+    if (cooldownResult.length === 0) {
       return true; // No cooldown record, allowed
     }
 
-    const nextAllowed = new Date(cooldown.next_allowed_at as string);
+    const nextAllowed = new Date(cooldownResult[0].nextAllowedAt);
     return new Date() >= nextAllowed;
   }
 
@@ -395,14 +419,15 @@ export class PerformanceMonitor {
     const nextAllowed = new Date(now.getTime() + cooldownHours * 60 * 60 * 1000);
 
     // Get existing cooldown for consecutive_failures tracking
-    const existing = await this.db
-      .prepare(`SELECT consecutive_failures FROM auto_refine_cooldowns WHERE eval_id = ?`)
-      .bind(evalId)
-      .first();
+    const existingResult = await this.drizzle
+      .select({ consecutiveFailures: autoRefineCooldowns.consecutiveFailures })
+      .from(autoRefineCooldowns)
+      .where(eq(autoRefineCooldowns.evalId, evalId))
+      .limit(1);
 
     const consecutiveFailures = success
       ? 0
-      : ((existing?.consecutive_failures as number) || 0) + 1;
+      : ((existingResult[0]?.consecutiveFailures) || 0) + 1;
 
     // Apply exponential backoff for failures
     const backoffMultiplier = Math.min(Math.pow(2, consecutiveFailures), 16);
@@ -410,82 +435,83 @@ export class PerformanceMonitor {
       now.getTime() + cooldownHours * 60 * 60 * 1000 * backoffMultiplier
     );
 
-    await this.db
-      .prepare(
-        `INSERT OR REPLACE INTO auto_refine_cooldowns
-         (id, eval_id, last_attempt_at, next_allowed_at, consecutive_failures, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        evalId,
-        evalId,
-        now.toISOString(),
-        adjustedNextAllowed.toISOString(),
-        consecutiveFailures,
-        now.toISOString()
-      )
-      .run();
+    await this.drizzle
+      .insert(autoRefineCooldowns)
+      .values({
+        id: evalId,
+        evalId: evalId,
+        lastAttemptAt: now.toISOString(),
+        nextAllowedAt: adjustedNextAllowed.toISOString(),
+        consecutiveFailures: consecutiveFailures,
+        updatedAt: now.toISOString()
+      })
+      .onConflictDoUpdate({
+        target: autoRefineCooldowns.id,
+        set: {
+          lastAttemptAt: now.toISOString(),
+          nextAllowedAt: adjustedNextAllowed.toISOString(),
+          consecutiveFailures: consecutiveFailures,
+          updatedAt: now.toISOString()
+        }
+      });
   }
 
   /**
    * Get active alerts for an eval
    */
   async getActiveAlerts(evalId: string): Promise<any[]> {
-    const result = await this.db
-      .prepare(
-        `SELECT * FROM performance_alerts
-         WHERE eval_id = ? AND resolved_at IS NULL
-         ORDER BY triggered_at DESC`
-      )
-      .bind(evalId)
-      .all();
+    const result = await this.drizzle
+      .select()
+      .from(performanceAlerts)
+      .where(and(
+        eq(performanceAlerts.evalId, evalId),
+        isNull(performanceAlerts.resolvedAt)
+      ))
+      .orderBy(desc(performanceAlerts.triggeredAt));
 
-    return result.results;
+    return result;
   }
 
   /**
    * Resolve an alert
    */
   async resolveAlert(alertId: string, resolvedBy?: string): Promise<void> {
-    await this.db
-      .prepare(
-        `UPDATE performance_alerts
-         SET resolved_at = ?, resolved_by = ?
-         WHERE id = ?`
-      )
-      .bind(new Date().toISOString(), resolvedBy || null, alertId)
-      .run();
+    await this.drizzle
+      .update(performanceAlerts)
+      .set({
+        resolvedAt: new Date().toISOString(),
+        resolvedBy: resolvedBy || null
+      })
+      .where(eq(performanceAlerts.id, alertId));
   }
 
   /**
    * Acknowledge an alert
    */
   async acknowledgeAlert(alertId: string, acknowledgedBy?: string): Promise<void> {
-    await this.db
-      .prepare(
-        `UPDATE performance_alerts
-         SET acknowledged_at = ?, acknowledged_by = ?
-         WHERE id = ?`
-      )
-      .bind(new Date().toISOString(), acknowledgedBy || null, alertId)
-      .run();
+    await this.drizzle
+      .update(performanceAlerts)
+      .set({
+        acknowledgedAt: new Date().toISOString(),
+        acknowledgedBy: acknowledgedBy || null
+      })
+      .where(eq(performanceAlerts.id, alertId));
   }
 
   /**
    * Get performance trend (historical snapshots)
    */
   async getPerformanceTrend(evalId: string, days: number = 30): Promise<any[]> {
-    const result = await this.db
-      .prepare(
-        `SELECT * FROM performance_snapshots
-         WHERE eval_id = ?
-         AND snapshot_date >= date('now', '-' || ? || ' days')
-         ORDER BY snapshot_date ASC`
-      )
-      .bind(evalId, days)
-      .all();
+    const result = await this.drizzle
+      .select()
+      .from(performanceSnapshots)
+      .where(and(
+        eq(performanceSnapshots.evalId, evalId),
+        sql`${performanceSnapshots.snapshotDate} >= date('now', '-' || ${days} || ' days')`
+      ))
+      .orderBy(performanceSnapshots.snapshotDate);
 
-    return result.results;
+    return result;
   }
 
   /**

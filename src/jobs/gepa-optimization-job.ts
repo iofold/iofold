@@ -18,6 +18,9 @@ import { PythonRunner, GEPA_ALLOWED_IMPORTS } from '../sandbox/python-runner';
 import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
 import type { GEPAOptimizationJobPayload } from '../types/queue';
+import { createDb, type Database } from '../db/client';
+import { eq, desc, sql } from 'drizzle-orm';
+import { gepaRuns, evals, agents, agentVersions } from '../db/schema';
 
 export interface GEPAOptimizationJobConfig {
   jobId: string;
@@ -66,6 +69,7 @@ export class GEPAOptimizationJob {
   private jobManager: JobManager;
   private runner: PythonRunner;
   private stream?: SSEStream;
+  private drizzle: Database;
 
   constructor(
     private config: GEPAOptimizationJobConfig,
@@ -77,6 +81,7 @@ export class GEPAOptimizationJob {
       timeout: 1800000, // 30 minutes for GEPA optimization
       allowedImports: GEPA_ALLOWED_IMPORTS // Allow httpx, openai, time, etc.
     });
+    this.drizzle = createDb(deps.db);
   }
 
   async execute(stream?: SSEStream): Promise<GEPAResult> {
@@ -89,15 +94,13 @@ export class GEPAOptimizationJob {
 
       // Step 1: Update gepa_runs status to 'running'
       const now = new Date().toISOString();
-      await this.deps.db
-        .prepare(
-          `UPDATE gepa_runs
-           SET status = 'running',
-               started_at = ?
-           WHERE id = ?`
-        )
-        .bind(now, this.config.runId)
-        .run();
+      await this.drizzle
+        .update(gepaRuns)
+        .set({
+          status: 'running',
+          startedAt: now
+        })
+        .where(eq(gepaRuns.id, this.config.runId));
 
       this.emitProgress('fetching_eval_code', 5);
 
@@ -134,16 +137,14 @@ export class GEPAOptimizationJob {
       console.error('[GEPAOptimizationJob] Job failed:', error);
 
       // Update gepa_runs status to failed
-      await this.deps.db
-        .prepare(
-          `UPDATE gepa_runs
-           SET status = 'failed',
-               error = ?,
-               completed_at = ?
-           WHERE id = ?`
-        )
-        .bind(error.message, new Date().toISOString(), this.config.runId)
-        .run();
+      await this.drizzle
+        .update(gepaRuns)
+        .set({
+          status: 'failed',
+          error: error.message,
+          completedAt: new Date().toISOString()
+        })
+        .where(eq(gepaRuns.id, this.config.runId));
 
       await this.jobManager.failJob(this.config.jobId, error.message);
 
@@ -169,16 +170,17 @@ export class GEPAOptimizationJob {
       throw new Error('Either evalId or evalCode must be provided');
     }
 
-    const evalRecord = await this.deps.db
-      .prepare('SELECT code FROM evals WHERE id = ?')
-      .bind(this.config.evalId)
-      .first();
+    const evalRecord = await this.drizzle
+      .select({ code: evals.code })
+      .from(evals)
+      .where(eq(evals.id, this.config.evalId))
+      .limit(1);
 
-    if (!evalRecord) {
+    if (!evalRecord[0]) {
       throw new Error(`Eval ${this.config.evalId} not found`);
     }
 
-    return evalRecord.code as string;
+    return evalRecord[0].code;
   }
 
   /**
@@ -299,48 +301,38 @@ except Exception as e:
     totalCandidates: number
   ): Promise<string> {
     // Get the current active version to use as parent
-    const agent = await this.deps.db
-      .prepare('SELECT active_version_id FROM agents WHERE id = ?')
-      .bind(this.config.agentId)
-      .first();
+    const agent = await this.drizzle
+      .select({ activeVersionId: agents.activeVersionId })
+      .from(agents)
+      .where(eq(agents.id, this.config.agentId))
+      .limit(1);
 
     // Get the next version number
-    const maxVersionResult = await this.deps.db
-      .prepare('SELECT MAX(version) as max_version FROM agent_versions WHERE agent_id = ?')
-      .bind(this.config.agentId)
-      .first();
+    const maxVersionResult = await this.drizzle
+      .select({ maxVersion: sql<number>`MAX(${agentVersions.version})` })
+      .from(agentVersions)
+      .where(eq(agentVersions.agentId, this.config.agentId))
+      .limit(1);
 
-    const nextVersion = (maxVersionResult?.max_version as number || 0) + 1;
+    const nextVersion = (maxVersionResult[0]?.maxVersion || 0) + 1;
 
     // Create new version with GEPA optimization metadata
     const versionId = `ver_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
-    const metadata = {
-      gepa_run_id: this.config.runId,
-      best_score: bestScore,
-      total_candidates: totalCandidates,
-      optimization_type: 'gepa'
-    };
-
-    await this.deps.db
-      .prepare(
-        `INSERT INTO agent_versions (id, agent_id, version, prompt_template, variables, source,
-                                      parent_version_id, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        versionId,
-        this.config.agentId,
-        nextVersion,
-        optimizedPrompt,
-        JSON.stringify([]), // No variables for GEPA-optimized prompts
-        'ai_improved', // Source indicates AI-generated improvement
-        agent?.active_version_id || null,
-        'candidate', // Start as candidate, user can promote to active
-        now
-      )
-      .run();
+    await this.drizzle
+      .insert(agentVersions)
+      .values({
+        id: versionId,
+        agentId: this.config.agentId,
+        version: nextVersion,
+        promptTemplate: optimizedPrompt,
+        variables: {}, // No variables for GEPA-optimized prompts
+        source: 'ai_improved', // Source indicates AI-generated improvement
+        parentVersionId: agent[0]?.activeVersionId || null,
+        status: 'candidate', // Start as candidate, user can promote to active
+        createdAt: now
+      });
 
     return versionId;
   }
@@ -351,28 +343,18 @@ except Exception as e:
   private async updateGEPARunResults(result: GEPAResult, versionId: string): Promise<void> {
     const now = new Date().toISOString();
 
-    await this.deps.db
-      .prepare(
-        `UPDATE gepa_runs
-         SET status = 'completed',
-             best_prompt = ?,
-             best_score = ?,
-             total_candidates = ?,
-             progress_metric_calls = ?,
-             optimized_version_id = ?,
-             completed_at = ?
-         WHERE id = ?`
-      )
-      .bind(
-        result.best_prompt,
-        result.best_score,
-        result.total_candidates,
-        result.total_metric_calls,
-        versionId,
-        now,
-        this.config.runId
-      )
-      .run();
+    await this.drizzle
+      .update(gepaRuns)
+      .set({
+        status: 'completed',
+        bestPrompt: result.best_prompt,
+        bestScore: result.best_score,
+        totalCandidates: result.total_candidates,
+        progressMetricCalls: result.total_metric_calls,
+        optimizedVersionId: versionId,
+        completedAt: now
+      })
+      .where(eq(gepaRuns.id, this.config.runId));
   }
 
   /**

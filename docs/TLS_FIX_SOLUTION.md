@@ -1,4 +1,4 @@
-# TLS Certificate Fix - Solution Implemented
+# TLS Certificate Fix - Solutions
 
 ## Problem
 
@@ -8,72 +8,87 @@ When running iofold backend in Docker, LLM API calls through Cloudflare AI Gatew
 TLS peer's certificate is not trusted; reason = unable to get local issuer certificate
 ```
 
-**Root Cause:** The workerd runtime (used by `wrangler dev`) has TLS certificate validation issues when running inside Docker containers. Even with ca-certificates installed in the container, workerd cannot validate certificates for outbound HTTPS requests to external APIs like the Cloudflare AI Gateway.
+**Root Cause:** The workerd runtime (used by `wrangler dev`) has TLS certificate validation issues when running inside Docker containers. The default Node.js slim images don't have CA certificates configured in a way that workerd can use them.
 
-## Solution: Run Backend on Host
+## Solution: Full Docker Setup with Custom Dockerfile
 
-**Option Selected: #3 - Run wrangler dev on host instead of Docker**
+**Status:** ✅ Working as of 2025-12-14
 
-This is the proper solution that:
-- ✅ Maintains AI Gateway architecture (no bypass)
-- ✅ Provides proper TLS certificate validation (host OS has valid CA certs)
-- ✅ Requires no code changes or workarounds
-- ✅ Works immediately without additional configuration
-- ✅ Safe for all environments (dev, staging, production)
+A custom Dockerfile with proper CA certificate configuration allows running the backend fully in Docker.
+
+**How it works:**
+- Custom `docker/Dockerfile.backend` with `ca-certificates` package
+- SSL environment variables pointing to system certificates
+- `docker-compose.yml` uses this custom build
+
+**Benefits:**
+- Single `docker compose up` command starts everything
+- Consistent containerized environment
+- No need for multiple terminals
+- Matches production environment more closely
 
 ## Implementation
 
-### 1. Reverted Direct API Bypass
+### 1. Custom Dockerfile
 
-**Removed from `/src/ai/gateway.ts`:**
-- `ANTHROPIC_API_KEY` from `GatewayEnv` interface
-- `ENVIRONMENT` check and bypass logic in `createGatewayClient()`
-- Direct Anthropic API baseURL override
+**Created `/docker/Dockerfile.backend`:**
+```dockerfile
+FROM node:22-slim
 
-**Removed from `/src/playground/llm/streaming.ts`:**
-- `ANTHROPIC_API_KEY` and `ENVIRONMENT` from `Env` interface
-- Development bypass logic in `getChatModel()`
-- Direct `ChatAnthropic` instantiation
+# Install CA certificates and required build tools
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-**Removed from `.dev.vars.example`:**
-- `ANTHROPIC_API_KEY` requirement
+# Set up pnpm via corepack
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
-### 2. Updated Docker Compose
+# Set environment variables
+ENV PNPM_HOME=/root/.local/share/pnpm
+ENV PATH=$PNPM_HOME:/usr/local/bin:/usr/bin:/bin
+ENV NODE_ENV=development
+# Make Node.js/workerd use system certificates
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_DIR=/etc/ssl/certs
 
-**Modified `/docker-compose.dev.yml`:**
-- Removed `backend` service completely
-- Kept `python-sandbox` and `frontend` services in Docker
-- Removed backend-related volumes
-- Added note about backend running on host
-
-### 3. Updated Documentation
-
-**Modified `/README.md`:**
-- Replaced "Docker Development" section with "Hybrid Development Setup"
-- Added clear instructions for running backend on host
-- Documented why this setup is necessary
-- Listed required environment variables
-
-## Usage
-
-### Start Development Environment
-
-**Terminal 1: Start Docker services (Frontend + Python Sandbox)**
-```bash
-docker-compose -f docker-compose.dev.yml up -d
+WORKDIR /app
+EXPOSE 8787
 ```
 
-**Terminal 2: Start Backend on Host**
+### 2. Docker Compose Configuration
+
+**Updated `/docker-compose.yml`:**
+```yaml
+backend:
+  build:
+    context: .
+    dockerfile: docker/Dockerfile.backend
+  environment:
+    - NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+    - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+    - SSL_CERT_DIR=/etc/ssl/certs
+```
+
+### 3. Usage
+
 ```bash
-export PYTHON_EXECUTOR_URL=http://localhost:9999
-pnpm run dev
+# Build and start all services
+docker compose up -d
+
+# View logs
+docker compose logs -f backend
 ```
 
 ### Services
 
-- Backend (host): `http://localhost:8787`
-- Frontend (Docker): `http://localhost:3000`
-- Python Sandbox (Docker): `http://localhost:9999`
+- Backend: `http://localhost:8787`
+- Frontend: `http://localhost:3000`
+- Python Sandbox: `http://localhost:9999`
 
 ## Verification
 
@@ -106,46 +121,33 @@ data: [DONE]
 
 ## Why This Works
 
-1. **Host OS has proper CA certificates:** The host machine (Linux, macOS, Windows) has a properly configured certificate store that all applications trust by default
+1. **Proper CA certificates in container:** The custom Dockerfile installs `ca-certificates` and runs `update-ca-certificates` to populate the system certificate store
 
-2. **No Docker networking issues:** Running on the host eliminates any Docker network bridge issues that might affect TLS handshakes
+2. **SSL environment variables:** Setting `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, and `SSL_CERT_DIR` ensures both Node.js and workerd can find the certificates
 
-3. **workerd uses Node.js TLS on host:** When running on the host, workerd can leverage the Node.js TLS implementation which respects system certificates
+3. **Consistent environment:** All services run in Docker, matching production deployment patterns
 
-4. **Simple and reliable:** No custom certificate installation, no environment variable hacks, no bypass code
+4. **Simple usage:** Single `docker compose up` command starts everything
 
 ## Alternatives Considered
 
-### ❌ Option 1: Fix TLS certificates in Docker container
-- **Tried:** Installing ca-certificates in Dockerfile
-- **Result:** workerd does not use system CA store
-- **Verdict:** Not feasible without workerd changes
-
-### ❌ Option 2: Use Workers AI instead
+### ❌ Use Workers AI instead
 - **Issue:** Limited model selection (only Cloudflare models)
 - **Verdict:** Does not meet product requirements for Claude/GPT access
 
-### ✅ Option 3: Run wrangler dev on host (SELECTED)
-- **Pros:** Simple, reliable, no code changes, proper TLS
-- **Cons:** Requires two terminals (minimal inconvenience)
-- **Verdict:** Best solution
-
-### ❌ Option 4: Use remote staging for LLM calls
+### ❌ Use remote staging for LLM calls
 - **Issue:** Slow development cycle, depends on staging availability
 - **Verdict:** Not practical for local development
 
-### ❌ Option 5: Direct API bypass (REJECTED)
+### ❌ Direct API bypass
 - **Issue:** Circumvents AI Gateway, requires API keys for all providers
 - **Security:** Adds bypass code paths that could be exploited
 - **Verdict:** Not acceptable
 
 ## Files Modified
 
-- `/src/ai/gateway.ts` - Reverted bypass code
-- `/src/playground/llm/streaming.ts` - Reverted bypass code
-- `/docker-compose.dev.yml` - Removed backend service
-- `/README.md` - Added hybrid setup instructions
-- `/.dev.vars.example` - Removed ANTHROPIC_API_KEY
+- `/docker/Dockerfile.backend` - Custom Dockerfile with CA certificates
+- `/docker-compose.yml` - Updated to use custom build with SSL environment variables
 
 ## Production Impact
 
@@ -154,20 +156,11 @@ data: [DONE]
 - No bypass code exists in the codebase
 - Staging and production are unaffected
 
-## Future Considerations
-
-If workerd adds proper CA certificate support for Docker, we can move the backend back into Docker. Track:
-- https://github.com/cloudflare/workers-sdk/issues (TLS-related issues)
-- https://github.com/cloudflare/workerd (runtime updates)
-
 ## References
 
-### Research Sources
-
-- [🐛 BUG: TLS certificate not trusted when running wrangler dev in Docker](https://github.com/cloudflare/workers-sdk/issues/8158) - GitHub Issue documenting the problem
-- [wrangler dev TLS certificate configuration](https://www.answeroverflow.com/m/1145120390121791528) - Community discussions on NODE_EXTRA_CA_CERTS
+- [🐛 BUG: TLS certificate not trusted when running wrangler dev in Docker](https://github.com/cloudflare/workers-sdk/issues/8158) - GitHub Issue documenting the original problem
 - [Step-by-Step Guide to Fixing Node.js SSL Certificate Errors](https://dev.to/hardy_mervana/step-by-step-guide-to-fixing-nodejs-ssl-certificate-errors-2il2) - General Node.js TLS troubleshooting
 
-### Key Findings
+### Solution Summary
 
-The Cloudflare workers-sdk issue #8158 was closed without a resolution after maintainers couldn't reproduce it in basic Docker setups. The community has confirmed that `NODE_EXTRA_CA_CERTS` should work with Node.js but doesn't affect workerd's TLS validation. Running wrangler on the host is the recommended workaround until workerd adds proper Docker certificate support.
+The key insight is that workerd needs **both** the CA certificates installed **and** the SSL environment variables set. Simply installing `ca-certificates` is not enough - you must also set `NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt` and related environment variables.

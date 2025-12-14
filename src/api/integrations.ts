@@ -13,6 +13,10 @@ import {
   validateWorkspaceAccess,
   parseJsonBody,
 } from './utils';
+import { createDb, Database } from '../db/client';
+import { eq, and, desc } from 'drizzle-orm';
+import { integrations } from '../db/schema/integrations';
+import type { Integration, NewIntegration } from '../db/schema/integrations';
 
 export interface Env {
   DB: D1Database;
@@ -96,23 +100,19 @@ export async function createIntegration(request: Request, env: Env): Promise<Res
     const name = body.name.trim();
     const baseUrl = body.base_url || 'https://cloud.langfuse.com';
 
-    const config = JSON.stringify({ base_url: baseUrl });
+    const config = { base_url: baseUrl };
 
-    await env.DB.prepare(
-      `INSERT INTO integrations (id, workspace_id, platform, name, api_key_encrypted, config, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-      .bind(
-        integrationId,
-        workspaceId,
-        body.platform,
-        name,
-        encryptApiKey(body.api_key),
-        config,
-        'active',
-        now
-      )
-      .run();
+    const drizzle = createDb(env.DB);
+    await drizzle.insert(integrations).values({
+      id: integrationId,
+      workspaceId: workspaceId,
+      platform: body.platform,
+      name: name,
+      apiKeyEncrypted: encryptApiKey(body.api_key),
+      config: config,
+      status: 'active',
+      createdAt: now,
+    });
 
     return createSuccessResponse(
       {
@@ -157,23 +157,22 @@ export async function listIntegrations(request: Request, env: Env): Promise<Resp
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    const result = await env.DB.prepare(
-      `SELECT
-        id,
-        platform,
-        name,
-        config,
-        status,
-        last_synced_at,
-        created_at
-      FROM integrations
-      WHERE workspace_id = ?
-      ORDER BY created_at DESC`
-    )
-      .bind(workspaceId)
-      .all();
+    const drizzle = createDb(env.DB);
+    const result = await drizzle
+      .select({
+        id: integrations.id,
+        platform: integrations.platform,
+        name: integrations.name,
+        config: integrations.config,
+        status: integrations.status,
+        lastSyncedAt: integrations.lastSyncedAt,
+        createdAt: integrations.createdAt,
+      })
+      .from(integrations)
+      .where(eq(integrations.workspaceId, workspaceId))
+      .orderBy(desc(integrations.createdAt));
 
-    const integrations = result.results.map((row: any) => {
+    const integrationsData = result.map((row) => {
       // Use the stored name, or generate a default if missing
       const defaultName = `${row.platform.charAt(0).toUpperCase() + row.platform.slice(1)} Integration`;
 
@@ -183,11 +182,11 @@ export async function listIntegrations(request: Request, env: Env): Promise<Resp
         name: row.name || defaultName,
         status: row.status,
         error_message: row.status === 'error' ? 'Connection error' : null,
-        last_synced_at: row.last_synced_at,
+        last_synced_at: row.lastSyncedAt,
       };
     });
 
-    return createSuccessResponse({ integrations });
+    return createSuccessResponse({ integrations: integrationsData });
   } catch (error: any) {
     if (error.message === 'Missing X-Workspace-Id header') {
       return createErrorResponse('VALIDATION_ERROR', error.message, 400);
@@ -211,20 +210,17 @@ export async function getIntegrationById(request: Request, env: Env, integration
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
-    const integration = await env.DB.prepare(
-      `SELECT
-        id,
-        platform,
-        name,
-        config,
-        status,
-        last_synced_at,
-        created_at
-      FROM integrations
-      WHERE id = ? AND workspace_id = ?`
-    )
-      .bind(integrationId, workspaceId)
-      .first();
+    const drizzle = createDb(env.DB);
+    const result = await drizzle
+      .select()
+      .from(integrations)
+      .where(and(
+        eq(integrations.id, integrationId),
+        eq(integrations.workspaceId, workspaceId)
+      ))
+      .limit(1);
+
+    const integration = result[0];
 
     if (!integration) {
       return createErrorResponse('NOT_FOUND', 'Integration not found', 404);
@@ -234,7 +230,7 @@ export async function getIntegrationById(request: Request, env: Env, integration
     let baseUrl = null;
     if (integration.config) {
       try {
-        const config = JSON.parse(integration.config as string);
+        const config = integration.config as Record<string, unknown>;
         baseUrl = config.base_url;
       } catch {}
     }
@@ -245,8 +241,8 @@ export async function getIntegrationById(request: Request, env: Env, integration
       name: integration.name,
       base_url: baseUrl,
       status: integration.status,
-      last_synced_at: integration.last_synced_at,
-      created_at: integration.created_at,
+      last_synced_at: integration.lastSyncedAt,
+      created_at: integration.createdAt,
       // API key is masked for security
       api_key: '********',
     });
@@ -273,12 +269,23 @@ export async function updateIntegration(request: Request, env: Env, integrationI
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    const drizzle = createDb(env.DB);
+
     // Verify integration exists
-    const existing = await env.DB.prepare(
-      'SELECT id, name, config FROM integrations WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(integrationId, workspaceId)
-      .first();
+    const existingResult = await drizzle
+      .select({
+        id: integrations.id,
+        name: integrations.name,
+        config: integrations.config,
+      })
+      .from(integrations)
+      .where(and(
+        eq(integrations.id, integrationId),
+        eq(integrations.workspaceId, workspaceId)
+      ))
+      .limit(1);
+
+    const existing = existingResult[0];
 
     if (!existing) {
       return createErrorResponse('NOT_FOUND', 'Integration not found', 404);
@@ -290,77 +297,64 @@ export async function updateIntegration(request: Request, env: Env, integrationI
       api_key?: string;
     }>(request);
 
-    // Build update query dynamically
-    const updates: string[] = [];
-    const values: any[] = [];
+    // Build update object dynamically
+    const updateData: Partial<NewIntegration> = {};
 
     if (body.name !== undefined) {
-      updates.push('name = ?');
-      values.push(body.name);
+      updateData.name = body.name;
     }
 
     if (body.base_url !== undefined) {
       // Merge with existing config
-      let config: any = {};
+      let config: Record<string, unknown> = {};
       if (existing.config) {
         try {
-          config = JSON.parse(existing.config as string);
+          config = existing.config as Record<string, unknown>;
         } catch {}
       }
       config.base_url = body.base_url;
-      updates.push('config = ?');
-      values.push(JSON.stringify(config));
+      updateData.config = config;
     }
 
     if (body.api_key !== undefined) {
-      updates.push('api_key_encrypted = ?');
-      values.push(encryptApiKey(body.api_key));
+      updateData.apiKeyEncrypted = encryptApiKey(body.api_key);
     }
 
-    if (updates.length === 0) {
+    if (Object.keys(updateData).length === 0) {
       return createErrorResponse('VALIDATION_ERROR', 'No fields to update', 400);
     }
 
-    values.push(integrationId);
-    await env.DB.prepare(
-      `UPDATE integrations SET ${updates.join(', ')} WHERE id = ?`
-    )
-      .bind(...values)
-      .run();
+    await drizzle
+      .update(integrations)
+      .set(updateData)
+      .where(eq(integrations.id, integrationId));
 
     // Fetch and return updated integration
-    const updated = await env.DB.prepare(
-      `SELECT
-        id,
-        platform,
-        name,
-        config,
-        status,
-        last_synced_at,
-        created_at
-      FROM integrations
-      WHERE id = ?`
-    )
-      .bind(integrationId)
-      .first();
+    const updatedResult = await drizzle
+      .select()
+      .from(integrations)
+      .where(eq(integrations.id, integrationId))
+      .limit(1);
+
+    const updated = updatedResult[0];
 
     // Parse config if present
     let baseUrl = null;
-    if (updated!.config) {
+    if (updated.config) {
       try {
-        const config = JSON.parse(updated!.config as string);
+        const config = updated.config as Record<string, unknown>;
         baseUrl = config.base_url;
       } catch {}
     }
 
     return createSuccessResponse({
-      id: updated!.id,
-      platform: updated!.platform,
-      name: updated!.name,
+      id: updated.id,
+      platform: updated.platform,
+      name: updated.name,
       base_url: baseUrl,
-      status: updated!.status,
-      last_synced_at: updated!.last_synced_at,
-      created_at: updated!.created_at,
+      status: updated.status,
+      last_synced_at: updated.lastSyncedAt,
+      created_at: updated.createdAt,
     });
   } catch (error: any) {
     if (error.message === 'Missing X-Workspace-Id header') {
@@ -388,26 +382,38 @@ export async function testIntegration(request: Request, env: Env, integrationId:
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    const drizzle = createDb(env.DB);
+
     // Get integration
-    const integration = await env.DB.prepare(
-      'SELECT id, platform, api_key_encrypted, config FROM integrations WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(integrationId, workspaceId)
-      .first();
+    const result = await drizzle
+      .select({
+        id: integrations.id,
+        platform: integrations.platform,
+        apiKeyEncrypted: integrations.apiKeyEncrypted,
+        config: integrations.config,
+      })
+      .from(integrations)
+      .where(and(
+        eq(integrations.id, integrationId),
+        eq(integrations.workspaceId, workspaceId)
+      ))
+      .limit(1);
+
+    const integration = result[0];
 
     if (!integration) {
       return createErrorResponse('NOT_FOUND', 'Integration not found', 404);
     }
 
-    const apiKey = decryptApiKey(integration.api_key_encrypted as string);
-    const platform = integration.platform as string;
+    const apiKey = decryptApiKey(integration.apiKeyEncrypted);
+    const platform = integration.platform;
 
     // Parse config for base_url
     let baseUrl = 'https://cloud.langfuse.com';
     if (integration.config) {
       try {
-        const config = JSON.parse(integration.config as string);
-        baseUrl = config.base_url || baseUrl;
+        const config = integration.config as Record<string, unknown>;
+        baseUrl = (config.base_url as string) || baseUrl;
       } catch {}
     }
 
@@ -455,22 +461,20 @@ export async function testIntegration(request: Request, env: Env, integrationId:
 
     if (testSuccess) {
       // Update status to active
-      await env.DB.prepare(
-        'UPDATE integrations SET status = ? WHERE id = ?'
-      )
-        .bind('active', integrationId)
-        .run();
+      await drizzle
+        .update(integrations)
+        .set({ status: 'active' })
+        .where(eq(integrations.id, integrationId));
 
       return createSuccessResponse({
         success: true,
       });
     } else {
       // Update status to error
-      await env.DB.prepare(
-        'UPDATE integrations SET status = ? WHERE id = ?'
-      )
-        .bind('error', integrationId)
-        .run();
+      await drizzle
+        .update(integrations)
+        .set({ status: 'error' })
+        .where(eq(integrations.id, integrationId));
 
       return createSuccessResponse({
         success: false,
@@ -501,21 +505,28 @@ export async function deleteIntegration(request: Request, env: Env, integrationI
     const workspaceId = getWorkspaceId(request);
     validateWorkspaceAccess(workspaceId);
 
+    const drizzle = createDb(env.DB);
+
     // Verify integration exists
-    const integration = await env.DB.prepare(
-      'SELECT id FROM integrations WHERE id = ? AND workspace_id = ?'
-    )
-      .bind(integrationId, workspaceId)
-      .first();
+    const result = await drizzle
+      .select({ id: integrations.id })
+      .from(integrations)
+      .where(and(
+        eq(integrations.id, integrationId),
+        eq(integrations.workspaceId, workspaceId)
+      ))
+      .limit(1);
+
+    const integration = result[0];
 
     if (!integration) {
       return createErrorResponse('NOT_FOUND', 'Integration not found', 404);
     }
 
     // Delete integration
-    await env.DB.prepare('DELETE FROM integrations WHERE id = ?')
-      .bind(integrationId)
-      .run();
+    await drizzle
+      .delete(integrations)
+      .where(eq(integrations.id, integrationId));
 
     return new Response(null, { status: 204 });
   } catch (error: any) {

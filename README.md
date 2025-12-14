@@ -98,40 +98,25 @@ pnpm run dev
 
 The server will start at `http://localhost:8787`
 
-### Hybrid Development Setup (Recommended)
+### Docker Development Setup
 
-**Backend runs on host, frontend + Python sandbox run in Docker**
-
-This avoids TLS certificate issues with workerd (Cloudflare Workers runtime) in Docker while keeping frontend and Python sandbox containerized.
-
-#### 1. Start Docker Services (Frontend + Python Sandbox)
+All services run in Docker with a single command:
 
 ```bash
-# Start Docker services
-docker-compose -f docker-compose.dev.yml up -d
+# Build and start all services
+docker compose up -d
 
 # View logs
-docker-compose -f docker-compose.dev.yml logs -f
+docker compose logs -f
+
+# View backend logs only
+docker compose logs -f backend
 ```
-
-#### 2. Start Backend on Host
-
-In a separate terminal:
-
-```bash
-# Set environment variable for Python sandbox
-export PYTHON_EXECUTOR_URL=http://localhost:9999
-
-# Start backend
-pnpm run dev
-```
-
-The backend will automatically load `.dev.vars` for API keys.
 
 **Services:**
-- Backend (host): `http://localhost:8787`
-- Frontend (Docker): `http://localhost:3000`
-- Python Sandbox (Docker): `http://localhost:9999`
+- Backend: `http://localhost:8787`
+- Frontend: `http://localhost:3000`
+- Python Sandbox: `http://localhost:9999`
 
 **Required in `.dev.vars`:**
 - `CF_ACCOUNT_ID` - Your Cloudflare account ID
@@ -140,11 +125,7 @@ The backend will automatically load `.dev.vars` for API keys.
 - `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` - For trace fetching
 - `LANGSMITH_API_KEY` - For LangSmith tracing (optional)
 
-**Why This Setup?**
-
-The workerd runtime (used by `wrangler dev`) has TLS certificate validation issues when running inside Docker containers. Running the backend on the host avoids this issue entirely, while the frontend and Python sandbox remain containerized for consistency.
-
-See `docs/deployment-guide.md` for detailed setup and troubleshooting.
+**Note:** The backend uses a custom Dockerfile (`docker/Dockerfile.backend`) with CA certificates configured to resolve TLS issues with the workerd runtime. See `docs/TLS_FIX_SOLUTION.md` for details.
 
 ### API Endpoints
 
