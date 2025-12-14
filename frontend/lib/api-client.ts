@@ -372,7 +372,7 @@ class APIClient {
   }
 
   async listJobs(params?: {
-    type?: 'import' | 'generate' | 'execute'
+    type?: 'import' | 'generate' | 'execute' | 'taskset_run' | 'agent_discovery' | 'gepa_optimization' | 'rollout_task'
     status?: string
     limit?: number
   }): Promise<{ jobs: Job[] }> {
@@ -706,7 +706,7 @@ class APIClient {
     agentId: string,
     tasksetId: string,
     data?: RunTasksetRequest
-  ): Promise<{ run_id: string; status: string }> {
+  ): Promise<{ job_id: string; status: string; task_count: number }> {
     return this.request(`/api/agents/${agentId}/tasksets/${tasksetId}/run`, {
       method: 'POST',
       body: JSON.stringify(data || {}),

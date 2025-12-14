@@ -67,6 +67,7 @@ export interface TasksetRun {
   id: string;
   taskset_id: string;
   status: 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
+  progress: number;
   task_count: number;
   completed_count: number;
   failed_count: number;

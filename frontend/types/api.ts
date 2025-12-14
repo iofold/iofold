@@ -202,9 +202,10 @@ export interface MatrixStats {
 
 export interface Job {
   id: string;
-  type: 'import' | 'generate' | 'execute';
+  type: 'import' | 'generate' | 'execute' | 'taskset_run' | 'agent_discovery' | 'gepa_optimization' | 'rollout_task';
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress: number; // 0-100
+  metadata?: Record<string, unknown>;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
