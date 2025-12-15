@@ -91,25 +91,28 @@ async function executeD1Query(sql: string, params: any[] = []): Promise<D1Respon
   return response.json();
 }
 
-async function executeD1Batch(statements: Array<{ sql: string; params?: any[] }>): Promise<D1Response> {
-  const url = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/d1/database/${BENCHMARKS_DB_ID}/query`;
+// Build a multi-value INSERT statement
+// SQLite limits params to 100, with 7 columns we can do ~14 rows per query
+function buildBatchInsert(records: Array<{
+  messageId: string;
+  inbox: string;
+  subject: string | null;
+  sender: string | null;
+  recipients: string | null;
+  date: string | null;
+  body: string | null;
+}>): { sql: string; params: any[] } {
+  const placeholders = records.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
+  const params: any[] = [];
 
-  // D1 batch API accepts array of SQL statements
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${API_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(statements),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`D1 API error ${response.status}: ${text}`);
+  for (const r of records) {
+    params.push(r.messageId, r.inbox, r.subject, r.sender, r.recipients, r.date, r.body);
   }
 
-  return response.json();
+  return {
+    sql: `INSERT OR IGNORE INTO emails (message_id, inbox, subject, sender, recipients, date, body) VALUES ${placeholders}`,
+    params,
+  };
 }
 
 // ============================================================================
@@ -150,8 +153,20 @@ async function downloadParquet(url: string, dest: string): Promise<void> {
 }
 
 async function readParquetWithPython(parquetPath: string, limit: number): Promise<any[]> {
-  const scriptPath = path.join(TEMP_DIR, 'convert_parquet.py');
   const outputPath = path.join(TEMP_DIR, 'emails.json');
+
+  // Use cached JSON if it exists (faster than re-parsing parquet)
+  if (fs.existsSync(outputPath)) {
+    console.log(`Using cached JSON: ${outputPath}`);
+    const data = JSON.parse(fs.readFileSync(outputPath, 'utf-8'));
+    console.log(`Loaded ${data.length} email records from cache`);
+    if (limit > 0 && data.length > limit) {
+      return data.slice(0, limit);
+    }
+    return data;
+  }
+
+  const scriptPath = path.join(TEMP_DIR, 'convert_parquet.py');
 
   // Use relative paths for Docker container
   const dockerParquetPath = '.tmp/' + path.basename(parquetPath);
@@ -185,7 +200,7 @@ print(f"Exported {len(data)} records")
 
   console.log(`Reading parquet with Python: ${parquetPath}`);
   execSync(
-    `docker run --rm -v ${process.cwd()}:/app -w /app python:3.11-slim bash -c "pip install pyarrow -q 2>/dev/null && python3 .tmp/convert_parquet.py"`,
+    `docker run --rm -v ${process.cwd()}:/app -w /app python:3.11-slim bash -c "pip install pyarrow pandas -q 2>/dev/null && python3 .tmp/convert_parquet.py"`,
     { stdio: 'inherit' }
   );
 
@@ -251,19 +266,22 @@ Environment:
   const startCount = countResult.result[0].results[0].count;
   console.log(`\nStarting count: ${startCount} emails`);
 
-  // Import in batches using parameterized queries
-  console.log(`\nImporting ${emailData.length} emails in batches of ${batchSize}...`);
+  // SQLite limits params to 100, with 7 columns we can do 14 rows per query
+  const maxRowsPerQuery = 14;
+  const effectiveBatchSize = Math.min(batchSize, maxRowsPerQuery);
+
+  console.log(`\nImporting ${emailData.length} emails in batches of ${effectiveBatchSize} (limited by SQLite param limit)...`);
 
   let imported = 0;
   let skipped = 0;
   let errors = 0;
   const startTime = Date.now();
 
-  for (let i = 0; i < emailData.length; i += batchSize) {
-    const batch = emailData.slice(i, i + batchSize);
+  for (let i = 0; i < emailData.length; i += effectiveBatchSize) {
+    const batch = emailData.slice(i, i + effectiveBatchSize);
 
-    // Build batch of parameterized INSERT statements
-    const statements = batch.map((row) => {
+    // Transform raw data to records
+    const records = batch.map((row) => {
       const recipients: string[] = [];
       for (const field of ['to', 'cc', 'bcc']) {
         const val = row[field];
@@ -273,30 +291,24 @@ Environment:
       }
 
       return {
-        sql: `INSERT OR IGNORE INTO emails (message_id, inbox, subject, sender, recipients, date, body) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        params: [
-          row.message_id,
-          extractInbox(row),
-          row.subject || null,
-          row.from || null,
-          recipients.length > 0 ? JSON.stringify(recipients) : null,
-          row.date || null,
-          truncateBody(row.body),
-        ],
+        messageId: row.message_id,
+        inbox: extractInbox(row),
+        subject: row.subject || null,
+        sender: row.from || null,
+        recipients: recipients.length > 0 ? JSON.stringify(recipients) : null,
+        date: row.date || null,
+        body: truncateBody(row.body),
       };
     });
 
     try {
-      const result = await executeD1Batch(statements);
-      if (result.success) {
-        // Count actual inserts vs skips from meta.changes
-        for (const r of result.result) {
-          if (r.meta.changes > 0) {
-            imported++;
-          } else {
-            skipped++;
-          }
-        }
+      const { sql, params } = buildBatchInsert(records);
+      const result = await executeD1Query(sql, params);
+
+      if (result.success && result.result[0]) {
+        const changes = result.result[0].meta.changes;
+        imported += changes;
+        skipped += batch.length - changes;
       } else {
         errors += batch.length;
         console.error(`\n  Batch error: ${JSON.stringify(result.errors)}`);
