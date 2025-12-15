@@ -1,0 +1,56 @@
+# Dependencies (reinstalled in container)
+node_modules/
+frontend/node_modules/
+.pnpm-store/
+frontend/.pnpm-store/
+
+# Build artifacts
+.wrangler/
+frontend/.next/
+dist/
+.turbo/
+
+# Large data files
+.tmp/
+*.parquet
+*.sqlite
+*.db
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Test artifacts
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Environment (secrets handled separately)
+.env
+.env.*
+!.env.example
+.dev.vars
+
+# Documentation (not needed in container)
+docs/
+*.md
+!README.md
+
+# Scripts not needed at runtime
+scripts/
+benchmarks/
+
+# Frontend source (separate container)
+frontend/
