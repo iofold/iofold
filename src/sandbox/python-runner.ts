@@ -53,19 +53,24 @@ const DEV_EXECUTOR_URL = 'http://10.160.0.12:9999';
 export class PythonRunner {
   private config: PythonRunnerConfig;
   private sandbox?: Sandbox;
+  private sandboxUsed: boolean = false; // Track if sandbox was actually used successfully
   private allowedImports: string[];
 
   constructor(config: PythonRunnerConfig = {}) {
     // Wrangler can inject vars into the Worker environment (e.g. `--var PYTHON_EXECUTOR_URL:...`).
     // We mirror that into the Node-compatible `process.env` (set in `src/index.ts`) and fall back
     // to localhost for non-docker local dev.
-    const processEnvExecutorUrl =
-      (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env
-        ?.PYTHON_EXECUTOR_URL;
+    const processEnv = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+    const processEnvExecutorUrl = processEnv?.PYTHON_EXECUTOR_URL;
+
+    // If PYTHON_EXECUTOR_URL is set, force HTTP executor mode (skip sandbox entirely)
+    // This prevents noisy "Containers not enabled" errors in local dev
+    const forceHttpExecutor = !!processEnvExecutorUrl;
 
     this.config = {
       timeout: config.timeout || 5000,
-      sandboxBinding: config.sandboxBinding,
+      // Clear sandbox binding if forcing HTTP executor
+      sandboxBinding: forceHttpExecutor ? undefined : config.sandboxBinding,
       sandboxId: config.sandboxId || `python-eval-${Date.now()}`,
       devExecutorUrl: config.devExecutorUrl || processEnvExecutorUrl || DEV_EXECUTOR_URL,
       allowedImports: config.allowedImports
@@ -90,11 +95,9 @@ export class PythonRunner {
     try {
       // If no sandbox binding, fall back to dev executor HTTP service
       if (!this.config.sandboxBinding) {
-        console.log('[PythonRunner] No sandbox binding - using dev executor service');
+        // Debug level - not an error, expected in local dev
         return this.executeViaHttpService(code, startTime);
       }
-
-      console.log('[PythonRunner] Initializing sandbox:', this.config.sandboxId);
 
       // Initialize sandbox with keepAlive: false for automatic cleanup
       // Cast to any to avoid type incompatibility between @cloudflare/workers-types and @cloudflare/sandbox
@@ -104,9 +107,9 @@ export class PythonRunner {
           keepAlive: false
         });
       } catch (initError: any) {
-        // Containers not enabled at init - fall back to HTTP service
+        // Containers not enabled at init - fall back to HTTP service silently
         if (initError.message?.includes('Containers have not been enabled')) {
-          console.log('[PythonRunner] Containers disabled at init - falling back to dev executor service');
+          this.sandbox = undefined;
           return this.executeViaHttpService(code, startTime);
         }
         throw initError;
@@ -114,27 +117,25 @@ export class PythonRunner {
 
       // Write Python code to a temporary file
       const scriptPath = '/tmp/eval_script.py';
-      console.log('[PythonRunner] Writing script to:', scriptPath);
 
       // Try to write file - if containers are disabled, this will fail
       try {
         await this.sandbox.writeFile(scriptPath, code);
       } catch (sandboxError: any) {
-        // Containers not enabled - fall back to HTTP service
+        // Containers not enabled - fall back to HTTP service silently
         if (sandboxError.message?.includes('Containers have not been enabled')) {
-          console.log('[PythonRunner] Containers disabled - falling back to dev executor service');
+          this.sandbox = undefined;
           return this.executeViaHttpService(code, startTime);
         }
         throw sandboxError;
       }
-      console.log('[PythonRunner] Script written successfully');
+      // Mark sandbox as successfully used (we wrote a file successfully)
+      this.sandboxUsed = true;
 
       // Execute the Python script with timeout
-      console.log('[PythonRunner] Executing python3 with timeout:', this.config.timeout);
       const result = await this.sandbox.exec(`python3 ${scriptPath}`, {
         timeout: this.config.timeout
       });
-      console.log('[PythonRunner] Execution complete, exitCode:', result.exitCode);
 
       const executionTimeMs = Date.now() - startTime;
 
@@ -153,8 +154,13 @@ export class PythonRunner {
         };
       }
     } catch (error: any) {
-      console.error('[PythonRunner] Execution error:', error.message, error.stack);
       const executionTimeMs = Date.now() - startTime;
+
+      // Handle "Containers not enabled" - fall back to HTTP service silently
+      if (error.message?.includes('Containers have not been enabled')) {
+        this.sandbox = undefined;
+        return this.executeViaHttpService(code, startTime);
+      }
 
       // Handle timeout errors
       if (error.message?.includes('timeout') || error.message?.includes('timed out')) {
@@ -165,6 +171,9 @@ export class PythonRunner {
         };
       }
 
+      // Only log unexpected errors
+      console.error('[PythonRunner] Execution error:', error.message);
+
       return {
         success: false,
         error: error.message || 'Unknown execution error',
@@ -172,15 +181,21 @@ export class PythonRunner {
       };
     } finally {
       // Cleanup: destroy the sandbox to free resources
-      // Only call destroy if we created the sandbox and keepAlive is false
-      if (this.sandbox) {
+      // Only call destroy if we actually used the sandbox successfully
+      if (this.sandbox && this.sandboxUsed) {
         try {
           await this.sandbox.destroy();
-        } catch (cleanupError) {
-          // Log cleanup errors but don't fail the execution
-          console.error('Failed to destroy sandbox:', cleanupError);
+        } catch (cleanupError: any) {
+          // Silently ignore "Containers not enabled" errors - expected in local dev
+          // Only log other unexpected cleanup errors
+          if (!cleanupError.message?.includes('Containers have not been enabled')) {
+            console.warn('[PythonRunner] Cleanup warning:', cleanupError.message);
+          }
         }
       }
+      // Reset state for next execution
+      this.sandbox = undefined;
+      this.sandboxUsed = false;
     }
   }
 
