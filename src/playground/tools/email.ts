@@ -49,12 +49,15 @@ export interface Email {
 
 /**
  * Email search parameters (ART-E spec)
- * @see https://openpipe.ai/blog/art-e-mail-agent
+ * @see https://github.com/OpenPipe/ART/blob/art-e/examples/art-e/art_e/email_search_tools.py
  */
 export interface EmailSearchParams {
-  keywords: string;
-  sent_after?: string; // ISO 8601 date string (e.g., "2001-01-15")
-  sent_before?: string; // ISO 8601 date string (e.g., "2001-12-31")
+  inbox: string; // The inbox email address to search within
+  keywords: string[]; // Search keywords to match against email content
+  from_addr?: string; // Filter by sender email address
+  to_addr?: string; // Filter by recipient email address
+  sent_after?: string; // Only return emails sent after this date (YYYY-MM-DD)
+  sent_before?: string; // Only return emails sent before this date (YYYY-MM-DD)
 }
 
 /**
@@ -69,18 +72,18 @@ export interface EmailGetParams {
  *
  * Searches across email subjects and bodies using SQLite FTS5.
  * Returns up to 10 matching emails with message IDs and snippets.
- * Supports date filtering via sent_after and sent_before parameters.
  *
- * @param params - Search parameters (keywords, sent_after, sent_before)
+ * @param params - Search parameters matching ART-E spec
  * @param context - Email tool context with BENCHMARKS_DB binding
  * @returns Promise with array of matching emails and total count
  *
- * @see https://openpipe.ai/blog/art-e-mail-agent
+ * @see https://github.com/OpenPipe/ART/blob/art-e/examples/art-e/art_e/email_search_tools.py
  *
  * @example
  * ```typescript
  * const result = await emailSearchHandler({
- *   keywords: 'budget report',
+ *   inbox: 'jeff.dasovich@enron.com',
+ *   keywords: ['budget', 'report'],
  *   sent_after: '2001-01-01',
  *   sent_before: '2001-12-31'
  * }, { BENCHMARKS_DB: env.BENCHMARKS_DB });
@@ -95,18 +98,30 @@ export async function emailSearchHandler(
     throw new Error('Invalid parameters: expected object');
   }
 
-  const { keywords, sent_after, sent_before } = params as EmailSearchParams;
+  const { inbox, keywords, from_addr, to_addr, sent_after, sent_before } = params as EmailSearchParams;
 
-  if (!keywords || typeof keywords !== 'string' || !keywords.trim()) {
-    throw new Error('Invalid keywords: must be a non-empty string');
+  // Inbox is required
+  if (!inbox || typeof inbox !== 'string' || !inbox.trim()) {
+    throw new Error('Invalid inbox: must be a non-empty string (email address)');
   }
 
-  // Validate date parameters if provided
+  // Keywords is required and must be an array
+  if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+    throw new Error('Invalid keywords: must be a non-empty array of strings');
+  }
+
+  // Validate optional parameters
+  if (from_addr !== undefined && typeof from_addr !== 'string') {
+    throw new Error('Invalid from_addr: must be a string');
+  }
+  if (to_addr !== undefined && typeof to_addr !== 'string') {
+    throw new Error('Invalid to_addr: must be a string');
+  }
   if (sent_after !== undefined && typeof sent_after !== 'string') {
-    throw new Error('Invalid sent_after: must be a date string (e.g., "2001-01-15")');
+    throw new Error('Invalid sent_after: must be a date string (YYYY-MM-DD)');
   }
   if (sent_before !== undefined && typeof sent_before !== 'string') {
-    throw new Error('Invalid sent_before: must be a date string (e.g., "2001-12-31")');
+    throw new Error('Invalid sent_before: must be a date string (YYYY-MM-DD)');
   }
 
   if (!context.BENCHMARKS_DB) {
@@ -116,78 +131,49 @@ export async function emailSearchHandler(
   // Fixed limit of 10 per ART-E spec
   const limit = 10;
 
+  // Join keywords for FTS5 MATCH query
+  const keywordsQuery = keywords.join(' ');
+
   try {
     const drizzle = createDb(context.BENCHMARKS_DB);
 
-    // Build query with optional date filters
-    // Use FTS5 for full-text search with raw SQL
-    let searchQuerySql;
+    // Build dynamic WHERE conditions
+    // Base query with inbox filter and FTS match
+    // We'll build conditions array and use raw SQL for flexibility
+    const conditions: string[] = [
+      `emails_fts MATCH '${keywordsQuery.replace(/'/g, "''")}'`,
+      `e.inbox = '${inbox.replace(/'/g, "''")}'`
+    ];
 
-    if (sent_after && sent_before) {
-      searchQuerySql = sql`
-        SELECT
-          e.message_id,
-          e.subject,
-          e.sender,
-          e.date,
-          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
-          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
-        FROM emails_fts
-        INNER JOIN emails e ON emails_fts.rowid = e.rowid
-        WHERE emails_fts MATCH ${keywords}
-          AND e.date >= ${sent_after}
-          AND e.date <= ${sent_before}
-        ORDER BY rank
-        LIMIT ${limit}
-      `;
-    } else if (sent_after) {
-      searchQuerySql = sql`
-        SELECT
-          e.message_id,
-          e.subject,
-          e.sender,
-          e.date,
-          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
-          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
-        FROM emails_fts
-        INNER JOIN emails e ON emails_fts.rowid = e.rowid
-        WHERE emails_fts MATCH ${keywords}
-          AND e.date >= ${sent_after}
-        ORDER BY rank
-        LIMIT ${limit}
-      `;
-    } else if (sent_before) {
-      searchQuerySql = sql`
-        SELECT
-          e.message_id,
-          e.subject,
-          e.sender,
-          e.date,
-          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
-          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
-        FROM emails_fts
-        INNER JOIN emails e ON emails_fts.rowid = e.rowid
-        WHERE emails_fts MATCH ${keywords}
-          AND e.date <= ${sent_before}
-        ORDER BY rank
-        LIMIT ${limit}
-      `;
-    } else {
-      searchQuerySql = sql`
-        SELECT
-          e.message_id,
-          e.subject,
-          e.sender,
-          e.date,
-          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
-          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
-        FROM emails_fts
-        INNER JOIN emails e ON emails_fts.rowid = e.rowid
-        WHERE emails_fts MATCH ${keywords}
-        ORDER BY rank
-        LIMIT ${limit}
-      `;
+    if (from_addr) {
+      conditions.push(`e.sender = '${from_addr.replace(/'/g, "''")}'`);
     }
+    if (to_addr) {
+      conditions.push(`e.recipients LIKE '%${to_addr.replace(/'/g, "''")}%'`);
+    }
+    if (sent_after) {
+      conditions.push(`e.date >= '${sent_after}'`);
+    }
+    if (sent_before) {
+      conditions.push(`e.date <= '${sent_before}'`);
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const searchQuerySql = sql.raw(`
+      SELECT
+        e.message_id,
+        e.subject,
+        e.sender,
+        e.date,
+        snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
+        snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
+      FROM emails_fts
+      INNER JOIN emails e ON emails_fts.rowid = e.rowid
+      WHERE ${whereClause}
+      ORDER BY rank
+      LIMIT ${limit}
+    `);
 
     const results = await drizzle.all<{
       message_id: string;
@@ -198,7 +184,7 @@ export async function emailSearchHandler(
       body_snippet: string;
     }>(searchQuerySql);
 
-    // Format results
+    // Format results matching ART-E SearchResult (message_id + snippet)
     const emails: EmailSearchResult[] = results.map((row) => ({
       message_id: row.message_id,
       subject: row.subject,
@@ -330,4 +316,60 @@ function combineSnippets(subjectSnippet: string, bodySnippet: string): string {
   }
 
   return parts.length > 0 ? parts.join(' | ') : '(no matches found)';
+}
+
+/**
+ * Return final answer parameters (ART-E spec)
+ */
+export interface ReturnFinalAnswerParams {
+  answer: string; // The answer to the user's question
+  sources: string[]; // Array of message IDs that support the answer
+}
+
+/**
+ * Return final answer response
+ */
+export interface ReturnFinalAnswerResponse {
+  answer: string;
+  sources: string[];
+  status: 'success';
+}
+
+/**
+ * Return final answer to the user's question (ART-E spec)
+ *
+ * This tool is called by the agent to provide a structured final answer
+ * along with the source message IDs that support the answer.
+ *
+ * @param params - Answer and sources
+ * @param context - Tool context (not used for this tool)
+ * @returns The answer and sources for evaluation
+ *
+ * @see https://github.com/OpenPipe/ART/blob/art-e/examples/art-e/art_e/email_search_tools.py
+ */
+export async function returnFinalAnswerHandler(
+  params: unknown,
+  _context: EmailToolContext
+): Promise<ReturnFinalAnswerResponse> {
+  // Validate parameters
+  if (!params || typeof params !== 'object') {
+    throw new Error('Invalid parameters: expected object');
+  }
+
+  const { answer, sources } = params as ReturnFinalAnswerParams;
+
+  if (!answer || typeof answer !== 'string') {
+    throw new Error('Invalid answer: must be a non-empty string');
+  }
+
+  if (!sources || !Array.isArray(sources)) {
+    throw new Error('Invalid sources: must be an array of message IDs');
+  }
+
+  // Return the structured answer for evaluation
+  return {
+    answer,
+    sources,
+    status: 'success'
+  };
 }
