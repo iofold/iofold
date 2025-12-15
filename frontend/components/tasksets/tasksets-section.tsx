@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, Database, Trash2, ChevronRight, Loader2, ExternalLink } from 'lucide-react'
+import { Plus, Database, Trash2, ChevronRight, Loader2 } from 'lucide-react'
 import { apiClient } from '@/lib/api-client'
 import { toast } from 'sonner'
 import { CreateTasksetModal } from '@/components/modals/create-taskset-modal'
@@ -49,28 +49,25 @@ export function TasksetsSection({ agentId }: TasksetsSectionProps) {
     <>
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div className="flex-1">
+              <CardTitle className="flex items-center gap-2 mb-1">
                 <Database className="w-5 h-5" />
                 Tasksets
               </CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-sm text-muted-foreground">
                 Manage evaluation tasks for this agent
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                asChild
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <Link
+                href={`/agents/${agentId}/tasksets`}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
               >
-                <Link href={`/agents/${agentId}/tasksets`}>
-                  View All
-                  <ExternalLink className="w-3 h-3 ml-2" />
-                </Link>
-              </Button>
-              <Button onClick={() => setCreateModalOpen(true)}>
+                View All
+                <ChevronRight className="w-4 h-4" />
+              </Link>
+              <Button size="sm" onClick={() => setCreateModalOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
                 Create Taskset
               </Button>
@@ -99,36 +96,29 @@ export function TasksetsSection({ agentId }: TasksetsSectionProps) {
               </Button>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {data.tasksets.map((taskset: Taskset) => (
                 <Link
                   key={taskset.id}
                   href={`/agents/${agentId}/tasksets/${taskset.id}`}
+                  className="block"
                 >
-                  <Card className="p-5 cursor-pointer hover:bg-accent/50 hover:shadow-md transition-all duration-200 border border-border">
+                  <Card className="p-4 cursor-pointer hover:bg-accent/50 hover:shadow-md transition-all duration-200 border border-border hover:border-primary/30">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                           <h3 className="font-semibold text-base">{taskset.name}</h3>
-                          {taskset.task_count > 0 && (
-                            <Badge variant="default" className="text-xs bg-green-500 hover:bg-green-600">
-                              Active
-                            </Badge>
-                          )}
                           <Badge variant="secondary" className="text-xs">
                             {taskset.task_count} tasks
                           </Badge>
                         </div>
                         {taskset.description && (
-                          <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
+                          <p className="text-sm text-muted-foreground line-clamp-2">
                             {taskset.description}
                           </p>
                         )}
-                        <p className="text-xs text-muted-foreground">
-                          Created {formatRelativeTime(taskset.created_at)}
-                        </p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-shrink-0">
                         <Button
                           size="sm"
                           variant="ghost"

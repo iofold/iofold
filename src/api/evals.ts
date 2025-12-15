@@ -134,6 +134,10 @@ export class EvalsAPI {
         workspaceId
       });
 
+      // Mark job as running BEFORE executing to prevent JobWorker from picking it up
+      // (race condition: job created as 'queued', JobWorker could process it before execute() starts)
+      await this.jobManager.updateJobStatus(job.id, 'running', 0);
+
       // Start generation in background (don't await)
       const generationJob = new EvalGenerationJob(
         {

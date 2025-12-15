@@ -33,9 +33,17 @@ const DEFAULT_PARQUET = path.join(TEMP_DIR, 'corbt-enron-0.parquet');
 // Helpers
 // ============================================================================
 
+const MAX_BODY_SIZE = 50000; // 50KB max to avoid SQLITE_TOOBIG
+
 function escapeSql(s: string | null | undefined): string {
   if (s == null) return 'NULL';
   return "'" + String(s).replace(/'/g, "''") + "'";
+}
+
+function truncateBody(body: string | null | undefined): string | null {
+  if (!body) return null;
+  if (body.length <= MAX_BODY_SIZE) return body;
+  return body.substring(0, MAX_BODY_SIZE) + '\n\n[... truncated ...]';
 }
 
 function extractInbox(row: any): string {
@@ -122,26 +130,36 @@ print(f'Exported {len(records)} records', file=sys.stderr)
   return data;
 }
 
-function executeWrangler(sql: string, remote: boolean): void {
-  const remoteFlag = remote ? '--remote --env staging' : '--local';
-
-  // Write SQL to temp file
+function executeWrangler(sql: string, remote: boolean, maxRetries = 3): void {
+  let cmd: string;
   const sqlFile = path.join(TEMP_DIR, 'batch.sql');
   fs.writeFileSync(sqlFile, sql);
 
-  const cmd = remote
-    ? `npx wrangler d1 execute BENCHMARKS_DB ${remoteFlag} --file=${sqlFile}`
-    : `docker exec iofold-backend npx wrangler d1 execute BENCHMARKS_DB --local --file=/app/.tmp/batch.sql`;
+  if (remote) {
+    // For remote, use --file to avoid shell argument limits
+    cmd = `npx wrangler d1 execute iofold-benchmarks --remote --env staging --file "${sqlFile}"`;
+  } else {
+    // For local, use --file via docker mount
+    cmd = `docker exec iofold-backend npx wrangler d1 execute iofold-benchmarks --local --file=/app/.tmp/batch.sql`;
+  }
 
-  try {
-    execSync(cmd, { stdio: 'pipe', timeout: 60000 });
-  } catch (e: any) {
-    const stderr = e.stderr?.toString() || '';
-    if (stderr.includes('UNIQUE constraint')) {
-      // Ignore duplicate key errors
-      return;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      execSync(cmd, { stdio: 'pipe', timeout: 90000 });
+      return; // Success
+    } catch (e: any) {
+      const stderr = e.stderr?.toString() || '';
+      if (stderr.includes('UNIQUE constraint')) {
+        return; // Duplicate - that's OK
+      }
+      if (attempt < maxRetries && (stderr.includes('File contents did not upload') || stderr.includes('ECONNRESET') || stderr.includes('timeout'))) {
+        // Transient error - wait and retry
+        const waitMs = attempt * 1000;
+        execSync(`sleep ${waitMs / 1000}`);
+        continue;
+      }
+      throw new Error(`Wrangler execute failed: ${stderr || e.message}`);
     }
-    throw new Error(`Wrangler execute failed: ${stderr || e.message}`);
   }
 }
 
@@ -153,8 +171,8 @@ async function main() {
   const args = process.argv.slice(2);
   const config: Config = {
     parquetPath: DEFAULT_PARQUET,
-    limit: 10000,
-    batchSize: 50, // Small batches to avoid wrangler crashes
+    limit: 0, // 0 = unlimited
+    batchSize: 20, // Small batches to avoid wrangler crashes (smaller for remote)
     remote: false,
   };
 
@@ -239,7 +257,7 @@ Options:
       const recipientsJson = recipients.length > 0 ? escapeSql(JSON.stringify(recipients)) : 'NULL';
 
       const date = row.date ? escapeSql(row.date) : 'NULL';
-      const body = escapeSql(row.body);
+      const body = escapeSql(truncateBody(row.body));
 
       return `INSERT OR IGNORE INTO emails (message_id, inbox, subject, sender, recipients, date, body) VALUES (${messageId}, ${inbox}, ${subject}, ${sender}, ${recipientsJson}, ${date}, ${body});`;
     });

@@ -716,7 +716,8 @@ export async function runTaskset(
       {
         modelProvider,
         modelId,
-        config: body.config
+        config: body.config,
+        taskCount  // Include task count in job metadata for display
       }
     );
 
@@ -804,8 +805,8 @@ export async function listTasksetRuns(
           taskset_id: metadata.taskset_id as string,
           status: row.status,
           progress: row.progress,
-          // Include counts from job result for backwards compatibility
-          task_count: jobResult.task_count as number ?? 0,
+          // Use task_count from job result, fallback to metadata (for queued/running jobs)
+          task_count: (jobResult.task_count as number) ?? (metadata.task_count as number) ?? 0,
           completed_count: jobResult.completed_count as number ?? 0,
           failed_count: jobResult.failed_count as number ?? 0,
           model_provider: metadata.model_provider as string,
@@ -925,7 +926,8 @@ export async function getTasksetRun(
       taskset_id: jobMetadata.taskset_id as string,
       status: job.status,
       progress: job.progress,
-      task_count: jobResultData?.task_count as number ?? results.length,
+      // Use task_count from job result, fallback to metadata (for queued/running jobs)
+      task_count: (jobResultData?.task_count as number) ?? (jobMetadata.task_count as number) ?? results.length,
       completed_count: completedCount,
       failed_count: failedCount,
       model_provider: jobMetadata.model_provider as string,

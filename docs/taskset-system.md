@@ -199,7 +199,7 @@ Executes all tasks via background job.
   "model_provider": "anthropic",
   "model_id": "anthropic/claude-sonnet-4-5",
   "config": {
-    "parallelism": 1,            // not implemented yet
+    "parallelism": 4,              // concurrent task limit (default: 4)
     "timeout_per_task_ms": 120000  // 2 minutes default
   }
 }
@@ -367,7 +367,7 @@ curl http://localhost:8787/api/agents/agent_123/tasksets/tsk_abc/runs/tsr_xyz \
 3. **Cascade Delete**: Deleting taskset removes tasks and run results
 4. **Background Jobs**: Runs execute via job queue (see `src/queue/consumer.ts`)
 5. **Trace Creation**: Currently disabled due to FK constraint (integration_id required)
-6. **Parallelism**: Config option exists but not implemented (sequential execution only)
+6. **Parallelism**: Tasks execute concurrently (default: 4 parallel, configurable via `config.parallelism`)
 7. **Timeout**: Default 2 minutes per task (configurable, suitable for email tools)
 
 ## Related Documentation

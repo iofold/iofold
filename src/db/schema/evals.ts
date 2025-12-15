@@ -1,7 +1,7 @@
 // src/db/schema/evals.ts
 import { sqliteTable, sqliteView, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { evalStatus, evalCandidateStatus } from './enums';
+import { evalStatus } from './enums';
 import { agents } from './agents';
 import { traces } from './traces';
 import { feedback } from './feedback';
@@ -47,59 +47,6 @@ export const evals = sqliteTable('evals', {
   statusIdx: index('idx_evals_status').on(table.status),
   variationIdx: index('idx_evals_variation').on(table.variation),
   agentVersionUnique: uniqueIndex('evals_agent_version_unique').on(table.agentId, table.version),
-}));
-
-/**
- * @deprecated Use `evals` table instead. This table is kept for backward compatibility
- * during migration. Will be removed in a future version.
- */
-export const evalCandidates = sqliteTable('eval_candidates', {
-  id: text('id').primaryKey(),
-  agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
-  code: text('code').notNull(),
-  variation: text('variation'),
-  agreementRate: real('agreement_rate'),
-  accuracy: real('accuracy'),
-  cohenKappa: real('cohen_kappa'),
-  f1Score: real('f1_score'),
-  confusionMatrix: text('confusion_matrix', { mode: 'json' }).$type<Record<string, unknown>>(),
-  perTraceResults: text('per_trace_results', { mode: 'json' }).$type<unknown[]>(),
-  totalCostUsd: real('total_cost_usd'),
-  avgDurationMs: real('avg_duration_ms'),
-  status: text('status', { enum: evalCandidateStatus }).default('candidate').notNull(),
-  parentCandidateId: text('parent_candidate_id').references((): any => evalCandidates.id),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
-  activatedAt: text('activated_at'),
-}, (table) => ({
-  agentIdx: index('idx_eval_candidates_agent').on(table.agentId),
-  statusIdx: index('idx_eval_candidates_status').on(table.status),
-  accuracyIdx: index('idx_eval_candidates_accuracy').on(table.accuracy),
-  parentIdx: index('idx_eval_candidates_parent').on(table.parentCandidateId),
-  createdIdx: index('idx_eval_candidates_created').on(table.createdAt),
-}));
-
-/**
- * @deprecated Use `evalExecutions` table instead. This table is kept for backward compatibility
- * during migration. Will be removed in a future version.
- */
-export const evalCandidateExecutions = sqliteTable('eval_candidate_executions', {
-  id: text('id').primaryKey(),
-  evalCandidateId: text('eval_candidate_id').notNull().references(() => evalCandidates.id, { onDelete: 'cascade' }),
-  traceId: text('trace_id').notNull().references(() => traces.id, { onDelete: 'cascade' }),
-  score: real('score'),
-  feedback: text('feedback'),
-  success: integer('success', { mode: 'boolean' }),
-  error: text('error'),
-  durationMs: integer('duration_ms'),
-  llmCalls: integer('llm_calls'),
-  llmCostUsd: real('llm_cost_usd'),
-  cacheHits: integer('cache_hits'),
-  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
-}, (table) => ({
-  candidateIdx: index('idx_eval_candidate_executions_candidate').on(table.evalCandidateId),
-  traceIdx: index('idx_eval_candidate_executions_trace').on(table.traceId),
-  successIdx: index('idx_eval_candidate_executions_success').on(table.success),
-  createdIdx: index('idx_eval_candidate_executions_created').on(table.createdAt),
 }));
 
 /**
@@ -171,10 +118,6 @@ export const evalComparison = sqliteView('eval_comparison', {
 // Type exports
 export type Eval = typeof evals.$inferSelect;
 export type NewEval = typeof evals.$inferInsert;
-export type EvalCandidate = typeof evalCandidates.$inferSelect;
-export type NewEvalCandidate = typeof evalCandidates.$inferInsert;
-export type EvalCandidateExecution = typeof evalCandidateExecutions.$inferSelect;
-export type NewEvalCandidateExecution = typeof evalCandidateExecutions.$inferInsert;
 export type EvalExecution = typeof evalExecutions.$inferSelect;
 export type NewEvalExecution = typeof evalExecutions.$inferInsert;
 export type EvalComparison = typeof evalComparison.$inferSelect;

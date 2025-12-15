@@ -16,6 +16,7 @@ export interface TasksetTask {
   expected_output: string | null;
   source: 'trace' | 'manual' | 'imported';
   source_trace_id: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: string;
 }
 
