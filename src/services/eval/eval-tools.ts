@@ -38,7 +38,8 @@ export function createFetchTracesTool(context: ToolContext) {
         const params: (string | number)[] = [context.agentId];
 
         if (rating && rating !== 'all') {
-          query += ` AND f.rating = '${rating}'`;
+          query += ` AND f.rating = ?`;
+          params.push(rating);
         }
 
         query += ` ORDER BY t.imported_at DESC LIMIT ? OFFSET ?`;
@@ -54,10 +55,12 @@ export function createFetchTracesTool(context: ToolContext) {
           INNER JOIN feedback f ON f.trace_id = t.id
           WHERE f.agent_id = ?
         `;
+        const countParams: (string | number)[] = [context.agentId];
         if (rating && rating !== 'all') {
-          countQuery += ` AND f.rating = '${rating}'`;
+          countQuery += ` AND f.rating = ?`;
+          countParams.push(rating);
         }
-        const countResult = await context.db.prepare(countQuery).bind(context.agentId).first();
+        const countResult = await context.db.prepare(countQuery).bind(...countParams).first();
         const total = (countResult as any)?.total || 0;
 
         // Transform to summaries

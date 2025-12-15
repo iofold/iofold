@@ -55,13 +55,17 @@ describe('eval-tools', () => {
 
     it('filters by rating when provided', async () => {
       mockDb.all.mockResolvedValue({ results: [] });
+      mockDb.first.mockResolvedValue({ total: 0 });
 
       const tool = createFetchTracesTool(mockContext);
       await tool.invoke({ rating: 'negative', limit: 5 });
 
+      // Check that the query uses parameterized queries (? placeholder) instead of string interpolation
       expect(mockDb.prepare).toHaveBeenCalledWith(
-        expect.stringContaining("rating = 'negative'")
+        expect.stringContaining("rating = ?")
       );
+      // Verify rating parameter was bound correctly
+      expect(mockDb.bind).toHaveBeenCalledWith('agent_123', 'negative', 5, 0);
     });
   });
 });
