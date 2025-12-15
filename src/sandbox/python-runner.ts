@@ -98,9 +98,19 @@ export class PythonRunner {
 
       // Initialize sandbox with keepAlive: false for automatic cleanup
       // Cast to any to avoid type incompatibility between @cloudflare/workers-types and @cloudflare/sandbox
-      this.sandbox = getSandbox(this.config.sandboxBinding as any, this.config.sandboxId!, {
-        keepAlive: false
-      });
+      // Wrap in try-catch as getSandbox() throws if containers not enabled
+      try {
+        this.sandbox = getSandbox(this.config.sandboxBinding as any, this.config.sandboxId!, {
+          keepAlive: false
+        });
+      } catch (initError: any) {
+        // Containers not enabled at init - fall back to HTTP service
+        if (initError.message?.includes('Containers have not been enabled')) {
+          console.log('[PythonRunner] Containers disabled at init - falling back to dev executor service');
+          return this.executeViaHttpService(code, startTime);
+        }
+        throw initError;
+      }
 
       // Write Python code to a temporary file
       const scriptPath = '/tmp/eval_script.py';
