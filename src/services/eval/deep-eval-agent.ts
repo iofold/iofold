@@ -8,6 +8,7 @@
 import { createAgentNoCache } from '../../playground/create-agent-no-cache';
 import { D1Backend } from '../../playground/backend/d1-backend';
 import { getChatModel, type Env } from '../../playground/llm/streaming';
+import { DEFAULT_MODEL } from '../../ai/gateway';
 import { createEvalTools, type ToolContext } from './eval-tools';
 import { createPlaygroundTools } from '../../playground/tools/definitions';
 import type { DurableObjectNamespace } from '@cloudflare/workers-types';
@@ -98,10 +99,10 @@ export class DeepEvalAgent {
     // Create D1Backend for filesystem operations
     const backend = new D1Backend(this.config.db, sessionId);
 
-    // Get the LangChain model
+    // Get the LangChain model using default model from central definitions
     const model = getChatModel({
       provider: 'anthropic',
-      modelId: 'claude-sonnet-4-5-20250514',
+      modelId: DEFAULT_MODEL,
       env: this.config.env,
       temperature: 0.7,
     });
