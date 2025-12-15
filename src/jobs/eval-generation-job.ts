@@ -66,8 +66,8 @@ export class EvalGenerationJob {
         db: this.deps.db,
         env: {
           CF_ACCOUNT_ID: this.deps.cfAccountId,
-          CF_GATEWAY_ID: this.deps.cfGatewayId,
-          CF_GATEWAY_TOKEN: this.deps.cfGatewayToken,
+          CF_AI_GATEWAY_ID: this.deps.cfGatewayId,
+          CF_AI_GATEWAY_TOKEN: this.deps.cfGatewayToken,
         } as any,
         sandbox: this.deps.sandboxBinding,
         onLog: (level, message, data) => this.log(level, message, data),
