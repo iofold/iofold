@@ -36,24 +36,19 @@ const DEFAULT_CONFIG: EvalContextConfig = {
 export interface EvalContextStats {
   llm_calls: number;
   total_cost_usd: number;
-  cache_hits: number;
-  cache_misses: number;
 }
 
 /**
  * Implementation of EvalContext interface
- * Provides sandboxed execution environment with LLM access, cost tracking, and caching
+ * Provides sandboxed execution environment with LLM access and cost tracking
  */
 export class EvalContextImpl implements EvalContext {
   private client: OpenAI;
   private config: EvalContextConfig;
   private costSoFar: number = 0;
-  private cache: Map<string, string> = new Map();
   private stats: EvalContextStats = {
     llm_calls: 0,
-    total_cost_usd: 0,
-    cache_hits: 0,
-    cache_misses: 0
+    total_cost_usd: 0
   };
 
   /**
@@ -79,14 +74,6 @@ export class EvalContextImpl implements EvalContext {
    * @throws Error if budget is exceeded or call fails
    */
   async call_llm(options: LLMCallOptions): Promise<string> {
-    // Check cache if cache_key provided
-    if (options.cache_key && this.has_cache(options.cache_key)) {
-      this.stats.cache_hits++;
-      return this.get_cache(options.cache_key)!;
-    }
-
-    this.stats.cache_misses++;
-
     // Default options - models are already provider-prefixed
     const model = options.model || DEFAULT_MODEL;
     const temperature = options.temperature !== undefined ? options.temperature : 0.0;
@@ -138,11 +125,6 @@ export class EvalContextImpl implements EvalContext {
       this.stats.llm_calls++;
       this.stats.total_cost_usd = this.costSoFar;
 
-      // Cache if cache_key provided
-      if (options.cache_key) {
-        this.set_cache(options.cache_key, responseText);
-      }
-
       return responseText;
     } catch (error: any) {
       // Re-throw budget errors as-is
@@ -153,49 +135,6 @@ export class EvalContextImpl implements EvalContext {
       // Wrap other errors
       throw new Error(`LLM call failed: ${error.message || String(error)}`);
     }
-  }
-
-  /**
-   * Get total cost incurred so far in this eval execution
-   * @returns Cost in USD
-   */
-  get_cost_so_far(): number {
-    return this.costSoFar;
-  }
-
-  /**
-   * Get remaining budget for this eval execution
-   * @returns Remaining budget in USD
-   */
-  get_remaining_budget(): number {
-    return Math.max(0, this.config.max_budget_usd - this.costSoFar);
-  }
-
-  /**
-   * Check if a cache key exists
-   * @param key - Cache key to check
-   * @returns True if key exists in cache
-   */
-  has_cache(key: string): boolean {
-    return this.cache.has(key);
-  }
-
-  /**
-   * Get cached value
-   * @param key - Cache key
-   * @returns Cached value or null if not found
-   */
-  get_cache(key: string): string | null {
-    return this.cache.get(key) || null;
-  }
-
-  /**
-   * Set cached value (per-execution cache)
-   * @param key - Cache key
-   * @param value - Value to cache
-   */
-  set_cache(key: string, value: string): void {
-    this.cache.set(key, value);
   }
 
   /**
@@ -222,8 +161,6 @@ export class EvalContextImpl implements EvalContext {
  * Note: This is a helper for future Python integration.
  * Python evals will receive a serialized context object with access to:
  * - call_llm function (async)
- * - get_cost_so_far, get_remaining_budget functions
- * - has_cache, get_cache, set_cache functions
  *
  * @param ctx - EvalContext instance
  * @returns Serializable object for Python
@@ -232,17 +169,7 @@ export function serializeEvalContextForPython(ctx: EvalContext): Record<string, 
   return {
     // These would be exposed as Python functions in the sandbox
     methods: {
-      call_llm: 'async function',
-      get_cost_so_far: 'function',
-      get_remaining_budget: 'function',
-      has_cache: 'function',
-      get_cache: 'function',
-      set_cache: 'function'
-    },
-    // Current state (read-only in Python)
-    state: {
-      cost_so_far: ctx.get_cost_so_far(),
-      remaining_budget: ctx.get_remaining_budget()
+      call_llm: 'async function'
     }
   };
 }

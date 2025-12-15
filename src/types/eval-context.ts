@@ -5,21 +5,6 @@
 export interface EvalContext {
   /** Call an LLM for semantic evaluation */
   call_llm(options: LLMCallOptions): Promise<string>;
-
-  /** Get total cost incurred so far in this eval execution */
-  get_cost_so_far(): number;
-
-  /** Get remaining budget for this eval execution */
-  get_remaining_budget(): number;
-
-  /** Check if a cache key exists */
-  has_cache(key: string): boolean;
-
-  /** Get cached value */
-  get_cache(key: string): string | null;
-
-  /** Set cached value (per-execution cache) */
-  set_cache(key: string, value: string): void;
 }
 
 /**
@@ -37,9 +22,6 @@ export interface LLMCallOptions {
 
   /** Max tokens in response (default: 500) */
   max_tokens?: number;
-
-  /** Optional cache key - if provided, will cache result */
-  cache_key?: string;
 }
 
 /**
@@ -62,9 +44,6 @@ export interface EvalResult {
 
     /** Total LLM cost in USD */
     llm_cost_usd: number;
-
-    /** Number of cache hits */
-    cache_hits: number;
   };
 }
 
