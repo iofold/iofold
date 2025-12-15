@@ -68,12 +68,17 @@ export interface ToolCall {
 export interface EvalSummary {
   id: string;
   name: string;
+  description: string | null;
+  agent_id: string;
   accuracy: number;
   cohen_kappa?: number | null;  // Agreement accounting for chance (0-1)
   f1_score?: number | null;     // Harmonic mean of precision and recall (0-1)
   precision?: number | null;    // True positives / (TP + FP) (0-1)
   recall?: number | null;       // True positives / (TP + FN) (0-1)
+  execution_count: number;
+  contradiction_count: number;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Feedback {

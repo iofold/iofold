@@ -24,13 +24,14 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
+  Loader2,
 } from 'lucide-react'
 import { formatPercentage, formatRelativeTime, cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { Eval } from '@/types/api'
+import type { Eval, EvalSummary } from '@/types/api'
 
 interface EvalSideSheetProps {
-  evalItem: Eval | null
+  evalItem: EvalSummary | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onDelete?: (id: string) => void
@@ -43,6 +44,13 @@ export function EvalSideSheet({
   onDelete,
 }: EvalSideSheetProps) {
   const [activeTab, setActiveTab] = useState<'details' | 'executions'>('details')
+
+  // Fetch full eval details (including code) when sheet is open
+  const { data: evalDetails, isLoading: loadingDetails } = useQuery({
+    queryKey: ['eval-details', evalItem?.id],
+    queryFn: () => apiClient.getEval(evalItem!.id),
+    enabled: open && !!evalItem,
+  })
 
   // Fetch executions when tab is active
   const { data: executionsData, isLoading: loadingExecutions } = useQuery({
@@ -193,14 +201,27 @@ export function EvalSideSheet({
               <div>
                 <h4 className="text-sm font-medium mb-2">Eval Code</h4>
                 <div className="max-h-[300px] overflow-auto rounded border">
-                  <CodeViewer code={evalItem.code} language="python" />
+                  {loadingDetails ? (
+                    <div className="p-4 flex items-center justify-center text-muted-foreground">
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Loading code...
+                    </div>
+                  ) : evalDetails?.code ? (
+                    <CodeViewer code={evalDetails.code} language="python" />
+                  ) : (
+                    <div className="p-4 text-center text-muted-foreground">
+                      No code available
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Model Used */}
-              <div className="text-sm text-muted-foreground">
-                Model: {evalItem.model_used}
-              </div>
+              {evalDetails?.model_used && (
+                <div className="text-sm text-muted-foreground">
+                  Model: {evalDetails.model_used}
+                </div>
+              )}
             </>
           ) : (
             <>

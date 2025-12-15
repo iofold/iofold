@@ -2,12 +2,12 @@
 
 import { formatPercentage, formatRelativeTime, cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import type { Eval } from '@/types/api'
+import type { EvalSummary } from '@/types/api'
 
 interface EvalTableProps {
-  evals: Eval[]
+  evals: EvalSummary[]
   selectedId: string | null
-  onSelect: (evalItem: Eval) => void
+  onSelect: (evalItem: EvalSummary) => void
   isLoading?: boolean
 }
 
