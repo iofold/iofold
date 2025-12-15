@@ -132,23 +132,40 @@ print(json.dumps(result_dict))
         };
       }
 
-      // Parse result from output - look for JSON with score and feedback
+      // Parse result from output - find and parse JSON object
       const output = execution.output || '';
-      const resultMatch = output.match(/\{"score":\s*([\d.]+),\s*"feedback":\s*"([^"]*)"\}/);
-      if (!resultMatch) {
+
+      // Find JSON object in output (handles any text before/after)
+      const jsonMatch = output.match(/\{[\s\S]*"score"[\s\S]*"feedback"[\s\S]*\}/);
+      if (!jsonMatch) {
         return {
           traceId: testCase.trace.id,
           expectedScore: testCase.expectedScore,
           predictedScore: 0,
           feedback: '',
           match: false,
-          error: `Could not parse eval result. Output: ${output}`,
+          error: `Could not find JSON in output. Output: ${output.substring(0, 200)}`,
           executionTimeMs: execution.executionTimeMs
         };
       }
 
-      const predictedScore = parseFloat(resultMatch[1]);
-      const feedback = resultMatch[2];
+      let predictedScore: number;
+      let feedback: string;
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        predictedScore = typeof parsed.score === 'number' ? parsed.score : parseFloat(parsed.score);
+        feedback = String(parsed.feedback || '');
+      } catch (parseError: any) {
+        return {
+          traceId: testCase.trace.id,
+          expectedScore: testCase.expectedScore,
+          predictedScore: 0,
+          feedback: '',
+          match: false,
+          error: `JSON parse error: ${parseError.message}. Output: ${output.substring(0, 200)}`,
+          executionTimeMs: execution.executionTimeMs
+        };
+      }
 
       // Match if both are on same side of threshold
       const expectedPass = testCase.expectedScore >= PASS_THRESHOLD;
