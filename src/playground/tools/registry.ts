@@ -12,7 +12,7 @@ import { tool } from '@langchain/core/tools';
 import { z, ZodSchema } from 'zod';
 import { D1Backend } from '../backend/d1-backend';
 import { PythonRunner } from '../../sandbox/python-runner';
-import { emailSearchHandler as emailSearchHandlerImpl, emailGetHandler as emailGetHandlerImpl } from './email';
+import { emailSearchHandler as emailSearchHandlerImpl, emailGetHandler as emailGetHandlerImpl, returnFinalAnswerHandler as returnFinalAnswerHandlerImpl } from './email';
 import type { Sandbox } from '@cloudflare/sandbox';
 import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 
@@ -204,6 +204,20 @@ async function emailGetHandler(params: unknown, context: ToolContext): Promise<s
 }
 
 /**
+ * Return final answer with sources (ART-E spec)
+ * This tool structures the agent's final answer for evaluation
+ */
+async function returnFinalAnswerHandler(params: unknown, context: ToolContext): Promise<string> {
+  try {
+    const result = await returnFinalAnswerHandlerImpl(params, { BENCHMARKS_DB: context.BENCHMARKS_DB! });
+    return JSON.stringify(result, null, 2);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return `Error: ${errorMessage}`;
+  }
+}
+
+/**
  * Central registry mapping handler_key to implementation
  * This is the single source of truth for tool handlers
  */
@@ -214,6 +228,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   'list_files': listFilesHandler,
   'email_search': emailSearchHandler,
   'email_get': emailGetHandler,
+  'return_final_answer': returnFinalAnswerHandler,
 };
 
 /**
