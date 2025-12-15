@@ -26,11 +26,13 @@ export const feedbackRating = ['positive', 'negative', 'neutral'] as const;
 export type FeedbackRating = (typeof feedbackRating)[number];
 
 // Eval-related enums
-export const evalStatus = ['draft', 'active', 'archived'] as const;
+// Consolidated status: draft (manual), candidate (generated), testing (being tested), active (in use), archived
+export const evalStatus = ['draft', 'candidate', 'testing', 'active', 'archived'] as const;
 export type EvalStatus = (typeof evalStatus)[number];
 
-export const evalCandidateStatus = ['candidate', 'testing', 'active', 'archived'] as const;
-export type EvalCandidateStatus = (typeof evalCandidateStatus)[number];
+// Deprecated: keeping for migration compatibility, use evalStatus instead
+export const evalCandidateStatus = evalStatus;
+export type EvalCandidateStatus = EvalStatus;
 
 // Taskset-related enums
 export const tasksetStatus = ['active', 'archived'] as const;

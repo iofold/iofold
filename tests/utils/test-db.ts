@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS \`feedback\` (
 CREATE INDEX IF NOT EXISTS \`idx_feedback_trace_id\` ON \`feedback\` (\`trace_id\`);
 CREATE UNIQUE INDEX IF NOT EXISTS \`feedback_trace_unique\` ON \`feedback\` (\`trace_id\`);
 
--- Evals
+-- Evals (consolidated - includes fields from eval_candidates)
 CREATE TABLE IF NOT EXISTS \`evals\` (
   \`id\` text PRIMARY KEY NOT NULL,
   \`agent_id\` text NOT NULL,
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS \`evals\` (
   \`name\` text NOT NULL,
   \`description\` text,
   \`code\` text NOT NULL,
-  \`model_used\` text NOT NULL,
+  \`model_used\` text,
   \`accuracy\` real,
   \`training_trace_ids\` text,
   \`generation_prompt\` text,
@@ -154,30 +154,47 @@ CREATE TABLE IF NOT EXISTS \`evals\` (
   \`f1_score\` real,
   \`precision\` real,
   \`recall\` real,
+  \`variation\` text,
+  \`agreement_rate\` real,
+  \`confusion_matrix\` text,
+  \`per_trace_results\` text,
+  \`total_cost_usd\` real,
+  \`avg_duration_ms\` real,
+  \`activated_at\` text,
   \`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
   \`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
   FOREIGN KEY (\`agent_id\`) REFERENCES \`agents\`(\`id\`) ON UPDATE no action ON DELETE cascade,
   FOREIGN KEY (\`parent_eval_id\`) REFERENCES \`evals\`(\`id\`) ON UPDATE no action ON DELETE set null
 );
 CREATE INDEX IF NOT EXISTS \`idx_evals_agent_id\` ON \`evals\` (\`agent_id\`);
+CREATE INDEX IF NOT EXISTS \`idx_evals_status\` ON \`evals\` (\`status\`);
+CREATE INDEX IF NOT EXISTS \`idx_evals_variation\` ON \`evals\` (\`variation\`);
 CREATE UNIQUE INDEX IF NOT EXISTS \`evals_agent_version_unique\` ON \`evals\` (\`agent_id\`,\`version\`);
 
+-- Eval Executions (consolidated - includes fields from eval_candidate_executions)
 CREATE TABLE IF NOT EXISTS \`eval_executions\` (
   \`id\` text PRIMARY KEY NOT NULL,
   \`eval_id\` text NOT NULL,
   \`trace_id\` text NOT NULL,
-  \`predicted_result\` integer NOT NULL,
+  \`predicted_result\` integer,
   \`predicted_reason\` text,
   \`execution_time_ms\` integer,
   \`error\` text,
   \`stdout\` text,
   \`stderr\` text,
+  \`score\` real,
+  \`feedback\` text,
+  \`success\` integer,
+  \`llm_calls\` integer,
+  \`llm_cost_usd\` real,
+  \`cache_hits\` integer,
   \`executed_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
   FOREIGN KEY (\`eval_id\`) REFERENCES \`evals\`(\`id\`) ON UPDATE no action ON DELETE cascade,
   FOREIGN KEY (\`trace_id\`) REFERENCES \`traces\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 CREATE INDEX IF NOT EXISTS \`idx_eval_executions_eval_id\` ON \`eval_executions\` (\`eval_id\`);
 CREATE INDEX IF NOT EXISTS \`idx_eval_executions_trace_id\` ON \`eval_executions\` (\`trace_id\`);
+CREATE INDEX IF NOT EXISTS \`idx_eval_executions_success\` ON \`eval_executions\` (\`success\`);
 
 CREATE TABLE IF NOT EXISTS \`eval_candidates\` (
   \`id\` text PRIMARY KEY NOT NULL,
