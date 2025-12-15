@@ -92,6 +92,9 @@ function addCorsHeaders(response: Response): Response {
   return newResponse;
 }
 
+// Track if we've already logged the polyfill setup (to avoid log spam on every request)
+let polyfillLogged = false;
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     // Polyfill process.env for LangChain SDK compatibility in Cloudflare Workers
@@ -114,7 +117,15 @@ export default {
       globalThis.process.env.LANGSMITH_API_KEY = env.LANGSMITH_API_KEY;
       globalThis.process.env.LANGSMITH_TRACING_V2 = env.LANGSMITH_TRACING_V2 || 'true';
       globalThis.process.env.LANGSMITH_PROJECT = env.LANGSMITH_PROJECT || 'iofold-development';
-      console.log(`[LangSmith] process.env polyfill set - project: ${globalThis.process.env.LANGSMITH_PROJECT}, tracing: ${globalThis.process.env.LANGSMITH_TRACING_V2}`);
+      // Workspace ID required for org-scoped API keys
+      if (env.LANGSMITH_WORKSPACE_ID) {
+        globalThis.process.env.LANGSMITH_WORKSPACE_ID = env.LANGSMITH_WORKSPACE_ID;
+      }
+      // Only log once per worker lifecycle
+      if (!polyfillLogged) {
+        console.log(`[LangSmith] Tracing configured - project: ${globalThis.process.env.LANGSMITH_PROJECT}`);
+        polyfillLogged = true;
+      }
     }
 
     const url = new URL(request.url);

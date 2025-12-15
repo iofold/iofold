@@ -46,10 +46,25 @@ export function createLangSmithClient(env: LangSmithEnv): LangSmithClient | unde
     return undefined;
   }
 
-  return new LangSmithClient({
+  // Include workspace ID for org-scoped API keys
+  const clientConfig: { apiKey?: string; webUrl?: string } = {
     apiKey: env.LANGSMITH_API_KEY,
-  });
+  };
+
+  // For org-scoped API keys, we need to set LANGSMITH_WORKSPACE_ID in process.env
+  // since the LangSmith client reads it from there
+  if (env.LANGSMITH_WORKSPACE_ID && typeof globalThis !== 'undefined') {
+    const g = globalThis as any;
+    if (g.process?.env) {
+      g.process.env.LANGSMITH_WORKSPACE_ID = env.LANGSMITH_WORKSPACE_ID;
+    }
+  }
+
+  return new LangSmithClient(clientConfig);
 }
+
+// Track if we've already logged the tracing status to avoid log spam
+let langsmithStatusLogged = false;
 
 /**
  * Wrap an OpenAI client with LangSmith tracing
@@ -73,11 +88,19 @@ export function wrapOpenAIWithLangSmith(
   env: LangSmithEnv
 ): OpenAI {
   if (!isLangSmithEnabled(env)) {
-    console.log('[LangSmith] Tracing disabled (LANGSMITH_TRACING_V2 not set or no API key)');
+    // Only log once per worker lifecycle
+    if (!langsmithStatusLogged) {
+      console.log(`[LangSmith] Tracing disabled - TRACING_V2: ${env.LANGSMITH_TRACING_V2}, API_KEY: ${env.LANGSMITH_API_KEY ? 'set' : 'not set'}`);
+      langsmithStatusLogged = true;
+    }
     return client;
   }
 
-  console.log(`[LangSmith] Tracing enabled for project: ${env.LANGSMITH_PROJECT || 'iofold-development'}`);
+  // Only log once per worker lifecycle
+  if (!langsmithStatusLogged) {
+    console.log(`[LangSmith] Tracing enabled for project: ${env.LANGSMITH_PROJECT || 'iofold-development'}`);
+    langsmithStatusLogged = true;
+  }
 
   // Wrap the OpenAI client with LangSmith's wrapper
   // This automatically traces all chat.completions.create() calls
