@@ -341,9 +341,9 @@ export class TasksetRunJob {
     // Import createPlaygroundDeepAgent dynamically
     const { createPlaygroundDeepAgent } = await import('../playground/agent-deepagents');
 
-    // Use the agent's prompt template directly without variable injection
-    // The task's user_message contains the complete question (ART-E spec)
-    const systemPrompt = agent.prompt_template;
+    // Build system prompt with variable injection from task metadata
+    // Variables like {{inbox_address}} and {{query_date}} are replaced
+    const systemPrompt = this.buildSystemPrompt(agent.prompt_template, task.metadata);
 
     // Create agent instance
     const playgroundAgent = await createPlaygroundDeepAgent({
@@ -621,6 +621,33 @@ Respond with JSON only:
         scoreReason: `LLM comparison failed: ${error.message}`
       };
     }
+  }
+
+  /**
+   * Build system prompt with variable injection from task metadata
+   *
+   * Replaces {{variable_name}} placeholders with values from task metadata.
+   * Common variables:
+   * - {{inbox_address}} - Email inbox being searched (ART-E)
+   * - {{query_date}} - Current date for temporal context (ART-E)
+   */
+  private buildSystemPrompt(template: string, metadata: any): string {
+    if (!template) return '';
+    if (!metadata || typeof metadata !== 'object') return template;
+
+    let result = template;
+
+    // Replace all {{variable}} patterns with values from metadata
+    const variablePattern = /\{\{(\w+)\}\}/g;
+    result = result.replace(variablePattern, (match, varName) => {
+      if (varName in metadata) {
+        return String(metadata[varName]);
+      }
+      // Keep the placeholder if variable not found in metadata
+      return match;
+    });
+
+    return result;
   }
 
   /**
