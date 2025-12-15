@@ -42,7 +42,7 @@ export interface EvalRunnerConfig {
  * These messages flow between the Python eval and TypeScript EvalContext
  */
 interface BridgeRequest {
-  type: 'call_llm' | 'get_cost' | 'get_budget' | 'has_cache' | 'get_cache' | 'set_cache';
+  type: 'call_llm';
   id: string;
   payload: any;
 }
@@ -221,8 +221,7 @@ export class EvalRunner {
             prompt: request.prompt,
             model: (request.model as LLMCallOptions['model']) || 'anthropic/claude-sonnet-4-5',
             temperature: request.temperature ?? 0.0,
-            max_tokens: request.max_tokens || 500,
-            cache_key: request.id
+            max_tokens: request.max_tokens || 500
           });
 
           // Store response for next iteration
@@ -253,7 +252,6 @@ export class EvalRunner {
    * This creates a Python environment where:
    * - task, task_metadata, trace are available as JSON objects
    * - ctx.call_llm() is available and bridges to TypeScript via special markers
-   * - ctx.get_cost_so_far(), get_remaining_budget(), etc. are available
    * - eval_function(task, task_metadata, trace, ctx) is called
    * - Result is serialized as JSON: {"score": float, "feedback": str}
    *
@@ -306,21 +304,15 @@ _llm_call_counter = 0
 class EvalContext:
     """
     Sandboxed context for eval function execution.
-    Provides controlled access to LLM via TypeScript bridge and utilities.
+    Provides controlled access to LLM via TypeScript bridge.
     """
-
-    def __init__(self):
-        self._cost = 0.0
-        self._budget = 0.05
-        self._cache: Dict[str, str] = {}
 
     def call_llm(
         self,
         prompt: str,
         model: str = "anthropic/claude-sonnet-4-5",
         temperature: float = 0.0,
-        max_tokens: int = 500,
-        cache_key: Optional[str] = None
+        max_tokens: int = 500
     ) -> str:
         """
         Call an LLM for semantic evaluation.
@@ -332,8 +324,8 @@ class EvalContext:
         global _llm_call_counter
         _llm_call_counter += 1
 
-        # Generate request ID (use cache_key if provided, otherwise generate)
-        request_id = cache_key or f"llm_call_{_llm_call_counter}"
+        # Generate request ID
+        request_id = f"llm_call_{_llm_call_counter}"
 
         # Check if response is already available from previous iteration
         if request_id in _llm_responses:
@@ -350,26 +342,6 @@ class EvalContext:
         }
         print(f"[LLM_REQUEST]{json.dumps(request)}[/LLM_REQUEST]")
         raise SystemExit(0)  # Clean exit - TypeScript will rerun with response
-
-    def get_cost_so_far(self) -> float:
-        """Get total cost incurred so far in USD"""
-        return self._cost
-
-    def get_remaining_budget(self) -> float:
-        """Get remaining budget in USD"""
-        return max(0.0, self._budget - self._cost)
-
-    def has_cache(self, key: str) -> bool:
-        """Check if a cache key exists"""
-        return key in self._cache
-
-    def get_cache(self, key: str) -> Optional[str]:
-        """Get cached value"""
-        return self._cache.get(key)
-
-    def set_cache(self, key: str, value: str) -> None:
-        """Set cached value (per-execution cache)"""
-        self._cache[key] = value
 
 # User's eval function
 ${evalCode}

@@ -430,12 +430,7 @@ def eval_function(task: dict, task_metadata: dict, trace: dict, ctx) -> tuple[fl
         }
         trace: The agent's execution trace (structure varies by agent)
         ctx: EvalContext with methods:
-            - ctx.call_llm(prompt, model, temperature, max_tokens, cache_key) -> str
-            - ctx.get_cost_so_far() -> float
-            - ctx.get_remaining_budget() -> float
-            - ctx.has_cache(key) -> bool
-            - ctx.get_cache(key) -> str | None
-            - ctx.set_cache(key, value) -> None
+            - ctx.call_llm(prompt, model, temperature, max_tokens) -> str
 
     Returns:
         (score, feedback) where:

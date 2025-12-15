@@ -71,7 +71,7 @@ ${negativeJson}
    \`\`\`
 
 2. **EvalContext API (ctx parameter - optional, for LLM-as-judge):**
-   When ctx is provided, you can use these methods for semantic evaluation:
+   When ctx is provided, you can use this method for semantic evaluation:
 
    \`\`\`python
    if ctx:
@@ -80,18 +80,8 @@ ${negativeJson}
            prompt="Evaluate the quality of this response: ...",
            model="anthropic/claude-haiku-4-5",  # Optional: cheaper/faster model
            temperature=0.0,  # Optional: default 0.0 for determinism
-           max_tokens=500,   # Optional: default 500
-           cache_key="my_key"  # Optional: cache results for same key
+           max_tokens=500    # Optional: default 500
        )
-
-       # Cost tracking
-       cost_so_far = ctx.get_cost_so_far()      # Total USD spent
-       remaining = ctx.get_remaining_budget()    # USD budget remaining
-
-       # Caching (persists within single eval execution)
-       ctx.set_cache("key", "value")
-       cached = ctx.get_cache("key")  # Returns str or None
-       exists = ctx.has_cache("key")  # Returns bool
    \`\`\`
 
 3. **Evaluation strategy (prefer heuristics first):**
