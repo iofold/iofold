@@ -148,7 +148,7 @@ export class DeepEvalAgent {
     let iterations = 0;
     let bestCode = '';
     let bestAccuracy = 0;
-    let stepCount = 0;
+    let accumulatedText = ''; // Accumulate all agent output
 
     try {
       // Stream agent events
@@ -158,20 +158,18 @@ export class DeepEvalAgent {
       );
 
       for await (const { event, data } of eventStream) {
-        stepCount++;
-
         // Log tool calls
         if (event === 'on_tool_start') {
-          const toolName = data.input?.tool || 'unknown';
-          this.log('info', `Tool: ${toolName}`, { input: data.input });
+          const toolName = data.input?.tool || data.name || 'unknown';
+          this.log('info', `Tool: ${toolName}`);
         }
 
-        // Log tool results
+        // Log tool results and track test iterations
         if (event === 'on_tool_end') {
           const output = data.output?.content || data.output;
           const outputStr = typeof output === 'string' ? output : JSON.stringify(output);
 
-          // Check for test results
+          // Check for test results from test_eval_code tool
           if (outputStr.includes('"accuracy"')) {
             try {
               const result = JSON.parse(outputStr);
@@ -198,34 +196,38 @@ export class DeepEvalAgent {
           }
         }
 
-        // Log agent text output
+        // Accumulate agent text output
         if (event === 'on_chat_model_stream') {
           const chunk = data.chunk;
           if (chunk?.content && typeof chunk.content === 'string') {
-            // Look for eval function code in the output
-            const codeMatch = chunk.content.match(/```python\s*([\s\S]*?)```/);
-            if (codeMatch && codeMatch[1].includes('def eval_')) {
-              bestCode = codeMatch[1].trim();
-            }
+            accumulatedText += chunk.content;
           }
-        }
-
-        // Check if we're approaching recursion limit
-        if (stepCount >= WRAP_UP_THRESHOLD && !bestCode) {
-          this.log('warn', 'Approaching recursion limit, will request final answer');
         }
       }
     } catch (error: any) {
       // Handle recursion limit error gracefully
       if (error.name === 'GraphRecursionError' || error.message?.includes('recursion')) {
-        this.log('warn', 'Hit recursion limit, extracting best result');
+        this.log('warn', 'Hit recursion limit, extracting best result from accumulated output');
       } else {
         throw error;
       }
     }
 
+    // Extract code from accumulated text (handles code spanning multiple chunks)
+    const codeMatches = accumulatedText.matchAll(/```python\s*([\s\S]*?)```/g);
+    for (const match of codeMatches) {
+      if (match[1].includes('def eval_')) {
+        bestCode = match[1].trim();
+        // Keep the last valid eval function found
+      }
+    }
+
     // If we still don't have code, there's a problem
     if (!bestCode) {
+      this.log('error', 'No eval function found in agent output', {
+        accumulatedTextLength: accumulatedText.length,
+        preview: accumulatedText.substring(0, 500),
+      });
       throw new Error('Agent did not produce an eval function');
     }
 
