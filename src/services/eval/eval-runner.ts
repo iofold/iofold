@@ -24,6 +24,18 @@ export interface EvalRunnerConfig {
   /** Optional AI Gateway authentication token */
   cfGatewayToken?: string;
 
+  /** LangSmith API key for tracing */
+  langsmithApiKey?: string;
+
+  /** LangSmith project name */
+  langsmithProject?: string;
+
+  /** LangSmith tracing enabled (should be "true") */
+  langsmithTracingV2?: string;
+
+  /** LangSmith workspace ID */
+  langsmithWorkspaceId?: string;
+
   /** Maximum budget in USD (default: 0.05) */
   maxBudgetUsd?: number;
 
@@ -72,6 +84,10 @@ export class EvalRunner {
       cfAccountId: config.cfAccountId,
       cfGatewayId: config.cfGatewayId,
       cfGatewayToken: config.cfGatewayToken,
+      langsmithApiKey: config.langsmithApiKey,
+      langsmithProject: config.langsmithProject,
+      langsmithTracingV2: config.langsmithTracingV2,
+      langsmithWorkspaceId: config.langsmithWorkspaceId,
       sandboxBinding: config.sandboxBinding,
       devExecutorUrl: config.devExecutorUrl
     };
@@ -116,7 +132,11 @@ export class EvalRunner {
       {
         CF_ACCOUNT_ID: this.config.cfAccountId,
         CF_AI_GATEWAY_ID: this.config.cfGatewayId,
-        CF_AI_GATEWAY_TOKEN: this.config.cfGatewayToken
+        CF_AI_GATEWAY_TOKEN: this.config.cfGatewayToken,
+        LANGSMITH_API_KEY: this.config.langsmithApiKey,
+        LANGSMITH_PROJECT: this.config.langsmithProject,
+        LANGSMITH_TRACING_V2: this.config.langsmithTracingV2,
+        LANGSMITH_WORKSPACE_ID: this.config.langsmithWorkspaceId
       },
       evalContextConfig
     );

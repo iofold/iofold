@@ -5,6 +5,7 @@ import { JobManager } from '../jobs/job-manager';
 import { EvalGenerationJob } from '../jobs/eval-generation-job';
 import { EvalExecutionJob } from '../jobs/eval-execution-job';
 import { PythonRunner } from '../sandbox/python-runner';
+import { EvalRunner } from '../services/eval/eval-runner';
 import {
   handleError,
   notFoundError,
@@ -676,6 +677,20 @@ export class EvalsAPI {
         return validationError('trace_ids', 'No valid traces found');
       }
 
+      // Create EvalRunner with gateway config for LLM support
+      const evalRunner = new EvalRunner({
+        cfAccountId: this.gatewayConfig.cfAccountId,
+        cfGatewayId: this.gatewayConfig.cfGatewayId,
+        cfGatewayToken: this.gatewayConfig.cfGatewayToken,
+        langsmithApiKey: this.gatewayConfig.langsmithApiKey,
+        langsmithProject: this.gatewayConfig.langsmithProject,
+        langsmithTracingV2: this.gatewayConfig.langsmithTracingV2,
+        langsmithWorkspaceId: this.gatewayConfig.langsmithWorkspaceId,
+        sandboxBinding: this.sandboxBinding,
+        maxBudgetUsd: 0.10, // Higher budget for playground experimentation
+        timeoutMs: 30000
+      });
+
       // Execute eval code against each trace
       const results: any[] = [];
       let matches = 0;
@@ -691,62 +706,51 @@ export class EvalsAPI {
 
         try {
           // Parse trace data
+          const traceSteps = typeof trace.steps === 'string' ? JSON.parse(trace.steps as string) : trace.steps;
+          const traceRawData = typeof trace.rawData === 'string' ? JSON.parse(trace.rawData as string) : trace.rawData;
+
+          // Build trace object for EvalRunner
           const traceData = {
             trace_id: trace.id,
-            steps: typeof trace.steps === 'string' ? JSON.parse(trace.steps as string) : trace.steps,
-            raw_data: typeof trace.rawData === 'string' ? JSON.parse(trace.rawData as string) : trace.rawData
+            steps: traceSteps,
+            raw_data: traceRawData
           };
 
-          // Execute eval code using PythonRunner
-          const runner = new PythonRunner({
-            sandboxBinding: this.sandboxBinding,
-            timeout: 5000,
-            sandboxId: `playground-${evalId}-${trace.id}`
-          });
-
-          // Validate code first
-          const validationError = runner.validateCode(validated.code);
-          if (validationError) {
-            error = validationError;
-          } else {
-            // Extract function name from code
-            const functionNameMatch = validated.code.match(/def\s+(\w+)\s*\(/);
-            const functionName = functionNameMatch ? functionNameMatch[1] : 'eval_function';
-
-            // Build execution code (wraps eval code with trace data)
-            const traceJson = JSON.stringify(traceData).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-            const executionCode = `
-import json
-
-${validated.code}
-
-trace_data = json.loads("${traceJson}")
-result = ${functionName}(trace_data)
-result_dict = {"score": float(result[0]), "feedback": str(result[1])}
-print(json.dumps(result_dict))
-`;
-
-            // Execute in sandbox
-            const execution = await runner.execute(executionCode);
-
-            // Always capture stdout for debugging
-            stdout = execution.output || null;
-
-            if (!execution.success) {
-              error = execution.error || 'Execution failed';
-            } else {
-              // Parse result from stdout - expects {"score": float, "feedback": str}
-              const output = execution.output || '';
-              const resultMatch = output.match(/\{"score":\s*([\d.]+),\s*"feedback":\s*"([^"]*)"\}/);
-
-              if (resultMatch) {
-                score = parseFloat(resultMatch[1]);
-                feedback = resultMatch[2];
-              } else {
-                error = `Could not parse eval result. Output: ${output}`;
+          // Extract user message from trace steps to build Task object
+          let userMessage = '';
+          if (Array.isArray(traceSteps)) {
+            for (const step of traceSteps) {
+              const messages = step.messages_added || [];
+              for (const msg of messages) {
+                if (msg.role === 'user') {
+                  userMessage = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+                  break;
+                }
               }
+              if (userMessage) break;
             }
           }
+
+          // Build Task and TaskMetadata for GEPA interface
+          const task = { user_message: userMessage };
+          const taskMetadata = {}; // Empty metadata for playground
+
+          // Execute using EvalRunner with LLM bridge support
+          const result = await evalRunner.runEval(
+            validated.code,
+            task,
+            taskMetadata,
+            traceData
+          );
+
+          score = result.score;
+          feedback = result.feedback;
+
+          // Include execution stats in stdout for debugging
+          if (result.execution.llm_calls > 0) {
+            stdout = `LLM calls: ${result.execution.llm_calls}, Cost: $${result.execution.llm_cost_usd.toFixed(4)}`;
+          }
+
         } catch (e: any) {
           error = e.message || 'Execution error';
         }
