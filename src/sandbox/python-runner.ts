@@ -46,7 +46,9 @@ const BLOCKED_IMPORTS = [
 ];
 
 /** Default URL for the dev Python executor service */
-const DEV_EXECUTOR_URL = 'http://localhost:9999';
+// Note: Workers can't access localhost directly in local dev mode.
+// Use the host machine's network IP or override via PYTHON_EXECUTOR_URL env var.
+const DEV_EXECUTOR_URL = 'http://10.160.0.12:9999';
 
 export class PythonRunner {
   private config: PythonRunnerConfig;
@@ -270,18 +272,34 @@ print(json.dumps({'results': results}))`;
 
   /**
    * Execute Python code via HTTP service (dev mode only)
-   * Calls the python-executor-service running on localhost:9999
+   * Calls the python-executor-service running on the configured URL.
+   *
+   * Note: Workers can't access localhost directly in local dev mode.
+   * The URL should be the host machine's network IP or an environment variable.
    */
   private async executeViaHttpService(code: string, startTime: number): Promise<ExecutionResult> {
+    const url = `${this.config.devExecutorUrl}/execute`;
+
     try {
-      const response = await fetch(`${this.config.devExecutorUrl}/execute`, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, timeout: this.config.timeout })
       });
 
-      const result = await response.json() as ExecutionResult;
-      return result;
+      const text = await response.text();
+
+      try {
+        const result = JSON.parse(text) as ExecutionResult;
+        return result;
+      } catch (parseError: any) {
+        console.error(`[PythonRunner] JSON parse error: ${parseError.message}`);
+        return {
+          success: false,
+          error: `Invalid JSON response: ${text.substring(0, 200)}`,
+          executionTimeMs: Date.now() - startTime
+        };
+      }
     } catch (error: any) {
       // Connection refused = service not running
       if (error.cause?.code === 'ECONNREFUSED' || error.message?.includes('fetch failed')) {
@@ -291,9 +309,17 @@ print(json.dumps({'results': results}))`;
           executionTimeMs: Date.now() - startTime
         };
       }
+      // Network error (e.g., Workers can't reach localhost)
+      if (error.message?.includes('Network connection lost')) {
+        return {
+          success: false,
+          error: `Network error: Workers can't access localhost. Set PYTHON_EXECUTOR_URL to host IP (e.g., http://10.x.x.x:9999)`,
+          executionTimeMs: Date.now() - startTime
+        };
+      }
       return {
         success: false,
-        error: error.message || 'HTTP service error',
+        error: `HTTP error: ${error.name}: ${error.message}`,
         executionTimeMs: Date.now() - startTime
       };
     }
