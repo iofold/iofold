@@ -135,8 +135,7 @@ export class EvalRunner {
         execution: {
           duration_ms: durationMs,
           llm_calls: stats.llm_calls,
-          llm_cost_usd: stats.total_cost_usd,
-          cache_hits: stats.cache_hits
+          llm_cost_usd: stats.total_cost_usd
         }
       };
     } catch (error: any) {
@@ -150,8 +149,7 @@ export class EvalRunner {
         execution: {
           duration_ms: durationMs,
           llm_calls: stats.llm_calls,
-          llm_cost_usd: stats.total_cost_usd,
-          cache_hits: stats.cache_hits
+          llm_cost_usd: stats.total_cost_usd
         }
       };
     }
