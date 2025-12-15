@@ -36,7 +36,6 @@ import {
   evals,
   feedback,
   tasksets,
-  evalCandidates,
 } from '../db/schema';
 
 export interface Env {
@@ -362,17 +361,16 @@ export async function getAgentById(request: Request, env: Env, agentId: string):
       .bind(agentId, agentId, agentId, agentId, agentId)
       .first();
 
-    // Calculate accuracy from active eval candidate if available
-    // Note: The eval_executions table schema changed for GEPA - using eval_candidates metrics now
+    // Calculate accuracy from active eval if available
     let evalStatsResult: { accuracy: number | null; contradiction_rate: number | null } | null = null;
     try {
       const activeEvalResult = await drizzle
-        .select({ accuracy: evalCandidates.accuracy })
-        .from(evalCandidates)
+        .select({ accuracy: evals.accuracy })
+        .from(evals)
         .where(
           and(
-            eq(evalCandidates.agentId, agentId),
-            eq(evalCandidates.status, 'active')
+            eq(evals.agentId, agentId),
+            eq(evals.status, 'active')
           )
         )
         .limit(1);

@@ -30,7 +30,7 @@ import { agents, agentVersions } from '../db/schema/agents';
 import { traces } from '../db/schema/traces';
 import { feedback } from '../db/schema/feedback';
 import { taskMetadata } from '../db/schema/feedback';
-import { evalCandidates } from '../db/schema/evals';
+import { evals } from '../db/schema/evals';
 
 export interface Env {
   DB: D1Database;
@@ -371,11 +371,20 @@ export async function generateEvals(
 
     const candidates = await generator.generate(labeledTraces, targetCount);
 
-    // Store candidates in database
+    // Store candidates in evals table with status='candidate'
     for (const candidate of candidates) {
-      await drizzle.insert(evalCandidates).values({
+      // Get next version number for this agent
+      const maxVersionResult = await drizzle
+        .select({ maxVersion: sql<number>`MAX(${evals.version})` })
+        .from(evals)
+        .where(eq(evals.agentId, agentId));
+      const nextVersion = (maxVersionResult[0]?.maxVersion || 0) + 1;
+
+      await drizzle.insert(evals).values({
         id: candidate.id,
         agentId: agentId,
+        version: nextVersion,
+        name: `${candidate.variation} eval v${nextVersion}`,
         code: candidate.code,
         variation: candidate.variation,
         status: 'candidate',
@@ -459,17 +468,17 @@ export async function testEvalCandidates(
       }
     }
 
-    // Fetch candidates from database
+    // Fetch candidates from evals table
     const candidatesResult = await drizzle
       .select({
-        id: evalCandidates.id,
-        code: evalCandidates.code,
-        variation: evalCandidates.variation,
+        id: evals.id,
+        code: evals.code,
+        variation: evals.variation,
       })
-      .from(evalCandidates)
+      .from(evals)
       .where(and(
-        inArray(evalCandidates.id, body.candidate_ids),
-        eq(evalCandidates.agentId, agentId)
+        inArray(evals.id, body.candidate_ids),
+        eq(evals.agentId, agentId)
       ));
 
     if (candidatesResult.length === 0) {
@@ -558,10 +567,10 @@ export async function testEvalCandidates(
 
     const testResults = await tester.testAndRankCandidates(candidates, labeledTraces);
 
-    // Update candidates in database with test results
+    // Update evals in database with test results
     for (const result of testResults.results) {
       await drizzle
-        .update(evalCandidates)
+        .update(evals)
         .set({
           agreementRate: result.agreement_rate,
           accuracy: result.accuracy,
@@ -571,8 +580,9 @@ export async function testEvalCandidates(
           perTraceResults: result.per_trace_results as any,
           totalCostUsd: result.execution_stats.total_cost_usd,
           avgDurationMs: result.execution_stats.avg_duration_ms,
+          status: 'testing',  // Mark as tested
         })
-        .where(eq(evalCandidates.id, result.candidate_id));
+        .where(eq(evals.id, result.candidate_id));
     }
 
     return createSuccessResponse({
@@ -657,28 +667,27 @@ export async function selectWinner(
       }
     }
 
-    // Fetch candidates with test results
-    // Note: We don't filter by status='tested' since that value is not in the schema.
-    // Instead, we check for the presence of test metrics (accuracy, etc.)
+    // Fetch candidates with test results from evals table
+    // Filter by status='testing' or check for presence of test metrics (accuracy, etc.)
     const candidatesResult = await drizzle
       .select({
-        id: evalCandidates.id,
-        code: evalCandidates.code,
-        variation: evalCandidates.variation,
-        agreement_rate: evalCandidates.agreementRate,
-        accuracy: evalCandidates.accuracy,
-        cohen_kappa: evalCandidates.cohenKappa,
-        f1_score: evalCandidates.f1Score,
-        confusion_matrix: evalCandidates.confusionMatrix,
-        per_trace_results: evalCandidates.perTraceResults,
-        total_cost_usd: evalCandidates.totalCostUsd,
-        avg_duration_ms: evalCandidates.avgDurationMs,
+        id: evals.id,
+        code: evals.code,
+        variation: evals.variation,
+        agreement_rate: evals.agreementRate,
+        accuracy: evals.accuracy,
+        cohen_kappa: evals.cohenKappa,
+        f1_score: evals.f1Score,
+        confusion_matrix: evals.confusionMatrix,
+        per_trace_results: evals.perTraceResults,
+        total_cost_usd: evals.totalCostUsd,
+        avg_duration_ms: evals.avgDurationMs,
       })
-      .from(evalCandidates)
+      .from(evals)
       .where(and(
-        inArray(evalCandidates.id, body.candidate_ids),
-        eq(evalCandidates.agentId, agentId),
-        sql`${evalCandidates.accuracy} IS NOT NULL`
+        inArray(evals.id, body.candidate_ids),
+        eq(evals.agentId, agentId),
+        sql`${evals.accuracy} IS NOT NULL`
       ));
 
     if (candidatesResult.length === 0) {
@@ -800,57 +809,57 @@ export async function activateEval(
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
-    // Verify eval candidate exists and belongs to agent
-    const candidateResult = await drizzle
+    // Verify eval exists and belongs to agent
+    const evalResult = await drizzle
       .select({
-        id: evalCandidates.id,
-        code: evalCandidates.code,
-        variation: evalCandidates.variation,
-        agreement_rate: evalCandidates.agreementRate,
-        accuracy: evalCandidates.accuracy,
-        cohen_kappa: evalCandidates.cohenKappa,
-        f1_score: evalCandidates.f1Score,
-        confusion_matrix: evalCandidates.confusionMatrix,
-        per_trace_results: evalCandidates.perTraceResults,
+        id: evals.id,
+        code: evals.code,
+        variation: evals.variation,
+        agreement_rate: evals.agreementRate,
+        accuracy: evals.accuracy,
+        cohen_kappa: evals.cohenKappa,
+        f1_score: evals.f1Score,
+        confusion_matrix: evals.confusionMatrix,
+        per_trace_results: evals.perTraceResults,
       })
-      .from(evalCandidates)
+      .from(evals)
       .where(and(
-        eq(evalCandidates.id, evalId),
-        eq(evalCandidates.agentId, agentId),
-        sql`${evalCandidates.accuracy} IS NOT NULL`
+        eq(evals.id, evalId),
+        eq(evals.agentId, agentId),
+        sql`${evals.accuracy} IS NOT NULL`
       ))
       .limit(1);
 
-    if (candidateResult.length === 0) {
-      return createErrorResponse('NOT_FOUND', 'Eval candidate not found or not tested', 404);
+    if (evalResult.length === 0) {
+      return createErrorResponse('NOT_FOUND', 'Eval not found or not tested', 404);
     }
 
     // Get previous active eval
     const previousActiveResult = await drizzle
-      .select({ id: evalCandidates.id })
-      .from(evalCandidates)
+      .select({ id: evals.id })
+      .from(evals)
       .where(and(
-        eq(evalCandidates.agentId, agentId),
-        eq(evalCandidates.status, 'active')
+        eq(evals.agentId, agentId),
+        eq(evals.status, 'active')
       ))
       .limit(1);
 
     // Archive previous active eval
     if (previousActiveResult.length > 0) {
       await drizzle
-        .update(evalCandidates)
+        .update(evals)
         .set({ status: 'archived' })
-        .where(eq(evalCandidates.id, previousActiveResult[0].id));
+        .where(eq(evals.id, previousActiveResult[0].id));
     }
 
     // Activate new eval
     await drizzle
-      .update(evalCandidates)
+      .update(evals)
       .set({
         status: 'active',
         activatedAt: sql`CURRENT_TIMESTAMP`,
       })
-      .where(eq(evalCandidates.id, evalId));
+      .where(eq(evals.id, evalId));
 
     // Update agent's active_eval_id
     await drizzle
@@ -921,32 +930,32 @@ export async function getActiveEval(
       });
     }
 
-    // Get active eval with metrics
-    const evalResult = await drizzle
+    // Get active eval with metrics from evals table
+    const activeEvalResult = await drizzle
       .select({
-        id: evalCandidates.id,
-        code: evalCandidates.code,
-        variation: evalCandidates.variation,
-        agreement_rate: evalCandidates.agreementRate,
-        accuracy: evalCandidates.accuracy,
-        cohen_kappa: evalCandidates.cohenKappa,
-        f1_score: evalCandidates.f1Score,
-        confusion_matrix: evalCandidates.confusionMatrix,
-        per_trace_results: evalCandidates.perTraceResults,
-        total_cost_usd: evalCandidates.totalCostUsd,
-        avg_duration_ms: evalCandidates.avgDurationMs,
-        activated_at: evalCandidates.activatedAt,
-        created_at: evalCandidates.createdAt,
+        id: evals.id,
+        code: evals.code,
+        variation: evals.variation,
+        agreement_rate: evals.agreementRate,
+        accuracy: evals.accuracy,
+        cohen_kappa: evals.cohenKappa,
+        f1_score: evals.f1Score,
+        confusion_matrix: evals.confusionMatrix,
+        per_trace_results: evals.perTraceResults,
+        total_cost_usd: evals.totalCostUsd,
+        avg_duration_ms: evals.avgDurationMs,
+        activated_at: evals.activatedAt,
+        created_at: evals.createdAt,
       })
-      .from(evalCandidates)
+      .from(evals)
       .where(and(
-        eq(evalCandidates.id, agent.active_eval_id),
-        eq(evalCandidates.agentId, agentId),
-        eq(evalCandidates.status, 'active')
+        eq(evals.id, agent.active_eval_id),
+        eq(evals.agentId, agentId),
+        eq(evals.status, 'active')
       ))
       .limit(1);
 
-    if (evalResult.length === 0) {
+    if (activeEvalResult.length === 0) {
       return createSuccessResponse({
         eval: null,
         metrics: null,
@@ -954,7 +963,7 @@ export async function getActiveEval(
       });
     }
 
-    const evalRow = evalResult[0];
+    const evalRow = activeEvalResult[0];
 
     const evalCandidate: EvalCandidate = {
       id: evalRow.id,

@@ -8,7 +8,7 @@ import type { GenerateEvalJobResult } from '../types/api';
 import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
 import { createDb, type Database } from '../db/client';
-import { evals, feedback, traces, evalCandidateExecutions } from '../db/schema';
+import { evals, feedback, traces, evalExecutions } from '../db/schema';
 
 export interface EvalGenerationJobConfig {
   jobId: string;
@@ -90,6 +90,15 @@ export class EvalGenerationJob {
         total: feedbackData.positive.length + feedbackData.negative.length
       });
 
+      // Log sample trace IDs for context
+      const positiveIds = feedbackData.positive.map(t => t.trace_id || t.id).slice(0, 3);
+      const negativeIds = feedbackData.negative.map(t => t.trace_id || t.id).slice(0, 3);
+      await this.log('info', '📋 Sample trace IDs', {
+        positiveExamples: positiveIds,
+        negativeExamples: negativeIds,
+        note: `Showing first 3 of each (${feedbackData.positive.length} positive, ${feedbackData.negative.length} negative)`
+      });
+
       this.emitProgress('calling_llm', 20);
 
       // Step 2: Generate eval code using LLM
@@ -102,6 +111,16 @@ export class EvalGenerationJob {
 
       await this.log('info', '📝 Analyzing trace patterns to identify quality criteria...');
 
+      // Log preview of what's being sent to LLM
+      const samplePositive = feedbackData.positive[0];
+      const sampleNegative = feedbackData.negative[0];
+      await this.log('info', '🔍 Sending traces to LLM for pattern analysis', {
+        samplePositiveSteps: samplePositive?.steps?.length || 0,
+        sampleNegativeSteps: sampleNegative?.steps?.length || 0,
+        evalName: this.config.name,
+        customInstructions: this.config.customInstructions ? 'Provided' : 'None'
+      });
+
       const generationResult = await this.generator.generate({
         name: this.config.name,
         positiveExamples: feedbackData.positive,
@@ -113,6 +132,25 @@ export class EvalGenerationJob {
         codeLength: `${generationResult.code.length} characters`,
         tokensUsed: generationResult.metadata.tokensUsed || 'N/A'
       });
+
+      // Log generated code preview
+      const codeLines = generationResult.code.split('\n');
+      const codePreview = codeLines.slice(0, 8).join('\n') + (codeLines.length > 8 ? '\n...' : '');
+      await this.log('info', '💻 Generated eval function preview', {
+        preview: codePreview,
+        totalLines: codeLines.length,
+        totalChars: generationResult.code.length
+      });
+
+      // Log token usage and cost if available
+      if (generationResult.metadata.tokensUsed || generationResult.metadata.cost) {
+        await this.log('info', '💰 LLM usage metrics', {
+          promptTokens: generationResult.metadata.promptTokens || 'N/A',
+          completionTokens: generationResult.metadata.completionTokens || 'N/A',
+          totalTokens: generationResult.metadata.tokensUsed || 'N/A',
+          estimatedCost: generationResult.metadata.cost ? `$${generationResult.metadata.cost.estimatedCostUSD.toFixed(4)}` : 'N/A'
+        });
+      }
 
       this.emitProgress('validating_code', 60);
 
@@ -144,6 +182,32 @@ export class EvalGenerationJob {
         errors: testResult.errors,
         total: testResult.total
       });
+
+      // Log per-trace results summary
+      const mismatches = testResult.details.filter(d => !d.match);
+      const errorCases = testResult.details.filter(d => d.error);
+
+      if (mismatches.length > 0) {
+        await this.log('info', '🔄 Mismatched predictions', {
+          count: mismatches.length,
+          samples: mismatches.slice(0, 3).map(d => ({
+            traceId: d.traceId.substring(0, 20) + '...',
+            expected: d.expectedScore === 1.0 ? 'positive' : 'negative',
+            predicted: d.predictedScore >= 0.5 ? 'positive' : 'negative',
+            reason: d.feedback?.substring(0, 100) || 'No reason'
+          }))
+        });
+      }
+
+      if (errorCases.length > 0) {
+        await this.log('warn', '❗ Execution errors during validation', {
+          count: errorCases.length,
+          samples: errorCases.slice(0, 2).map(d => ({
+            traceId: d.traceId.substring(0, 20) + '...',
+            error: d.error?.substring(0, 150) || 'Unknown error'
+          }))
+        });
+      }
 
       if (testResult.accuracy < 0.6) {
         await this.log('warn', '⚠️ Low accuracy detected - consider adding more labeled examples');
@@ -248,7 +312,7 @@ export class EvalGenerationJob {
    * Log a message to both SSE stream (if available) and persist to job metadata
    */
   private async log(
-    level: 'info' | 'warn' | 'error' | 'debug',
+    level: 'info' | 'warn' | 'error',
     message: string,
     data?: Record<string, any>
   ): Promise<void> {
@@ -327,26 +391,25 @@ export class EvalGenerationJob {
     evalId: string,
     results: TestCaseResult[]
   ): Promise<void> {
-    // Store test executions in eval_candidate_executions table (GEPA flow)
-    // Maps: eval_id -> eval_candidate_id, predictedScore -> score, feedback -> feedback
+    // Store test executions in eval_executions table (consolidated schema)
     if (results.length === 0) return;
 
     const now = new Date().toISOString();
     const values = results.map(result => ({
       id: crypto.randomUUID(),
-      evalCandidateId: evalId,
+      evalId: evalId,
       traceId: result.traceId,
       score: result.predictedScore,
       feedback: result.feedback,
       success: result.error ? false : true,
-      durationMs: result.executionTimeMs,
-      createdAt: now
+      executionTimeMs: result.executionTimeMs,
+      executedAt: now
     }));
 
     // Note: Drizzle doesn't support INSERT OR REPLACE directly
     // We would need to handle this with individual upserts or accept insert-only
     // For now, using insert-only to maintain compatibility
-    await this.drizzle.insert(evalCandidateExecutions).values(values);
+    await this.drizzle.insert(evalExecutions).values(values);
   }
 
   private emitProgress(status: string, progress: number, extra?: any) {
