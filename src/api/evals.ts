@@ -379,7 +379,7 @@ export class EvalsAPI {
         description: record.description,
         agent_id: record.agentId,
         code: record.code,
-        model_used: record.modelUsed,
+        model_used: record.modelUsed || 'unknown',
         accuracy: record.accuracy!,
         cohen_kappa: record.cohenKappa,
         f1_score: record.f1Score,
