@@ -287,6 +287,10 @@ export class EvalRunner {
     trace: Record<string, unknown>,
     llmResponses: Record<string, string> = {}
   ): string {
+    // Extract function name from eval code (like tester.ts does)
+    const functionNameMatch = evalCode.match(/def\s+(\w+)\s*\(/);
+    const functionName = functionNameMatch ? functionNameMatch[1] : 'eval_function';
+
     // Escape JSON for embedding in Python string
     const taskJson = JSON.stringify(task)
       .replace(/\\/g, '\\\\')
@@ -323,7 +327,12 @@ class EvalContext:
     """
     Sandboxed context for eval function execution.
     Provides controlled access to LLM via TypeScript bridge.
+    Optional task and task_metadata are available for GEPA-style evals.
     """
+
+    def __init__(self, task: Dict = None, task_metadata: Dict = None):
+        self.task = task
+        self.task_metadata = task_metadata
 
     def call_llm(
         self,
@@ -369,18 +378,19 @@ task = json.loads("${taskJson}")
 task_metadata = json.loads("${taskMetadataJson}")
 trace = json.loads("${traceJson}")
 
-# Create context
-ctx = EvalContext()
+# Create context with optional task/metadata for GEPA-style evals
+ctx = EvalContext(task=task, task_metadata=task_metadata)
 
-# Execute eval function
+# Execute eval function with simple interface: eval_func(trace, ctx)
+# Evals can access ctx.task and ctx.task_metadata if needed
 try:
-    result = eval_function(task, task_metadata, trace, ctx)
+    result = ${functionName}(trace, ctx)
 
     # Extract score and feedback
     if isinstance(result, tuple) and len(result) == 2:
         score, feedback = result
     else:
-        raise ValueError(f"eval_function must return tuple[float, str], got {type(result)}")
+        raise ValueError(f"${functionName} must return tuple[float, str], got {type(result)}")
 
     # Validate score is between 0 and 1
     if not isinstance(score, (int, float)):
