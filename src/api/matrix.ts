@@ -7,8 +7,8 @@ import {
   feedback,
   traces,
   integrations,
-  evalCandidateExecutions,
-  evalCandidates
+  evalExecutions,
+  evals
 } from '../db/schema';
 
 /**
@@ -319,24 +319,24 @@ export async function getComparisonMatrix(
     // Optimized: Single query with IN clause
     const executions = await drizzle
       .select({
-        traceId: evalCandidateExecutions.traceId,
-        evalId: evalCandidateExecutions.evalCandidateId,
-        result: evalCandidateExecutions.success,
-        reason: evalCandidateExecutions.feedback,
-        executionTimeMs: evalCandidateExecutions.durationMs,
-        error: evalCandidateExecutions.error,
-        executedAt: evalCandidateExecutions.createdAt,
-        evalName: evalCandidates.code
+        traceId: evalExecutions.traceId,
+        evalId: evalExecutions.evalId,
+        result: evalExecutions.success,
+        reason: evalExecutions.feedback,
+        executionTimeMs: evalExecutions.executionTimeMs,
+        error: evalExecutions.error,
+        executedAt: evalExecutions.executedAt,
+        evalName: evals.code
       })
-      .from(evalCandidateExecutions)
-      .innerJoin(evalCandidates, eq(evalCandidateExecutions.evalCandidateId, evalCandidates.id))
+      .from(evalExecutions)
+      .innerJoin(evals, eq(evalExecutions.evalId, evals.id))
       .where(
         and(
-          inArray(evalCandidateExecutions.evalCandidateId, evalIds),
-          inArray(evalCandidateExecutions.traceId, traceIds)
+          inArray(evalExecutions.evalId, evalIds),
+          inArray(evalExecutions.traceId, traceIds)
         )
       )
-      .orderBy(desc(evalCandidateExecutions.createdAt))
+      .orderBy(desc(evalExecutions.executedAt))
       .all();
 
     // Build execution map: trace_id -> eval_id -> execution
@@ -558,25 +558,25 @@ export async function getEvalExecutionDetail(
     const drizzle = createDb(db);
     const result = await drizzle
       .select({
-        traceId: evalCandidateExecutions.traceId,
-        evalId: evalCandidateExecutions.evalCandidateId,
-        result: evalCandidateExecutions.success,
-        reason: evalCandidateExecutions.feedback,
-        executionTimeMs: evalCandidateExecutions.durationMs,
-        error: evalCandidateExecutions.error,
-        executedAt: evalCandidateExecutions.createdAt,
+        traceId: evalExecutions.traceId,
+        evalId: evalExecutions.evalId,
+        result: evalExecutions.success,
+        reason: evalExecutions.feedback,
+        executionTimeMs: evalExecutions.executionTimeMs,
+        error: evalExecutions.error,
+        executedAt: evalExecutions.executedAt,
         humanRating: feedback.rating,
         humanNotes: feedback.ratingDetail
       })
-      .from(evalCandidateExecutions)
-      .leftJoin(feedback, eq(evalCandidateExecutions.traceId, feedback.traceId))
+      .from(evalExecutions)
+      .leftJoin(feedback, eq(evalExecutions.traceId, feedback.traceId))
       .where(
         and(
-          eq(evalCandidateExecutions.traceId, traceId),
-          eq(evalCandidateExecutions.evalCandidateId, evalId)
+          eq(evalExecutions.traceId, traceId),
+          eq(evalExecutions.evalId, evalId)
         )
       )
-      .orderBy(desc(evalCandidateExecutions.createdAt))
+      .orderBy(desc(evalExecutions.executedAt))
       .limit(1)
       .get();
 
@@ -646,18 +646,18 @@ export async function getTraceExecutions(
     const drizzle = createDb(db);
     const result = await drizzle
       .select({
-        evalId: evalCandidateExecutions.evalCandidateId,
-        evalName: evalCandidates.code,
-        result: evalCandidateExecutions.success,
-        reason: evalCandidateExecutions.feedback,
-        executionTimeMs: evalCandidateExecutions.durationMs,
-        error: evalCandidateExecutions.error,
-        executedAt: evalCandidateExecutions.createdAt
+        evalId: evalExecutions.evalId,
+        evalName: evals.code,
+        result: evalExecutions.success,
+        reason: evalExecutions.feedback,
+        executionTimeMs: evalExecutions.executionTimeMs,
+        error: evalExecutions.error,
+        executedAt: evalExecutions.executedAt
       })
-      .from(evalCandidateExecutions)
-      .innerJoin(evalCandidates, eq(evalCandidateExecutions.evalCandidateId, evalCandidates.id))
-      .where(eq(evalCandidateExecutions.traceId, traceId))
-      .orderBy(desc(evalCandidateExecutions.createdAt))
+      .from(evalExecutions)
+      .innerJoin(evals, eq(evalExecutions.evalId, evals.id))
+      .where(eq(evalExecutions.traceId, traceId))
+      .orderBy(desc(evalExecutions.executedAt))
       .all();
 
     const executions: TraceExecution[] = result.map(row => ({
@@ -709,15 +709,15 @@ export async function getEvalExecutions(
 
     // Build filter conditions
     const drizzle = createDb(db);
-    const conditions: SQL[] = [eq(evalCandidateExecutions.evalCandidateId, evalId)];
+    const conditions: SQL[] = [eq(evalExecutions.evalId, evalId)];
 
     if (params.result !== undefined) {
       const resultValue = params.result === 'true';
-      conditions.push(eq(evalCandidateExecutions.success, resultValue));
+      conditions.push(eq(evalExecutions.success, resultValue));
     }
 
     if (params.has_error === 'true') {
-      conditions.push(sql`${evalCandidateExecutions.error} IS NOT NULL`);
+      conditions.push(sql`${evalExecutions.error} IS NOT NULL`);
     }
 
     // Add cursor condition if provided
@@ -726,10 +726,10 @@ export async function getEvalExecutions(
       if (decoded) {
         conditions.push(
           or(
-            sql`${evalCandidateExecutions.createdAt} > ${decoded.timestamp}`,
+            sql`${evalExecutions.executedAt} > ${decoded.timestamp}`,
             and(
-              eq(evalCandidateExecutions.createdAt, decoded.timestamp),
-              sql`${evalCandidateExecutions.traceId} > ${decoded.id}`
+              eq(evalExecutions.executedAt, decoded.timestamp),
+              sql`${evalExecutions.traceId} > ${decoded.id}`
             )
           )!
         );
@@ -738,22 +738,22 @@ export async function getEvalExecutions(
 
     const result = await drizzle
       .select({
-        id: evalCandidateExecutions.id,
-        traceId: evalCandidateExecutions.traceId,
-        result: evalCandidateExecutions.success,
-        reason: evalCandidateExecutions.feedback,
-        executionTimeMs: evalCandidateExecutions.durationMs,
-        error: evalCandidateExecutions.error,
-        executedAt: evalCandidateExecutions.createdAt,
+        id: evalExecutions.id,
+        traceId: evalExecutions.traceId,
+        result: evalExecutions.success,
+        reason: evalExecutions.feedback,
+        executionTimeMs: evalExecutions.executionTimeMs,
+        error: evalExecutions.error,
+        executedAt: evalExecutions.executedAt,
         traceTimestamp: traces.importedAt,
         steps: traces.steps,
         source: integrations.platform
       })
-      .from(evalCandidateExecutions)
-      .innerJoin(traces, eq(evalCandidateExecutions.traceId, traces.id))
+      .from(evalExecutions)
+      .innerJoin(traces, eq(evalExecutions.traceId, traces.id))
       .leftJoin(integrations, eq(traces.integrationId, integrations.id))
       .where(and(...conditions))
-      .orderBy(asc(evalCandidateExecutions.createdAt), asc(evalCandidateExecutions.traceId))
+      .orderBy(asc(evalExecutions.executedAt), asc(evalExecutions.traceId))
       .limit(params.limit + 1)
       .all();
 

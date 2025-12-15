@@ -83,17 +83,21 @@ describe('Matrix API', () => {
       importedAt: '2025-11-12T11:00:00Z'
     }).run();
 
-    // Create eval candidates
-    db.insert(schema.evalCandidates).values({
+    // Create evals
+    db.insert(schema.evals).values({
       id: 'eval_candidate_1',
       agentId: 'agent_test',
+      version: 1,
+      name: 'Test Eval 1',
       code: 'def evaluate(trace): return True',
       status: 'candidate'
     }).run();
 
-    db.insert(schema.evalCandidates).values({
+    db.insert(schema.evals).values({
       id: 'eval_candidate_2',
       agentId: 'agent_test',
+      version: 2,
+      name: 'Test Eval 2',
       code: 'def evaluate(trace): return False',
       status: 'candidate'
     }).run();
@@ -120,47 +124,47 @@ describe('Matrix API', () => {
 
     // Create eval executions
     // eval_candidate_1 on trace_1: true (matches positive feedback)
-    db.insert(schema.evalCandidateExecutions).values({
+    db.insert(schema.evalExecutions).values({
       id: 'exec_1',
-      evalCandidateId: 'eval_candidate_1',
+      evalId: 'eval_candidate_1',
       traceId: 'trace_1',
       success: true,
       feedback: 'Passed evaluation',
-      durationMs: 150,
-      createdAt: '2025-11-12T10:10:00Z'
+      executionTimeMs: 150,
+      executedAt: '2025-11-12T10:10:00Z'
     }).run();
 
     // eval_candidate_1 on trace_2: true (contradicts negative feedback)
-    db.insert(schema.evalCandidateExecutions).values({
+    db.insert(schema.evalExecutions).values({
       id: 'exec_2',
-      evalCandidateId: 'eval_candidate_1',
+      evalId: 'eval_candidate_1',
       traceId: 'trace_2',
       success: true,
       feedback: 'Passed evaluation',
-      durationMs: 200,
-      createdAt: '2025-11-12T11:10:00Z'
+      executionTimeMs: 200,
+      executedAt: '2025-11-12T11:10:00Z'
     }).run();
 
     // eval_candidate_2 on trace_1: false (contradicts positive feedback)
-    db.insert(schema.evalCandidateExecutions).values({
+    db.insert(schema.evalExecutions).values({
       id: 'exec_3',
-      evalCandidateId: 'eval_candidate_2',
+      evalId: 'eval_candidate_2',
       traceId: 'trace_1',
       success: false,
       feedback: 'Failed evaluation',
-      durationMs: 100,
-      createdAt: '2025-11-12T10:15:00Z'
+      executionTimeMs: 100,
+      executedAt: '2025-11-12T10:15:00Z'
     }).run();
 
     // eval_candidate_2 on trace_2: false (matches negative feedback)
-    db.insert(schema.evalCandidateExecutions).values({
+    db.insert(schema.evalExecutions).values({
       id: 'exec_4',
-      evalCandidateId: 'eval_candidate_2',
+      evalId: 'eval_candidate_2',
       traceId: 'trace_2',
       success: false,
       feedback: 'Failed evaluation',
-      durationMs: 120,
-      createdAt: '2025-11-12T11:15:00Z'
+      executionTimeMs: 120,
+      executedAt: '2025-11-12T11:15:00Z'
     }).run();
 
     mockD1 = createMockD1(sqlite);
@@ -485,22 +489,24 @@ describe('Matrix API', () => {
         importedAt: '2025-11-12T13:00:00Z'
       }).run();
 
-      db.insert(schema.evalCandidates).values({
+      db.insert(schema.evals).values({
         id: 'eval_error',
         agentId: 'agent_error',
+        version: 1,
+        name: 'Error Eval',
         code: 'def evaluate(trace): raise Exception("error")',
         status: 'candidate'
       }).run();
 
-      db.insert(schema.evalCandidateExecutions).values({
+      db.insert(schema.evalExecutions).values({
         id: 'exec_error',
-        evalCandidateId: 'eval_error',
+        evalId: 'eval_error',
         traceId: 'trace_error',
         success: false,
         feedback: null,
         error: 'Execution failed',
-        durationMs: 50,
-        createdAt: '2025-11-12T13:05:00Z'
+        executionTimeMs: 50,
+        executedAt: '2025-11-12T13:05:00Z'
       }).run();
 
       const errorMockD1 = createMockD1(sqlite);

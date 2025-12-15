@@ -8,7 +8,7 @@ import { EvalCandidate } from './auto-eval-generator';
 import { D1Database } from '@cloudflare/workers-types';
 import { createDb, type Database } from '../../db/client';
 import { eq, and, sql } from 'drizzle-orm';
-import { evalCandidates, agents } from '../../db/schema';
+import { evals, agents } from '../../db/schema';
 
 /**
  * Criteria for selecting a winning eval candidate
@@ -231,13 +231,21 @@ export class WinnerSelector {
     console.log(`[WinnerSelector] Activating eval ${evalId} for agent ${agentId}`);
 
     try {
-      // 1. Insert into eval_candidates as active
-      const now = sql`datetime('now')`;
+      // 1. Get next version number for this agent
+      const maxVersionResult = await this.drizzle
+        .select({ maxVersion: sql<number>`MAX(${evals.version})` })
+        .from(evals)
+        .where(eq(evals.agentId, agentId));
+      const nextVersion = (maxVersionResult[0]?.maxVersion || 0) + 1;
+
+      // 2. Insert into evals as active
       await this.drizzle
-        .insert(evalCandidates)
+        .insert(evals)
         .values({
           id: evalId,
           agentId,
+          version: nextVersion,
+          name: `${candidate.variation} eval v${nextVersion}`,
           code: candidate.code,
           variation: candidate.variation,
           agreementRate: metrics.agreement_rate,
@@ -250,21 +258,21 @@ export class WinnerSelector {
           activatedAt: new Date().toISOString()
         });
 
-      console.log(`[WinnerSelector] Inserted eval candidate ${evalId}`);
+      console.log(`[WinnerSelector] Inserted eval ${evalId}`);
 
-      // 2. Archive previous active eval for this agent
+      // 3. Archive previous active eval for this agent
       const archiveResult = await this.drizzle
-        .update(evalCandidates)
+        .update(evals)
         .set({ status: 'archived' })
         .where(and(
-          eq(evalCandidates.agentId, agentId),
-          eq(evalCandidates.status, 'active'),
-          sql`${evalCandidates.id} != ${evalId}`
+          eq(evals.agentId, agentId),
+          eq(evals.status, 'active'),
+          sql`${evals.id} != ${evalId}`
         ));
 
       console.log(`[WinnerSelector] Archived previous active evals`);
 
-      // 3. Update agent's active_eval_id
+      // 4. Update agent's active_eval_id
       await this.drizzle
         .update(agents)
         .set({ activeEvalId: evalId })

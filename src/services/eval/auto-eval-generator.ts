@@ -359,7 +359,10 @@ Focus on concrete, observable patterns that can be checked programmatically or w
     const text = response.choices[0]?.message?.content || '';
 
     // Extract Python code from response
-    const code = this.extractPythonCode(text);
+    const rawCode = this.extractPythonCode(text);
+
+    // Fix common LLM code generation mistakes
+    const code = this.fixCommonCodeIssues(rawCode);
 
     // Generate unique ID
     const id = `candidate_${variation}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -495,6 +498,44 @@ Return ONLY the Python function code, wrapped in a markdown code block.`;
 
     // If nothing found, return the whole text (might work)
     return text.trim();
+  }
+
+  /**
+   * Fix common LLM code generation mistakes
+   *
+   * Fixes:
+   * - Invalid return type annotations (tuple[float, feedback: str] -> tuple[float, str])
+   * - Named tuple annotations that Python doesn't support
+   */
+  private fixCommonCodeIssues(code: string): string {
+    let fixed = code;
+
+    // Fix invalid return type annotations with named parameters
+    // Matches: tuple[float, feedback: str] or tuple[float, score: str] etc.
+    // Replaces with: tuple[float, str]
+    fixed = fixed.replace(
+      /tuple\[float,\s*\w+:\s*str\]/gi,
+      'tuple[float, str]'
+    );
+
+    // Also fix Tuple (capital T) version
+    fixed = fixed.replace(
+      /Tuple\[float,\s*\w+:\s*str\]/gi,
+      'Tuple[float, str]'
+    );
+
+    // Fix any other named tuple parameters
+    // e.g., tuple[score: float, feedback: str] -> tuple[float, str]
+    fixed = fixed.replace(
+      /tuple\[\w+:\s*float,\s*\w+:\s*str\]/gi,
+      'tuple[float, str]'
+    );
+
+    if (fixed !== code) {
+      console.log('[AutoEvalGenerator] Fixed invalid return type annotation');
+    }
+
+    return fixed;
   }
 
   /**
