@@ -2,9 +2,8 @@
  * D1TraceCollector - D1 Database implementation of TraceCollector
  *
  * Buffers trace events in memory and converts them to LangGraphExecutionStep
- * format on flush, then persists to both:
- * 1. traces table (source='playground')
- * 2. playground_steps table (granular step details)
+ * format on flush, then persists to the traces table (source='playground').
+ * Step data is embedded in the trace's steps JSON field.
  */
 
 import type { LangGraphExecutionStep, Message, ToolCall } from '../../types/trace';
@@ -254,8 +253,8 @@ export class D1TraceCollector implements TraceCollector {
         )
         .run();
 
-      // Insert into playground_steps table (if it exists)
-      await this.insertPlaygroundSteps(traceData.id);
+      // Note: playground_steps table was removed in migration 0002
+      // Step data is embedded in the trace's steps JSON field instead
     } catch (error) {
       console.error('Failed to flush trace:', error);
       throw error;
@@ -361,59 +360,6 @@ export class D1TraceCollector implements TraceCollector {
     }
 
     return steps;
-  }
-
-  /**
-   * Insert granular playground steps
-   */
-  private async insertPlaygroundSteps(traceDbId: string): Promise<void> {
-    if (!this.metadata) return;
-
-    const stepInserts: Promise<any>[] = [];
-    let stepIndex = 0;
-
-    for (const span of this.spans.values()) {
-      const latencyMs = span.endTime
-        ? new Date(span.endTime).getTime() - new Date(span.startTime).getTime()
-        : undefined;
-
-      const stepId = `step_${crypto.randomUUID()}`;
-
-      // Note: This assumes playground_steps table exists. If it doesn't,
-      // this will fail silently or need to be wrapped in a try-catch
-      const query = this.db
-        .prepare(
-          `INSERT INTO playground_steps (
-          id, session_id, trace_id, step_index, step_type,
-          input, output, tool_name, tool_args, tool_result, tool_error,
-          latency_ms, tokens_input, tokens_output, timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          stepId,
-          this.metadata.sessionId,
-          traceDbId,
-          stepIndex++,
-          span.type,
-          span.input ? JSON.stringify(span.input) : null,
-          span.output ? JSON.stringify(span.output) : null,
-          span.toolName || null,
-          span.toolArgs ? JSON.stringify(span.toolArgs) : null,
-          span.toolResult ? JSON.stringify(span.toolResult) : null,
-          span.toolError || null,
-          latencyMs || null,
-          span.usage?.inputTokens || null,
-          span.usage?.outputTokens || null,
-          span.startTime
-        );
-
-      stepInserts.push(query.run().catch((err) => {
-        // Silently fail if playground_steps table doesn't exist
-        console.warn('Failed to insert playground step:', err.message);
-      }));
-    }
-
-    await Promise.all(stepInserts);
   }
 
   /**
