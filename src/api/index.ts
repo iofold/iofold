@@ -136,6 +136,11 @@ export interface Env {
   ENCRYPTION_KEY?: string;
   /** Cloudflare Queue binding for job processing */
   JOB_QUEUE?: Queue;
+  /** LangSmith tracing configuration */
+  LANGSMITH_API_KEY?: string;
+  LANGSMITH_TRACING_V2?: string;
+  LANGSMITH_PROJECT?: string;
+  LANGSMITH_WORKSPACE_ID?: string;
 }
 
 /**
@@ -332,7 +337,11 @@ export async function handleApiRequest(request: Request, env: Env, ctx?: Executi
     {
       cfAccountId: env.CF_ACCOUNT_ID || '',
       cfGatewayId: env.CF_AI_GATEWAY_ID || '',
-      cfGatewayToken: env.CF_AI_GATEWAY_TOKEN
+      cfGatewayToken: env.CF_AI_GATEWAY_TOKEN,
+      langsmithApiKey: env.LANGSMITH_API_KEY,
+      langsmithTracingV2: env.LANGSMITH_TRACING_V2,
+      langsmithProject: env.LANGSMITH_PROJECT,
+      langsmithWorkspaceId: env.LANGSMITH_WORKSPACE_ID,
     },
     env.SANDBOX,
     ctx

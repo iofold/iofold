@@ -98,6 +98,11 @@ export interface QueueConsumerDeps {
   cfGatewayToken?: string;
   /** Queue binding for enqueueing follow-up jobs */
   queue?: any;
+  /** LangSmith tracing configuration */
+  langsmithApiKey?: string;
+  langsmithTracingV2?: string;
+  langsmithProject?: string;
+  langsmithWorkspaceId?: string;
 }
 
 /**
@@ -117,6 +122,10 @@ export class QueueConsumer {
   private cfGatewayToken?: string;
   private queue?: any;
   private jobManager: JobManager;
+  private langsmithApiKey?: string;
+  private langsmithTracingV2?: string;
+  private langsmithProject?: string;
+  private langsmithWorkspaceId?: string;
 
   constructor(deps: QueueConsumerDeps) {
     this.db = deps.db;
@@ -132,6 +141,10 @@ export class QueueConsumer {
     this.cfGatewayToken = deps.cfGatewayToken;
     this.queue = deps.queue;
     this.jobManager = new JobManager(deps.db);
+    this.langsmithApiKey = deps.langsmithApiKey;
+    this.langsmithTracingV2 = deps.langsmithTracingV2;
+    this.langsmithProject = deps.langsmithProject;
+    this.langsmithWorkspaceId = deps.langsmithWorkspaceId;
   }
 
   /**
@@ -284,7 +297,11 @@ export class QueueConsumer {
         cfAccountId: this.cfAccountId,
         cfGatewayId: this.cfGatewayId,
         cfGatewayToken: this.cfGatewayToken,
-        sandboxBinding: this.sandboxBinding
+        sandboxBinding: this.sandboxBinding,
+        langsmithApiKey: this.langsmithApiKey,
+        langsmithTracingV2: this.langsmithTracingV2,
+        langsmithProject: this.langsmithProject,
+        langsmithWorkspaceId: this.langsmithWorkspaceId,
       }
     );
 

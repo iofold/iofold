@@ -31,6 +31,14 @@ export interface EvalGenerationJobDeps {
   /** Optional AI Gateway authentication token */
   cfGatewayToken?: string;
   sandboxBinding?: DurableObjectNamespace<Sandbox>;
+  /** LangSmith API key for tracing */
+  langsmithApiKey?: string;
+  /** LangSmith tracing enabled flag */
+  langsmithTracingV2?: string;
+  /** LangSmith project name */
+  langsmithProject?: string;
+  /** LangSmith workspace ID (required for org-scoped API keys) */
+  langsmithWorkspaceId?: string;
 }
 
 export class EvalGenerationJob {
@@ -68,6 +76,11 @@ export class EvalGenerationJob {
           CF_ACCOUNT_ID: this.deps.cfAccountId,
           CF_AI_GATEWAY_ID: this.deps.cfGatewayId,
           CF_AI_GATEWAY_TOKEN: this.deps.cfGatewayToken,
+          // LangSmith tracing configuration
+          LANGSMITH_API_KEY: this.deps.langsmithApiKey,
+          LANGSMITH_TRACING_V2: this.deps.langsmithTracingV2,
+          LANGSMITH_PROJECT: this.deps.langsmithProject,
+          LANGSMITH_WORKSPACE_ID: this.deps.langsmithWorkspaceId,
         } as any,
         sandbox: this.deps.sandboxBinding,
         onLog: (level, message, data) => this.log(level, message, data),

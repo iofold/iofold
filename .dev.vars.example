@@ -19,3 +19,4 @@ CF_AI_GATEWAY_ID=your_gateway_id
 LANGSMITH_API_KEY=your_langsmith_api_key_here
 LANGSMITH_TRACING_V2=true
 LANGSMITH_PROJECT=iofold-development
+LANGSMITH_WORKSPACE_ID=your_workspace_id_here  # Required for org-scoped API keys

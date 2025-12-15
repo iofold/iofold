@@ -50,6 +50,8 @@ export interface Env {
   LANGSMITH_TRACING_V2?: string;
   /** LangSmith project name (optional) */
   LANGSMITH_PROJECT?: string;
+  /** LangSmith workspace ID (required for org-scoped API keys) */
+  LANGSMITH_WORKSPACE_ID?: string;
   /** Benchmarks database for ART-E and other benchmarks (optional) */
   BENCHMARKS_DB?: D1Database;
 }
@@ -147,6 +149,10 @@ export default {
         cfAccountId: env.CF_ACCOUNT_ID,
         cfGatewayId: env.CF_AI_GATEWAY_ID,
         cfGatewayToken: env.CF_AI_GATEWAY_TOKEN,
+        langsmithApiKey: env.LANGSMITH_API_KEY,
+        langsmithTracingV2: env.LANGSMITH_TRACING_V2,
+        langsmithProject: env.LANGSMITH_PROJECT,
+        langsmithWorkspaceId: env.LANGSMITH_WORKSPACE_ID,
       },
       env.SANDBOX
     );
