@@ -48,12 +48,13 @@ export interface Email {
 }
 
 /**
- * Email search parameters
+ * Email search parameters (ART-E spec)
+ * @see https://openpipe.ai/blog/art-e-mail-agent
  */
 export interface EmailSearchParams {
-  query: string;
-  inbox_id?: string; // Optional - if omitted, searches all inboxes
-  limit?: number;
+  keywords: string;
+  sent_after?: string; // ISO 8601 date string (e.g., "2001-01-15")
+  sent_before?: string; // ISO 8601 date string (e.g., "2001-12-31")
 }
 
 /**
@@ -64,29 +65,24 @@ export interface EmailGetParams {
 }
 
 /**
- * Search emails using full-text search
+ * Search emails using full-text search (ART-E spec)
  *
  * Searches across email subjects and bodies using SQLite FTS5.
- * Returns matching emails with snippets.
- * If inbox_id is provided, searches only that inbox; otherwise searches all inboxes.
+ * Returns up to 10 matching emails with message IDs and snippets.
+ * Supports date filtering via sent_after and sent_before parameters.
  *
- * @param params - Search parameters (query, optional inbox_id, optional limit)
+ * @param params - Search parameters (keywords, sent_after, sent_before)
  * @param context - Email tool context with BENCHMARKS_DB binding
  * @returns Promise with array of matching emails and total count
  *
+ * @see https://openpipe.ai/blog/art-e-mail-agent
+ *
  * @example
  * ```typescript
- * // Search all inboxes
  * const result = await emailSearchHandler({
- *   query: 'meeting schedule',
- *   limit: 10
- * }, { BENCHMARKS_DB: env.BENCHMARKS_DB });
- *
- * // Search specific inbox
- * const result2 = await emailSearchHandler({
- *   query: 'meeting schedule',
- *   inbox_id: 'john.arnold@enron.com',
- *   limit: 10
+ *   keywords: 'budget report',
+ *   sent_after: '2001-01-01',
+ *   sent_before: '2001-12-31'
  * }, { BENCHMARKS_DB: env.BENCHMARKS_DB });
  * ```
  */
@@ -99,61 +95,99 @@ export async function emailSearchHandler(
     throw new Error('Invalid parameters: expected object');
   }
 
-  const { query, inbox_id, limit = 20 } = params as EmailSearchParams;
+  const { keywords, sent_after, sent_before } = params as EmailSearchParams;
 
-  if (!query || typeof query !== 'string' || !query.trim()) {
-    throw new Error('Invalid query: must be a non-empty string');
+  if (!keywords || typeof keywords !== 'string' || !keywords.trim()) {
+    throw new Error('Invalid keywords: must be a non-empty string');
   }
 
-  // inbox_id is now optional
-  if (inbox_id !== undefined && (typeof inbox_id !== 'string' || !inbox_id.trim())) {
-    throw new Error('Invalid inbox_id: must be a non-empty string when provided');
+  // Validate date parameters if provided
+  if (sent_after !== undefined && typeof sent_after !== 'string') {
+    throw new Error('Invalid sent_after: must be a date string (e.g., "2001-01-15")');
   }
-
-  if (typeof limit !== 'number' || limit < 1 || limit > 100) {
-    throw new Error('Invalid limit: must be a number between 1 and 100');
+  if (sent_before !== undefined && typeof sent_before !== 'string') {
+    throw new Error('Invalid sent_before: must be a date string (e.g., "2001-12-31")');
   }
 
   if (!context.BENCHMARKS_DB) {
     throw new Error('BENCHMARKS_DB binding not configured');
   }
 
+  // Fixed limit of 10 per ART-E spec
+  const limit = 10;
+
   try {
     const drizzle = createDb(context.BENCHMARKS_DB);
 
+    // Build query with optional date filters
     // Use FTS5 for full-text search with raw SQL
-    // Keep as raw SQL since FTS5 is not directly supported by Drizzle
-    // Note: Using sql`` template for safe parameter binding
-    const searchQuerySql = inbox_id
-      ? sql`
-          SELECT
-            e.message_id,
-            e.subject,
-            e.sender,
-            e.date,
-            snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
-            snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
-          FROM emails_fts
-          INNER JOIN emails e ON emails_fts.rowid = e.rowid
-          WHERE emails_fts MATCH ${query}
-            AND e.inbox = ${inbox_id}
-          ORDER BY rank
-          LIMIT ${limit}
-        `
-      : sql`
-          SELECT
-            e.message_id,
-            e.subject,
-            e.sender,
-            e.date,
-            snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
-            snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
-          FROM emails_fts
-          INNER JOIN emails e ON emails_fts.rowid = e.rowid
-          WHERE emails_fts MATCH ${query}
-          ORDER BY rank
-          LIMIT ${limit}
-        `;
+    let searchQuerySql;
+
+    if (sent_after && sent_before) {
+      searchQuerySql = sql`
+        SELECT
+          e.message_id,
+          e.subject,
+          e.sender,
+          e.date,
+          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
+          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
+        FROM emails_fts
+        INNER JOIN emails e ON emails_fts.rowid = e.rowid
+        WHERE emails_fts MATCH ${keywords}
+          AND e.date >= ${sent_after}
+          AND e.date <= ${sent_before}
+        ORDER BY rank
+        LIMIT ${limit}
+      `;
+    } else if (sent_after) {
+      searchQuerySql = sql`
+        SELECT
+          e.message_id,
+          e.subject,
+          e.sender,
+          e.date,
+          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
+          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
+        FROM emails_fts
+        INNER JOIN emails e ON emails_fts.rowid = e.rowid
+        WHERE emails_fts MATCH ${keywords}
+          AND e.date >= ${sent_after}
+        ORDER BY rank
+        LIMIT ${limit}
+      `;
+    } else if (sent_before) {
+      searchQuerySql = sql`
+        SELECT
+          e.message_id,
+          e.subject,
+          e.sender,
+          e.date,
+          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
+          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
+        FROM emails_fts
+        INNER JOIN emails e ON emails_fts.rowid = e.rowid
+        WHERE emails_fts MATCH ${keywords}
+          AND e.date <= ${sent_before}
+        ORDER BY rank
+        LIMIT ${limit}
+      `;
+    } else {
+      searchQuerySql = sql`
+        SELECT
+          e.message_id,
+          e.subject,
+          e.sender,
+          e.date,
+          snippet(emails_fts, 0, '<mark>', '</mark>', '...', 32) as subject_snippet,
+          snippet(emails_fts, 1, '<mark>', '</mark>', '...', 64) as body_snippet
+        FROM emails_fts
+        INNER JOIN emails e ON emails_fts.rowid = e.rowid
+        WHERE emails_fts MATCH ${keywords}
+        ORDER BY rank
+        LIMIT ${limit}
+      `;
+    }
 
     const results = await drizzle.all<{
       message_id: string;
