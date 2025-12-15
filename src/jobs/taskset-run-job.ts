@@ -607,8 +607,15 @@ Respond with JSON only:
         maxTokens: 256,
       });
 
-      // Parse LLM response
-      const parsed = JSON.parse(result.content);
+      // Parse LLM response - strip markdown code fences if present
+      let jsonContent = result.content.trim();
+      if (jsonContent.startsWith('```')) {
+        // Remove opening fence (```json or ```)
+        jsonContent = jsonContent.replace(/^```(?:json)?\s*\n?/, '');
+        // Remove closing fence
+        jsonContent = jsonContent.replace(/\n?```\s*$/, '');
+      }
+      const parsed = JSON.parse(jsonContent);
       return {
         score: Math.max(0, Math.min(1, parsed.score)),
         scoreReason: parsed.reason || 'LLM comparison'
