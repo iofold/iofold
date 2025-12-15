@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from '@/hooks/use-router-with-progress'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { apiClient, APIError } from '@/lib/api-client'
-import { useJobMonitor } from '@/hooks/use-job-monitor'
 import type { GenerateEvalRequest } from '@/types/api'
 import {
   Dialog,
@@ -19,8 +18,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
-import { LiveJobMonitor } from '@/components/jobs/live-job-monitor'
 
 interface GenerateEvalModalProps {
   children: React.ReactNode
@@ -30,7 +27,6 @@ interface GenerateEvalModalProps {
 export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const [jobId, setJobId] = useState<string | null>(null)
   const [formData, setFormData] = useState<GenerateEvalRequest>({
     name: '',
     description: '',
@@ -39,41 +35,12 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
   })
   const [error, setError] = useState<string | null>(null)
 
-  const queryClient = useQueryClient()
-
-  // Use job monitor hook for SSE + polling fallback
-  const { job: jobStatus, isStreaming, isPolling, isSSEActive, stop: stopMonitoring } = useJobMonitor(jobId, {
-    autoStart: true,
-    onProgress: (update) => {
-      console.log('[GenerateEvalModal] Job progress:', update)
-    },
-    onCompleted: (result) => {
-      console.log('[GenerateEvalModal] Generation completed:', result)
-      // Invalidate queries to refresh eval list
-      queryClient.invalidateQueries({ queryKey: ['agent', agentId] })
-      queryClient.invalidateQueries({ queryKey: ['evals'] })
-    },
-    onFailed: (errorMsg, details) => {
-      console.error('[GenerateEvalModal] Generation failed:', errorMsg, details)
-    },
-    onOpen: () => {
-      console.log('[GenerateEvalModal] SSE connection established')
-    },
-  })
-
-  // Clean up monitoring when modal closes
-  useEffect(() => {
-    if (!open) {
-      stopMonitoring()
-    }
-  }, [open, stopMonitoring])
-
   const mutation = useMutation({
     mutationFn: (data: GenerateEvalRequest) => apiClient.generateEval(agentId, data),
     onSuccess: (response) => {
-      // Set job ID to trigger monitoring
-      setJobId(response.job_id)
-      setError(null)
+      // Close modal and redirect to job details page
+      setOpen(false)
+      router.push(`/resources/${response.job_id}`)
     },
     onError: (err: APIError) => {
       setError(err.message || 'Failed to start eval generation')
@@ -88,12 +55,9 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
       custom_instructions: '',
     })
     setError(null)
-    setJobId(null)
   }
 
   const handleClose = () => {
-    // Stop monitoring
-    stopMonitoring()
     setOpen(false)
     // Reset after modal closes
     setTimeout(resetForm, 300)
@@ -112,215 +76,106 @@ export function GenerateEvalModal({ children, agentId }: GenerateEvalModalProps)
     mutation.mutate(formData)
   }
 
-  // Determine current status
-  const isGenerating = !!jobId && jobStatus?.status === 'running'
-  const isCompleted = jobStatus?.status === 'completed'
-  const isFailed = jobStatus?.status === 'failed'
-  const isQueued = jobStatus?.status === 'queued'
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {children}
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        {!jobId ? (
-          // Form to submit generation request
-          <form onSubmit={handleSubmit}>
-            <DialogHeader>
-              <DialogTitle>Generate Eval Function</DialogTitle>
-              <DialogDescription>
-                Create an automated eval function from your labeled traces using AI
-              </DialogDescription>
-            </DialogHeader>
+      <DialogContent className="max-w-lg">
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Generate Eval Function</DialogTitle>
+            <DialogDescription>
+              Create an automated eval function from your labeled traces using AI
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="space-y-4 py-4 px-6">
-              {error && (
-                <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-md text-sm">
-                  {error}
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="name">
-                  Eval Name <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="name"
-                  placeholder="e.g., check_response_accuracy"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  disabled={mutation.isPending}
-                  required
-                />
-                <p className="text-xs text-muted-foreground">
-                  Choose a descriptive name for your eval function
-                </p>
+          <div className="space-y-4 py-4 px-6">
+            {error && (
+              <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-md text-sm">
+                {error}
               </div>
+            )}
 
-              <div className="space-y-2">
-                <Label htmlFor="description">Description (optional)</Label>
-                <Input
-                  id="description"
-                  placeholder="What does this eval check for?"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  disabled={mutation.isPending}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="model">Model (optional)</Label>
-                <Select
-                  value={formData.model}
-                  onValueChange={(value) => setFormData({ ...formData, model: value })}
-                  disabled={mutation.isPending}
-                >
-                  <SelectTrigger id="model">
-                    <SelectValue placeholder="Select model..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="anthropic/claude-sonnet-4-5">Claude Sonnet 4.5</SelectItem>
-                    <SelectItem value="anthropic/claude-opus-4-5">Claude Opus 4.5</SelectItem>
-                    <SelectItem value="google-vertex-ai/google/gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Model to use for generating the eval function
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="instructions">Custom Instructions (optional)</Label>
-                <textarea
-                  id="instructions"
-                  className="w-full min-h-[100px] px-3 py-2 text-sm rounded-md border border-input bg-background"
-                  placeholder="Additional guidance for the eval generation..."
-                  value={formData.custom_instructions}
-                  onChange={(e) => setFormData({ ...formData, custom_instructions: e.target.value })}
-                  disabled={mutation.isPending}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Provide specific criteria or patterns to focus on
-                </p>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="name">
+                Eval Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="name"
+                placeholder="e.g., check_response_accuracy"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                disabled={mutation.isPending}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Choose a descriptive name for your eval function
+              </p>
             </div>
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleClose}
+            <div className="space-y-2">
+              <Label htmlFor="description">Description (optional)</Label>
+              <Input
+                id="description"
+                placeholder="What does this eval check for?"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                disabled={mutation.isPending}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="model">Model (optional)</Label>
+              <Select
+                value={formData.model}
+                onValueChange={(value) => setFormData({ ...formData, model: value })}
                 disabled={mutation.isPending}
               >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={mutation.isPending}>
-                {mutation.isPending ? 'Generating...' : 'Generate Eval'}
-              </Button>
-            </DialogFooter>
-          </form>
-        ) : (
-          // Show generation status
-          <div>
-            <DialogHeader>
-              <DialogTitle>Eval Generation</DialogTitle>
-              <DialogDescription>
-                {isCompleted && 'Generation completed successfully!'}
-                {isFailed && 'Generation failed'}
-                {isGenerating && 'Generating your eval function...'}
-                {isQueued && 'Generation queued...'}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="py-6 px-6">
-              {/* Status indicator */}
-              <div className="flex items-center gap-3 mb-6">
-                {isGenerating || isQueued ? (
-                  <Loader2 className="w-6 h-6 animate-spin text-info" aria-hidden="true" />
-                ) : isCompleted ? (
-                  <CheckCircle2 className="w-6 h-6 text-success" aria-hidden="true" />
-                ) : isFailed ? (
-                  <XCircle className="w-6 h-6 text-destructive" aria-hidden="true" />
-                ) : null}
-
-                <div className="flex-1">
-                  <div className="font-medium">
-                    {isQueued && 'Queued for processing...'}
-                    {isGenerating && 'Generating eval function...'}
-                    {isCompleted && 'Generation Complete'}
-                    {isFailed && 'Generation Failed'}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Job ID: {jobId}
-                  </div>
-                </div>
-              </div>
-
-              {/* Live Job Monitor with real-time logs */}
-              {(isGenerating || isQueued || isCompleted || isFailed) && (
-                <div className="mb-6">
-                  <LiveJobMonitor
-                    jobId={jobId}
-                    jobType="generate"
-                  />
-                </div>
-              )}
-
-              {/* Error message */}
-              {isFailed && jobStatus?.error && (
-                <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-md mb-6">
-                  <p className="font-medium mb-1">Error</p>
-                  <p className="text-sm">{jobStatus.error}</p>
-                </div>
-              )}
-
-              {/* Success info */}
-              {isCompleted && jobStatus?.result && (
-                <div className="space-y-4">
-                  <div className="bg-success/10 border border-success/30 text-success px-4 py-3 rounded-md">
-                    <p className="font-medium mb-1">Eval Generated Successfully</p>
-                    <p className="text-sm">
-                      Your eval function has been created and tested.
-                    </p>
-                  </div>
-
-                  {jobStatus.result.eval_id && (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">Results:</p>
-                      <ul className="text-sm space-y-1 text-muted-foreground">
-                        <li>Eval ID: {jobStatus.result.eval_id}</li>
-                        {jobStatus.result.accuracy !== undefined && (
-                          <li>Accuracy: {Math.round(jobStatus.result.accuracy * 100)}%</li>
-                        )}
-                        {jobStatus.result.test_results && (
-                          <li>
-                            Tests: {jobStatus.result.test_results.correct}/{jobStatus.result.test_results.total} passed
-                          </li>
-                        )}
-                      </ul>
-                      <Button
-                        onClick={() => {
-                          handleClose()
-                          router.push(`/evals/${jobStatus.result.eval_id}`)
-                        }}
-                        className="w-full mt-4"
-                      >
-                        View Eval Details
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
+                <SelectTrigger id="model">
+                  <SelectValue placeholder="Select model..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="anthropic/claude-sonnet-4-5">Claude Sonnet 4.5</SelectItem>
+                  <SelectItem value="anthropic/claude-opus-4-5">Claude Opus 4.5</SelectItem>
+                  <SelectItem value="google-vertex-ai/google/gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Model to use for generating the eval function
+              </p>
             </div>
 
-            <DialogFooter>
-              <Button onClick={handleClose}>
-                {isCompleted ? 'Done' : 'Close'}
-              </Button>
-            </DialogFooter>
+            <div className="space-y-2">
+              <Label htmlFor="instructions">Custom Instructions (optional)</Label>
+              <textarea
+                id="instructions"
+                className="w-full min-h-[100px] px-3 py-2 text-sm rounded-md border border-input bg-background"
+                placeholder="Additional guidance for the eval generation..."
+                value={formData.custom_instructions}
+                onChange={(e) => setFormData({ ...formData, custom_instructions: e.target.value })}
+                disabled={mutation.isPending}
+              />
+              <p className="text-xs text-muted-foreground">
+                Provide specific criteria or patterns to focus on
+              </p>
+            </div>
           </div>
-        )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleClose}
+              disabled={mutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? 'Starting...' : 'Generate Eval'}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )
