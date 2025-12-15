@@ -29,9 +29,13 @@ docker compose up -d            # Start all
 docker logs -f iofold-backend   # Logs
 docker exec iofold-backend CMD  # Run command
 
-# Deploy
-wrangler deploy --env staging   # Backend
-cd frontend && pnpm deploy      # Frontend
+# Deploy to staging (run from repo root)
+npx wrangler deploy --env staging                    # Backend → api.staging.iofold.com
+cd frontend && pnpm deploy:staging                   # Frontend → platform.staging.iofold.com
+
+# Deploy to production (not yet configured)
+# npx wrangler deploy                                # Backend
+# cd frontend && pnpm deploy                         # Frontend
 
 # Database (always use migrations, NOT drizzle-kit push)
 npx drizzle-kit generate --name NAME                           # Generate
@@ -57,6 +61,21 @@ curl http://localhost:8787/v1/api/agents -H "X-Workspace-Id: workspace_default"
 4. **Playwright** - 1920x1080 viewport
 5. **Accuracy > speed**
 
+## Staging URLs
+| Service | URL |
+|---------|-----|
+| Backend API | https://api.staging.iofold.com |
+| Frontend | https://platform.staging.iofold.com |
+
+## Secrets Management
+```bash
+# List secrets
+npx wrangler secret list --env staging
+
+# Add/update secret
+npx wrangler secret put SECRET_NAME --env staging
+```
+
 ## Gotchas
 | Issue | Impact |
 |-------|--------|
@@ -64,6 +83,7 @@ curl http://localhost:8787/v1/api/agents -H "X-Workspace-Id: workspace_default"
 | Local DB = Staging DB | Data pollution risk |
 | No `[env.production]` | Can't deploy to prod |
 | DLQ not monitored | Silent job failures |
+| Missing secrets on staging | 403/500 errors - check `wrangler secret list` |
 
 ## Docs
 | Topic | File |
