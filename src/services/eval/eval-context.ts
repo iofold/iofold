@@ -1,6 +1,6 @@
 /**
  * EvalContextImpl - Sandboxed context for eval function execution
- * Provides controlled access to LLM calls with cost tracking and caching
+ * Provides controlled access to LLM calls with cost tracking
  *
  * Uses OpenAI SDK format for all providers via Cloudflare AI Gateway.
  */
