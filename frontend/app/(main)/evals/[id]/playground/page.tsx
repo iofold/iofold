@@ -20,6 +20,9 @@ import {
   XCircle,
   AlertTriangle,
   Loader2,
+  ChevronDown,
+  ChevronRight,
+  Terminal,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn, formatPercentage } from '@/lib/utils'
@@ -41,6 +44,7 @@ export default function EvalPlaygroundPage() {
   const [code, setCode] = useState('')
   const [selectedTraceIds, setSelectedTraceIds] = useState<string[]>([])
   const [results, setResults] = useState<PlaygroundResult[] | null>(null)
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [summary, setSummary] = useState<{
     total: number
     matches: number
@@ -120,6 +124,19 @@ export default function EvalPlaygroundPage() {
 
   const clearSelection = useCallback(() => {
     setSelectedTraceIds([])
+  }, [])
+
+  // Toggle row expansion for stdout
+  const toggleRow = useCallback((traceId: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(traceId)) {
+        next.delete(traceId)
+      } else {
+        next.add(traceId)
+      }
+      return next
+    })
   }, [])
 
   if (loadingEval) {
@@ -288,69 +305,122 @@ export default function EvalPlaygroundPage() {
             <table className="w-full">
               <thead className="bg-muted/50">
                 <tr>
+                  <th className="w-8 px-2"></th>
                   <th className="text-left px-4 py-3 text-sm font-medium">Trace ID</th>
                   <th className="text-left px-4 py-3 text-sm font-medium">Human</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium">Predicted</th>
+                  <th className="text-center px-4 py-3 text-sm font-medium">Score</th>
                   <th className="text-center px-4 py-3 text-sm font-medium">Match</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium">Reason</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium">Feedback</th>
                   <th className="text-right px-4 py-3 text-sm font-medium">Time</th>
                 </tr>
               </thead>
               <tbody>
-                {results.map((result) => (
-                  <tr
-                    key={result.trace_id}
-                    className={cn(
-                      'border-t',
-                      result.is_contradiction && 'bg-red-50/50'
-                    )}
-                  >
-                    <td className="px-4 py-3 font-mono text-sm">
-                      {result.trace_id.slice(0, 12)}...
-                    </td>
-                    <td className="px-4 py-3">
-                      {result.human_feedback ? (
-                        <Badge
-                          variant={
-                            result.human_feedback === 'positive'
-                              ? 'default'
-                              : result.human_feedback === 'negative'
-                              ? 'destructive'
-                              : 'secondary'
-                          }
-                        >
-                          {result.human_feedback}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
+                {results.map((result) => {
+                  const isExpanded = expandedRows.has(result.trace_id)
+                  const hasOutput = result.stdout || result.error
+                  return (
+                    <>
+                      <tr
+                        key={result.trace_id}
+                        className={cn(
+                          'border-t',
+                          result.is_contradiction && 'bg-red-50/50',
+                          hasOutput && 'cursor-pointer hover:bg-muted/50'
+                        )}
+                        onClick={() => hasOutput && toggleRow(result.trace_id)}
+                      >
+                        <td className="px-2 py-3">
+                          {hasOutput && (
+                            isExpanded ? (
+                              <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                            )
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-sm">
+                          {result.trace_id.slice(0, 12)}...
+                        </td>
+                        <td className="px-4 py-3">
+                          {result.human_feedback ? (
+                            <Badge
+                              variant={
+                                result.human_feedback === 'positive'
+                                  ? 'default'
+                                  : result.human_feedback === 'negative'
+                                  ? 'destructive'
+                                  : 'secondary'
+                              }
+                            >
+                              {result.human_feedback}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {result.error ? (
+                            <AlertTriangle className="w-4 h-4 text-yellow-600 mx-auto" />
+                          ) : (
+                            <span className={cn(
+                              'font-mono text-sm font-medium',
+                              result.score >= 0.7 ? 'text-green-600' :
+                              result.score >= 0.4 ? 'text-yellow-600' :
+                              'text-red-600'
+                            )}>
+                              {(result.score * 100).toFixed(0)}%
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {result.is_match === null ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : result.is_match ? (
+                            <CheckCircle className="w-4 h-4 text-green-600 mx-auto" />
+                          ) : (
+                            <XCircle className="w-4 h-4 text-red-600 mx-auto" />
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground max-w-[300px] truncate">
+                          {result.error || result.feedback || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm text-muted-foreground">
+                          {result.execution_time_ms}ms
+                        </td>
+                      </tr>
+                      {isExpanded && hasOutput && (
+                        <tr key={`${result.trace_id}-details`} className="border-t bg-muted/30">
+                          <td colSpan={7} className="px-4 py-3">
+                            <div className="space-y-2">
+                              {result.error && (
+                                <div>
+                                  <div className="flex items-center gap-2 text-sm font-medium text-red-600 mb-1">
+                                    <AlertTriangle className="w-4 h-4" />
+                                    Error
+                                  </div>
+                                  <pre className="text-xs bg-red-50 text-red-800 p-3 rounded overflow-x-auto whitespace-pre-wrap">
+                                    {result.error}
+                                  </pre>
+                                </div>
+                              )}
+                              {result.stdout && (
+                                <div>
+                                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mb-1">
+                                    <Terminal className="w-4 h-4" />
+                                    Execution Output
+                                  </div>
+                                  <pre className="text-xs bg-muted p-3 rounded overflow-x-auto whitespace-pre-wrap font-mono">
+                                    {result.stdout}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {result.error ? (
-                        <AlertTriangle className="w-4 h-4 text-yellow-600" />
-                      ) : result.predicted ? (
-                        <CheckCircle className="w-4 h-4 text-green-600" />
-                      ) : (
-                        <XCircle className="w-4 h-4 text-red-600" />
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {result.is_match === null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : result.is_match ? (
-                        <CheckCircle className="w-4 h-4 text-green-600 mx-auto" />
-                      ) : (
-                        <XCircle className="w-4 h-4 text-red-600 mx-auto" />
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground max-w-[300px] truncate">
-                      {result.error || result.reason}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-muted-foreground">
-                      {result.execution_time_ms}ms
-                    </td>
-                  </tr>
-                ))}
+                    </>
+                  )
+                })}
               </tbody>
             </table>
           </div>

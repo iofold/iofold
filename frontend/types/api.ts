@@ -367,12 +367,13 @@ export interface PlaygroundRunRequest {
 export interface PlaygroundResult {
   trace_id: string;
   human_feedback: 'positive' | 'negative' | 'neutral' | null;
-  predicted: boolean;
-  reason: string;
+  score: number;
+  feedback: string;
   is_match: boolean | null;
   is_contradiction: boolean;
   execution_time_ms: number;
   error: string | null;
+  stdout: string | null;
 }
 
 export interface PlaygroundRunResponse {

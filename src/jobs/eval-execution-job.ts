@@ -86,8 +86,8 @@ export class EvalExecutionJob {
 
       const executionResults: Array<{
         traceId: string;
-        result: boolean;
-        reason: string;
+        score: number;
+        feedback: string;
         executionTimeMs: number;
         error?: string;
         stdout?: string;
@@ -101,8 +101,8 @@ export class EvalExecutionJob {
           const execution = await this.executeOnTrace(evalCode, trace);
           executionResults.push({
             traceId: trace.id,
-            result: execution.result,
-            reason: execution.reason,
+            score: execution.score,
+            feedback: execution.feedback,
             executionTimeMs: execution.executionTimeMs,
             error: execution.error,
             stdout: execution.stdout,
@@ -127,8 +127,8 @@ export class EvalExecutionJob {
 
           executionResults.push({
             traceId: trace.id,
-            result: false,
-            reason: '',
+            score: 0,
+            feedback: '',
             executionTimeMs: 0,
             error: error.message
           });
@@ -213,8 +213,8 @@ export class EvalExecutionJob {
     evalCode: string,
     trace: Trace
   ): Promise<{
-    result: boolean;
-    reason: string;
+    score: number;
+    feedback: string;
     executionTimeMs: number;
     error?: string;
     stdout?: string;
@@ -245,7 +245,7 @@ ${evalCode}
 
 trace_data = json.loads("${traceJson}")
 result = ${functionName}(trace_data)
-result_dict = {"passed": result[0], "reason": result[1]}
+result_dict = {"score": float(result[0]), "feedback": str(result[1])}
 print(json.dumps(result_dict))
 `;
 
@@ -254,8 +254,8 @@ print(json.dumps(result_dict))
 
     if (!execution.success) {
       return {
-        result: false,
-        reason: '',
+        score: 0,
+        feedback: '',
         executionTimeMs: execution.executionTimeMs,
         error: execution.error,
         stdout: execution.output,
@@ -263,14 +263,14 @@ print(json.dumps(result_dict))
       };
     }
 
-    // Parse result
+    // Parse result - expects {"score": float, "feedback": str}
     const output = execution.output || '';
-    const resultMatch = output.match(/\{"passed":\s*(true|false),\s*"reason":\s*"([^"]*)"\}/);
+    const resultMatch = output.match(/\{"score":\s*([\d.]+),\s*"feedback":\s*"([^"]*)"\}/);
 
     if (!resultMatch) {
       return {
-        result: false,
-        reason: '',
+        score: 0,
+        feedback: '',
         executionTimeMs: execution.executionTimeMs,
         error: `Could not parse eval result. Output: ${output}`,
         stdout: output
@@ -278,8 +278,8 @@ print(json.dumps(result_dict))
     }
 
     return {
-      result: resultMatch[1] === 'true',
-      reason: resultMatch[2],
+      score: parseFloat(resultMatch[1]),
+      feedback: resultMatch[2],
       executionTimeMs: execution.executionTimeMs,
       stdout: output
     };
@@ -289,8 +289,8 @@ print(json.dumps(result_dict))
     evalId: string,
     results: Array<{
       traceId: string;
-      result: boolean;
-      reason: string;
+      score: number;
+      feedback: string;
       executionTimeMs: number;
       error?: string;
       stdout?: string;
@@ -320,12 +320,13 @@ print(json.dumps(result_dict))
         await this.drizzle
           .update(evalExecutions)
           .set({
-            predictedResult: result.result,
-            predictedReason: result.reason,
+            score: result.score,
+            feedback: result.feedback,
             executionTimeMs: result.executionTimeMs,
             error: result.error || null,
             stdout: result.stdout || null,
             stderr: result.stderr || null,
+            success: !result.error,
             executedAt: now
           })
           .where(eq(evalExecutions.id, existing[0].id));
@@ -335,12 +336,13 @@ print(json.dumps(result_dict))
           id: crypto.randomUUID(),
           evalId,
           traceId: result.traceId,
-          predictedResult: result.result,
-          predictedReason: result.reason,
+          score: result.score,
+          feedback: result.feedback,
           executionTimeMs: result.executionTimeMs,
           error: result.error || null,
           stdout: result.stdout || null,
           stderr: result.stderr || null,
+          success: !result.error,
           executedAt: now
         });
       }

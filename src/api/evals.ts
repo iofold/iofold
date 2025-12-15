@@ -64,6 +64,10 @@ export interface EvalsAPIGatewayConfig {
   cfAccountId: string;
   cfGatewayId: string;
   cfGatewayToken?: string;
+  langsmithApiKey?: string;
+  langsmithTracingV2?: string;
+  langsmithProject?: string;
+  langsmithWorkspaceId?: string;
 }
 
 export class EvalsAPI {
@@ -154,7 +158,11 @@ export class EvalsAPI {
           cfAccountId: this.gatewayConfig.cfAccountId,
           cfGatewayId: this.gatewayConfig.cfGatewayId,
           cfGatewayToken: this.gatewayConfig.cfGatewayToken,
-          sandboxBinding: this.sandboxBinding
+          sandboxBinding: this.sandboxBinding,
+          langsmithApiKey: this.gatewayConfig.langsmithApiKey,
+          langsmithTracingV2: this.gatewayConfig.langsmithTracingV2,
+          langsmithProject: this.gatewayConfig.langsmithProject,
+          langsmithWorkspaceId: this.gatewayConfig.langsmithWorkspaceId,
         }
       );
 
@@ -676,9 +684,10 @@ export class EvalsAPI {
 
       for (const trace of traceResults) {
         const startTime = Date.now();
-        let predicted = false;
-        let reason = '';
+        let score = 0;
+        let feedback = '';
         let error: string | null = null;
+        let stdout: string | null = null;
 
         try {
           // Parse trace data
@@ -713,23 +722,26 @@ ${validated.code}
 
 trace_data = json.loads("${traceJson}")
 result = ${functionName}(trace_data)
-result_dict = {"passed": result[0], "reason": result[1]}
+result_dict = {"score": float(result[0]), "feedback": str(result[1])}
 print(json.dumps(result_dict))
 `;
 
             // Execute in sandbox
             const execution = await runner.execute(executionCode);
 
+            // Always capture stdout for debugging
+            stdout = execution.output || null;
+
             if (!execution.success) {
               error = execution.error || 'Execution failed';
             } else {
-              // Parse result from stdout
+              // Parse result from stdout - expects {"score": float, "feedback": str}
               const output = execution.output || '';
-              const resultMatch = output.match(/\{"passed":\s*(true|false),\s*"reason":\s*"([^"]*)"\}/);
+              const resultMatch = output.match(/\{"score":\s*([\d.]+),\s*"feedback":\s*"([^"]*)"\}/);
 
               if (resultMatch) {
-                predicted = resultMatch[1] === 'true';
-                reason = resultMatch[2];
+                score = parseFloat(resultMatch[1]);
+                feedback = resultMatch[2];
               } else {
                 error = `Could not parse eval result. Output: ${output}`;
               }
@@ -742,13 +754,14 @@ print(json.dumps(result_dict))
         const executionTime = Date.now() - startTime;
         totalTime += executionTime;
 
-        // Determine if this is a match or contradiction
+        // Determine if this is a match or contradiction based on score threshold
         const humanRating = trace.humanRating as string | null;
         let isMatch: boolean | null = null;
         let isContradiction = false;
 
         if (humanRating && humanRating !== 'neutral') {
           const expectedPass = humanRating === 'positive';
+          const predicted = score >= 0.5;  // Convert score to pass/fail for comparison
           isMatch = predicted === expectedPass;
           isContradiction = !isMatch;
           if (isMatch) matches++;
@@ -758,12 +771,13 @@ print(json.dumps(result_dict))
         results.push({
           trace_id: trace.id,
           human_feedback: humanRating || null,
-          predicted,
-          reason,
+          score,
+          feedback,
           is_match: isMatch,
           is_contradiction: isContradiction,
           execution_time_ms: executionTime,
-          error
+          error,
+          stdout
         });
       }
 
