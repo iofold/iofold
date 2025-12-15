@@ -56,6 +56,32 @@ export function LiveJobMonitor({ jobId, jobType, onComplete, onFail }: LiveJobMo
     }
   };
 
+  // Fetch initial job state to load persisted logs for completed/failed jobs
+  useEffect(() => {
+    const loadInitialState = async () => {
+      try {
+        const job = await apiClient.getJob(jobId);
+        // Set status and progress from initial state
+        if (job.status === 'completed' || job.status === 'failed') {
+          setStatus(job.status);
+          setProgress(job.progress || (job.status === 'completed' ? 100 : 0));
+          if (job.status === 'failed' && job.error) {
+            setError(job.error);
+          }
+        }
+        // Load logs from metadata
+        const metadata = job.metadata as Record<string, unknown> | null;
+        const persistedLogs = (metadata?.logs as LogEntry[]) || [];
+        if (persistedLogs.length > 0) {
+          setLogs(persistedLogs);
+        }
+      } catch (err) {
+        console.error('Failed to load initial job state:', err);
+      }
+    };
+    loadInitialState();
+  }, [jobId]);
+
   useEffect(() => {
     // Connect to SSE stream using apiClient pattern
     const eventSource = apiClient.streamJob(jobId);
