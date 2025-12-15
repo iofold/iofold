@@ -152,7 +152,6 @@ export async function startGEPAOptimization(
         .select({
           id: tasksets.id,
           agent_id: tasksets.agentId,
-          task_count: tasksets.taskCount,
         })
         .from(tasksets)
         .where(and(eq(tasksets.id, body.taskset_id), eq(tasksets.agentId, agentId)))

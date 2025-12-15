@@ -302,11 +302,7 @@ export async function createTasksetFromTraces(
       }
     }
 
-    // Update task count
-    await db
-      .update(tasksets)
-      .set({ taskCount: insertedCount })
-      .where(eq(tasksets.id, tasksetId));
+    // No need to update denormalized task_count - it's computed dynamically
 
     return createSuccessResponse({
       id: tasksetId,
@@ -355,13 +351,34 @@ export async function listTasksets(
     }
 
     const result = await db
-      .select()
+      .select({
+        id: tasksets.id,
+        workspaceId: tasksets.workspaceId,
+        agentId: tasksets.agentId,
+        name: tasksets.name,
+        description: tasksets.description,
+        status: tasksets.status,
+        createdAt: tasksets.createdAt,
+        updatedAt: tasksets.updatedAt,
+        // Count tasks dynamically via subquery
+        taskCount: sql<number>`(SELECT COUNT(*) FROM taskset_tasks WHERE taskset_id = ${tasksets.id})`.as('task_count'),
+      })
       .from(tasksets)
       .where(and(...conditions))
       .orderBy(desc(tasksets.createdAt));
 
     return createSuccessResponse({
-      tasksets: result,
+      tasksets: result.map(t => ({
+        id: t.id,
+        workspace_id: t.workspaceId,
+        agent_id: t.agentId,
+        name: t.name,
+        description: t.description,
+        task_count: t.taskCount || 0,
+        status: t.status,
+        created_at: t.createdAt,
+        updated_at: t.updatedAt,
+      })),
     });
   } catch (error: any) {
     console.error('Error listing tasksets:', error);
@@ -421,7 +438,7 @@ export async function getTaskset(
       agent_id: taskset[0].agentId,
       name: taskset[0].name,
       description: taskset[0].description,
-      task_count: taskset[0].taskCount || 0,
+      task_count: tasksResult.length,  // Count dynamically from fetched tasks
       status: taskset[0].status,
       created_at: taskset[0].createdAt,
       updated_at: taskset[0].updatedAt,
@@ -526,7 +543,7 @@ export async function addTasksToTaskset(
       }
     }
 
-    // Update task count
+    // Get current task count (computed dynamically)
     const countResult = await db
       .select({ count: count() })
       .from(tasksetTasks)
@@ -534,9 +551,10 @@ export async function addTasksToTaskset(
 
     const totalTasks = countResult[0]?.count || 0;
 
+    // Update timestamp only (task_count is computed dynamically)
     await db
       .update(tasksets)
-      .set({ taskCount: totalTasks, updatedAt: now })
+      .set({ updatedAt: now })
       .where(eq(tasksets.id, tasksetId));
 
     return createSuccessResponse({
@@ -666,11 +684,10 @@ export async function runTaskset(
       return createErrorResponse('NOT_FOUND', 'Agent not found', 404);
     }
 
-    // Validate taskset exists and get task count
+    // Validate taskset exists
     const taskset = await db
       .select({
         id: tasksets.id,
-        taskCount: tasksets.taskCount,
         status: tasksets.status,
       })
       .from(tasksets)
@@ -691,7 +708,13 @@ export async function runTaskset(
       return createErrorResponse('VALIDATION_ERROR', 'Cannot run archived taskset', 400);
     }
 
-    const taskCount = taskset[0].taskCount || 0;
+    // Count tasks dynamically
+    const taskCountResult = await db
+      .select({ count: count() })
+      .from(tasksetTasks)
+      .where(eq(tasksetTasks.tasksetId, tasksetId));
+
+    const taskCount = taskCountResult[0]?.count || 0;
     if (taskCount === 0) {
       return createErrorResponse('VALIDATION_ERROR', 'Taskset has no tasks', 400);
     }

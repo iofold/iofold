@@ -178,7 +178,7 @@ export async function listAgents(request: Request, env: Env): Promise<Response> 
         (SELECT COUNT(*) FROM traces t JOIN agent_versions av2 ON t.agent_version_id = av2.id WHERE av2.agent_id = a.id) as trace_count,
         (SELECT COUNT(*) FROM evals e WHERE e.agent_id = a.id) as eval_count,
         (SELECT COUNT(*) FROM feedback f WHERE f.agent_id = a.id) as feedback_count,
-        (SELECT COALESCE(SUM(ts.task_count), 0) FROM tasksets ts WHERE ts.agent_id = a.id AND ts.status = 'active') as task_count
+        (SELECT COUNT(*) FROM taskset_tasks tt JOIN tasksets ts ON tt.taskset_id = ts.id WHERE ts.agent_id = a.id AND ts.status = 'active') as task_count
       FROM agents a
       LEFT JOIN agent_versions av ON a.active_version_id = av.id
       WHERE a.workspace_id = ? AND a.status != ?

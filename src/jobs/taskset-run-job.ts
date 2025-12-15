@@ -341,9 +341,9 @@ export class TasksetRunJob {
     // Import createPlaygroundDeepAgent dynamically
     const { createPlaygroundDeepAgent } = await import('../playground/agent-deepagents');
 
-    // Build dynamic system prompt with task metadata (like ART-E benchmark does)
-    // This allows tasks to specify context like inbox_address, query_date, etc.
-    const systemPrompt = this.buildSystemPrompt(agent.prompt_template, task.metadata);
+    // Use the agent's prompt template directly without variable injection
+    // The task's user_message contains the complete question (ART-E spec)
+    const systemPrompt = agent.prompt_template;
 
     // Create agent instance
     const playgroundAgent = await createPlaygroundDeepAgent({
@@ -520,37 +520,6 @@ export class TasksetRunJob {
     await collector.endTrace(traceId, response);
 
     return { score, execution_time_ms: executionTimeMs };
-  }
-
-  /**
-   * Build system prompt by substituting template variables with task metadata
-   *
-   * Following the ART-E benchmark approach: the agent's prompt template can
-   * contain variables like {{variable_name}} which get replaced with values
-   * from the task's metadata.
-   *
-   * Example template:
-   *   "Today's date is {{query_date}}. The user's inbox is {{inbox_address}}."
-   *
-   * Example metadata:
-   *   { "query_date": "2001-05-15", "inbox_address": "jeff.dasovich@enron.com" }
-   *
-   * Result:
-   *   "Today's date is 2001-05-15. The user's inbox is jeff.dasovich@enron.com."
-   */
-  private buildSystemPrompt(agentTemplate: string, metadata: any): string {
-    if (!metadata || typeof metadata !== 'object') {
-      return agentTemplate;
-    }
-
-    // Replace all {{variable}} patterns with values from metadata
-    return agentTemplate.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
-      if (varName in metadata && metadata[varName] != null) {
-        return String(metadata[varName]);
-      }
-      // Keep original placeholder if no value provided
-      return match;
-    });
   }
 
   /**
