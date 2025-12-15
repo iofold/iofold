@@ -21,6 +21,8 @@ export interface LangSmithEnv {
   LANGSMITH_PROJECT?: string;
   /** Enable LangSmith tracing v2 (set to "true" to enable) */
   LANGSMITH_TRACING_V2?: string;
+  /** LangSmith workspace ID (required for org-scoped API keys) */
+  LANGSMITH_WORKSPACE_ID?: string;
 }
 
 /**
@@ -129,9 +131,16 @@ export function getLangChainEnvVars(env: LangSmithEnv): Record<string, string> {
     return {};
   }
 
-  return {
+  const vars: Record<string, string> = {
     LANGSMITH_API_KEY: env.LANGSMITH_API_KEY!,
     LANGSMITH_PROJECT: env.LANGSMITH_PROJECT || 'iofold-development',
     LANGSMITH_TRACING_V2: 'true',
   };
+
+  // Add workspace ID if provided (required for org-scoped API keys)
+  if (env.LANGSMITH_WORKSPACE_ID) {
+    vars.LANGSMITH_WORKSPACE_ID = env.LANGSMITH_WORKSPACE_ID;
+  }
+
+  return vars;
 }
