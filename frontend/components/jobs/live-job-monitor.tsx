@@ -101,7 +101,14 @@ export function LiveJobMonitor({ jobId, jobType, onComplete, onFail }: LiveJobMo
     eventSource.addEventListener('log', (event) => {
       try {
         const data = JSON.parse(event.data);
-        setLogs((prev) => [...prev, data]);
+        // Deduplicate by timestamp + message to avoid duplicates from SSE + metadata
+        setLogs((prev) => {
+          const isDuplicate = prev.some(
+            (log) => log.timestamp === data.timestamp && log.message === data.message
+          );
+          if (isDuplicate) return prev;
+          return [...prev, data];
+        });
         // Auto-scroll to bottom
         setTimeout(() => logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 0);
       } catch (err) {

@@ -53,11 +53,11 @@ export class SSEStream {
     this.sendEvent({ type: 'failed', data: { status: 'failed', error, details } });
   }
 
-  sendLog(level: 'info' | 'warn' | 'error', message: string, metadata?: object) {
+  sendLog(level: 'info' | 'warn' | 'error', message: string, metadata?: object, timestamp?: string) {
     this.sendEvent({
       type: 'log',
       data: {
-        timestamp: new Date().toISOString(),
+        timestamp: timestamp || new Date().toISOString(),
         level,
         message,
         ...metadata

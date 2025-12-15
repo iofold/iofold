@@ -324,12 +324,12 @@ export class JobsAPI {
 
         // Send any new logs from metadata
         const metadata = job.metadata as Record<string, unknown> | null;
-        const logs = (metadata?.logs as Array<{timestamp: string; level: string; message: string}>) || [];
+        const logs = (metadata?.logs as Array<{timestamp: string; level: string; message: string; data?: Record<string, unknown>}>) || [];
         if (logs.length > lastLogCount) {
-          // Send only new logs
+          // Send only new logs with their original timestamps
           for (let i = lastLogCount; i < logs.length; i++) {
             const log = logs[i];
-            stream.sendLog(log.level as 'info' | 'warn' | 'error', log.message);
+            stream.sendLog(log.level as 'info' | 'warn' | 'error', log.message, log.data, log.timestamp);
           }
           lastLogCount = logs.length;
         }
