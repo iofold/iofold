@@ -11,6 +11,7 @@ import { getChatModel, type Env } from '../../playground/llm/streaming';
 import { DEFAULT_MODEL } from '../../ai/gateway';
 import { createEvalTools, type ToolContext } from './eval-tools';
 import { createPlaygroundTools } from '../../playground/tools/definitions';
+import { ToolMessage } from '@langchain/core/messages';
 import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 import type { Sandbox } from '@cloudflare/sandbox';
 
@@ -157,15 +158,16 @@ export class DeepEvalAgent {
         { version: 'v2', recursionLimit: RECURSION_LIMIT }
       );
 
-      for await (const { event, data } of eventStream) {
-        // Log tool calls
-        if (event === 'on_tool_start') {
-          const toolName = data.input?.tool || data.name || 'unknown';
-          this.log('info', `Tool: ${toolName}`);
-        }
-
+      for await (const { event, data, name: nodeName } of eventStream) {
         // Log tool results and track test iterations
         if (event === 'on_tool_end') {
+          // Extract tool name from ToolMessage or fall back to node name
+          const toolName = (data.output instanceof ToolMessage && data.output.name)
+            ? data.output.name
+            : nodeName || 'unknown';
+
+          this.log('info', `Tool: ${toolName}`);
+
           const output = data.output?.content || data.output;
           const outputStr = typeof output === 'string' ? output : JSON.stringify(output);
 
