@@ -1,0 +1,1 @@
+ALTER TABLE `tasksets` DROP COLUMN `task_count`;

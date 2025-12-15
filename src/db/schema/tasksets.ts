@@ -12,7 +12,7 @@ export const tasksets = sqliteTable('tasksets', {
   agentId: text('agent_id').notNull().references(() => agents.id),
   name: text('name').notNull(),
   description: text('description'),
-  taskCount: integer('task_count').default(0),
+  // NOTE: task_count removed - count dynamically from taskset_tasks table
   status: text('status', { enum: tasksetStatus }).default('active').notNull(),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
@@ -46,8 +46,7 @@ export const tasksetRuns = sqliteTable('taskset_runs', {
   tasksetId: text('taskset_id').notNull().references(() => tasksets.id),
   status: text('status', { enum: tasksetRunStatus }).default('queued').notNull(),
   taskCount: integer('task_count').notNull(),
-  completedCount: integer('completed_count').default(0),
-  failedCount: integer('failed_count').default(0),
+  // NOTE: completed_count and failed_count removed - computed from taskset_run_results
   modelProvider: text('model_provider').default('anthropic'),
   modelId: text('model_id').default('anthropic/claude-sonnet-4-5'),
   config: text('config', { mode: 'json' }).default('{}').$type<Record<string, unknown>>(),
