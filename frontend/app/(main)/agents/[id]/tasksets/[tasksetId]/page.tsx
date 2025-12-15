@@ -318,9 +318,13 @@ export default function TasksetDetailPage() {
                             <span className="text-sm text-muted-foreground font-medium">
                               {formatRelativeTime(run.created_at)}
                             </span>
-                            <span className="text-sm text-muted-foreground bg-muted/50 px-2 py-1 rounded">
-                              {run.model_provider}/{run.model_id}
-                            </span>
+                            {(run.model_provider || run.model_id) && (
+                              <span className="text-sm text-muted-foreground bg-muted/50 px-2 py-1 rounded">
+                                {run.model_id?.startsWith(run.model_provider + '/')
+                                  ? run.model_id
+                                  : run.model_id || run.model_provider || 'Unknown'}
+                              </span>
+                            )}
                           </div>
 
                           {(run.status === 'running' || run.status === 'queued') && (
@@ -359,7 +363,7 @@ export default function TasksetDetailPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => router.push(`/agents/${agentId}/tasksets/${tasksetId}/runs/${run.id}`)}
+                          onClick={() => router.push(`/resources/${run.id}`)}
                           className="ml-4 hover:bg-primary hover:text-primary-foreground transition-colors"
                         >
                           <Eye className="w-4 h-4 mr-2" />
@@ -391,32 +395,84 @@ export default function TasksetDetailPage() {
             </div>
           ) : (
             <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
-              {tasks.slice(0, 5).map((task, index) => (
-                <div
-                  key={task.id}
-                  className={`border-2 rounded-lg p-5 transition-all hover:shadow-md hover:border-primary/30 ${
-                    index % 2 === 0 ? 'bg-background' : 'bg-muted/20'
-                  }`}
-                >
-                  <div className="font-semibold mb-2 text-sm uppercase tracking-wide text-muted-foreground">User Message:</div>
-                  <div className="text-sm mb-4 whitespace-pre-wrap bg-muted/30 p-3 rounded border">
-                    {task.user_message}
-                  </div>
-                  {task.expected_output && (
-                    <>
-                      <div className="font-semibold mb-2 text-sm uppercase tracking-wide text-muted-foreground">Expected Output:</div>
-                      <div className="text-sm whitespace-pre-wrap bg-muted/30 p-3 rounded border">
-                        {task.expected_output}
+              {tasks.slice(0, 5).map((task, index) => {
+                // Extract known variable fields from metadata
+                const metadata = task.metadata || {}
+                const variableFields = ['inbox_address', 'query_date']
+                const variables = variableFields
+                  .filter(key => key in metadata)
+                  .map(key => ({ key, value: metadata[key] }))
+                const otherMetadata = Object.entries(metadata)
+                  .filter(([key]) => !variableFields.includes(key))
+
+                return (
+                  <div
+                    key={task.id}
+                    className={`border-2 rounded-lg p-5 transition-all hover:shadow-md hover:border-primary/30 ${
+                      index % 2 === 0 ? 'bg-background' : 'bg-muted/20'
+                    }`}
+                  >
+                    {/* Variables Section */}
+                    {variables.length > 0 && (
+                      <div className="mb-4">
+                        <div className="font-semibold mb-2 text-sm uppercase tracking-wide text-muted-foreground">Variables:</div>
+                        <div className="flex flex-wrap gap-2">
+                          {variables.map(({ key, value }) => (
+                            <div key={key} className="inline-flex items-center gap-1.5 bg-primary/10 text-primary px-2.5 py-1 rounded-md text-sm">
+                              <span className="font-mono text-xs opacity-70">{key}:</span>
+                              <span className="font-medium">{String(value)}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </>
-                  )}
-                  <div className="flex items-center gap-2 mt-4">
-                    <Badge variant="outline" className="text-xs font-medium">
-                      {task.source}
-                    </Badge>
+                    )}
+
+                    {/* User Message */}
+                    <div className="font-semibold mb-2 text-sm uppercase tracking-wide text-muted-foreground">User Message:</div>
+                    <div className="text-sm mb-4 whitespace-pre-wrap bg-muted/30 p-3 rounded border">
+                      {task.user_message}
+                    </div>
+
+                    {/* Expected Output */}
+                    {task.expected_output && (
+                      <>
+                        <div className="font-semibold mb-2 text-sm uppercase tracking-wide text-muted-foreground">Expected Output:</div>
+                        <div className="text-sm mb-4 whitespace-pre-wrap bg-muted/30 p-3 rounded border">
+                          {task.expected_output}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Additional Metadata */}
+                    {otherMetadata.length > 0 && (
+                      <div className="mb-4">
+                        <div className="font-semibold mb-2 text-sm uppercase tracking-wide text-muted-foreground">Metadata:</div>
+                        <div className="bg-muted/30 p-3 rounded border">
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                            {otherMetadata.map(([key, value]) => (
+                              <div key={key} className="flex items-start gap-1.5">
+                                <span className="font-mono text-xs text-muted-foreground">{key}:</span>
+                                <span className="text-foreground break-all">
+                                  {Array.isArray(value)
+                                    ? `[${value.length} items]`
+                                    : String(value)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Source Badge */}
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs font-medium">
+                        {task.source}
+                      </Badge>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
               {tasks.length > 5 && (
                 <div className="text-center py-4 bg-primary/5 rounded-lg border border-primary/20">
                   <p className="text-sm font-medium text-primary">

@@ -8,6 +8,38 @@ import { eq, and, asc, sql } from 'drizzle-orm';
 import { tasksetTasks, traces, agents, agentVersions, integrations } from '../db/schema';
 import { D1TraceCollector } from '../playground/tracing/d1-collector';
 
+/**
+ * Simple concurrency limiter - executes async functions with a max concurrency limit
+ */
+async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+  onProgress?: (completed: number, total: number) => void
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  let completedCount = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      const item = items[index];
+      results[index] = await fn(item, index);
+      completedCount++;
+      onProgress?.(completedCount, items.length);
+    }
+  }
+
+  // Start workers up to concurrency limit
+  const workers = Array(Math.min(concurrency, items.length))
+    .fill(null)
+    .map(() => worker());
+
+  await Promise.all(workers);
+  return results;
+}
+
 export interface TasksetRunJobConfig {
   jobId: string;
   workspaceId: string;
@@ -92,39 +124,58 @@ export class TasksetRunJob {
         throw new Error(`No tasks found in taskset ${this.config.tasksetId}`);
       }
 
+      // Get parallelism from config (default: 4 concurrent tasks)
+      const parallelism = this.config.config?.parallelism ?? 4;
+
       await this.emitProgress('executing_tasks', 15, {
-        total_tasks: tasks.length
+        total_tasks: tasks.length,
+        parallelism
       });
 
-      // Step 4: Execute each task
+      // Step 4: Execute tasks in parallel with concurrency limit
       let completedCount = 0;
       let failedCount = 0;
       let totalScore = 0;
       let totalExecutionTime = 0;
 
-      for (let i = 0; i < tasks.length; i++) {
-        const task = tasks[i];
-        const progress = 15 + ((i / tasks.length) * 75);
+      // Track results for each task
+      type TaskResult = { success: true; score: number; execution_time_ms: number } | { success: false; error: string };
 
-        await this.emitProgress('executing_task', progress, {
-          current_task: i + 1,
-          total_tasks: tasks.length,
-          task_id: task.id
-        });
+      const results = await runWithConcurrency<typeof tasks[0], TaskResult>(
+        tasks,
+        parallelism,
+        async (task, _index) => {
+          try {
+            const result = await this.executeTask(task, agent);
+            return { success: true as const, score: result.score, execution_time_ms: result.execution_time_ms };
+          } catch (error: any) {
+            console.error(`[TasksetRunJob] Task ${task.id} failed:`, error);
+            // Record failed result as trace with error
+            await this.recordFailedResult(task.id, error.message, task, agent.active_version_id);
+            return { success: false as const, error: error.message };
+          }
+        },
+        // Progress callback - called after each task completes
+        (completed, total) => {
+          const progress = 15 + ((completed / total) * 75);
+          // Use void to not await - we don't want to block parallel execution
+          void this.emitProgress('executing_tasks_parallel', progress, {
+            completed_tasks: completed,
+            total_tasks: total,
+            parallelism,
+            in_progress: Math.min(parallelism, total - completed)
+          });
+        }
+      );
 
-        try {
-          const result = await this.executeTask(task, agent);
-
+      // Aggregate results
+      for (const result of results) {
+        if (result.success) {
           completedCount++;
           totalScore += result.score;
           totalExecutionTime += result.execution_time_ms;
-        } catch (error: any) {
-          console.error(`[TasksetRunJob] Task ${task.id} failed:`, error);
-
+        } else {
           failedCount++;
-
-          // Record failed result as trace with error
-          await this.recordFailedResult(task.id, error.message, task, agent.active_version_id);
         }
       }
 
@@ -708,7 +759,9 @@ Respond with JSON only:
       case 'fetching_tasks':
         return 'Loading tasks from taskset...';
       case 'executing_tasks':
-        return `Starting execution of ${extra?.total_tasks || 0} tasks`;
+        return `Starting parallel execution of ${extra?.total_tasks || 0} tasks (parallelism: ${extra?.parallelism || 4})`;
+      case 'executing_tasks_parallel':
+        return `Executing tasks: ${extra?.completed_tasks || 0}/${extra?.total_tasks || 0} completed (${extra?.in_progress || 0} in progress)`;
       case 'executing_task':
         return `Executing task ${extra?.current_task || 0}/${extra?.total_tasks || 0}`;
       case 'finalizing':

@@ -145,6 +145,7 @@ export class QueueProducer {
         parallelism?: number;
         timeout_per_task_ms?: number;
       };
+      taskCount?: number;
     }
   ): Promise<EnqueueResult> {
     const payload: TasksetRunJobPayload = {
@@ -154,7 +155,8 @@ export class QueueProducer {
       taskset_id: tasksetId,
       model_provider: options?.modelProvider,
       model_id: options?.modelId,
-      config: options?.config
+      config: options?.config,
+      task_count: options?.taskCount
     };
 
     return this.enqueueJob('taskset_run' as JobType, workspaceId, payload);

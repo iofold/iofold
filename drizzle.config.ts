@@ -17,4 +17,7 @@ export default defineConfig({
     databaseId: process.env.CLOUDFLARE_DATABASE_ID!,
     token: process.env.CLOUDFLARE_D1_TOKEN!,
   },
+
+  // Exclude wrangler's migration tracking table from drizzle management
+  tablesFilter: ['!d1_migrations', '!_cf_KV', '!sqlite_sequence'],
 });

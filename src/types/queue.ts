@@ -189,6 +189,8 @@ export interface TasksetRunJobPayload {
     parallelism?: number;
     timeout_per_task_ms?: number;
   };
+  /** Total number of tasks in the taskset (for display before completion) */
+  task_count?: number;
 }
 
 /**
