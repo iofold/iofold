@@ -14,7 +14,7 @@ export const evals = sqliteTable('evals', {
   name: text('name').notNull(),
   description: text('description'),
   code: text('code').notNull(),
-  modelUsed: text('model_used').notNull(),
+  modelUsed: text('model_used'),  // Optional for generated candidates
   accuracy: real('accuracy'),
   trainingTraceIds: text('training_trace_ids', { mode: 'json' }).$type<string[]>(),
   generationPrompt: text('generation_prompt'),
@@ -29,6 +29,14 @@ export const evals = sqliteTable('evals', {
   f1Score: real('f1_score'),
   precision: real('precision'),
   recall: real('recall'),
+  // Fields added from eval_candidates consolidation
+  variation: text('variation'),  // Variant name (e.g., 'correctness', 'efficiency')
+  agreementRate: real('agreement_rate'),  // Test metric
+  confusionMatrix: text('confusion_matrix', { mode: 'json' }).$type<Record<string, unknown>>(),
+  perTraceResults: text('per_trace_results', { mode: 'json' }).$type<unknown[]>(),
+  totalCostUsd: real('total_cost_usd'),  // Execution cost during testing
+  avgDurationMs: real('avg_duration_ms'),  // Average execution time
+  activatedAt: text('activated_at'),  // When moved to active status
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => ({
@@ -36,9 +44,15 @@ export const evals = sqliteTable('evals', {
   nameIdx: index('idx_evals_name').on(table.name),
   cohenKappaIdx: index('idx_evals_cohen_kappa').on(table.cohenKappa),
   f1ScoreIdx: index('idx_evals_f1_score').on(table.f1Score),
+  statusIdx: index('idx_evals_status').on(table.status),
+  variationIdx: index('idx_evals_variation').on(table.variation),
   agentVersionUnique: uniqueIndex('evals_agent_version_unique').on(table.agentId, table.version),
 }));
 
+/**
+ * @deprecated Use `evals` table instead. This table is kept for backward compatibility
+ * during migration. Will be removed in a future version.
+ */
 export const evalCandidates = sqliteTable('eval_candidates', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull().references(() => agents.id, { onDelete: 'cascade' }),
@@ -64,6 +78,10 @@ export const evalCandidates = sqliteTable('eval_candidates', {
   createdIdx: index('idx_eval_candidates_created').on(table.createdAt),
 }));
 
+/**
+ * @deprecated Use `evalExecutions` table instead. This table is kept for backward compatibility
+ * during migration. Will be removed in a future version.
+ */
 export const evalCandidateExecutions = sqliteTable('eval_candidate_executions', {
   id: text('id').primaryKey(),
   evalCandidateId: text('eval_candidate_id').notNull().references(() => evalCandidates.id, { onDelete: 'cascade' }),
@@ -84,21 +102,34 @@ export const evalCandidateExecutions = sqliteTable('eval_candidate_executions', 
   createdIdx: index('idx_eval_candidate_executions_created').on(table.createdAt),
 }));
 
+/**
+ * Consolidated eval executions table - tracks all eval runs (testing + production).
+ * Includes fields from both old evalExecutions and evalCandidateExecutions.
+ */
 export const evalExecutions = sqliteTable('eval_executions', {
   id: text('id').primaryKey(),
   evalId: text('eval_id').notNull().references(() => evals.id, { onDelete: 'cascade' }),
   traceId: text('trace_id').notNull().references(() => traces.id, { onDelete: 'cascade' }),
-  predictedResult: integer('predicted_result', { mode: 'boolean' }).notNull(),
+  // Original evalExecutions fields
+  predictedResult: integer('predicted_result', { mode: 'boolean' }),  // Made optional for candidate testing
   predictedReason: text('predicted_reason'),
   executionTimeMs: integer('execution_time_ms'),
   error: text('error'),
   stdout: text('stdout'),
   stderr: text('stderr'),
+  // Fields added from evalCandidateExecutions consolidation
+  score: real('score'),  // 0.0-1.0 score from eval function
+  feedback: text('feedback'),  // Text feedback from eval
+  success: integer('success', { mode: 'boolean' }),  // Whether execution succeeded
+  llmCalls: integer('llm_calls'),  // Number of LLM calls made
+  llmCostUsd: real('llm_cost_usd'),  // Cost of LLM calls
+  cacheHits: integer('cache_hits'),  // Number of cache hits
   executedAt: text('executed_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => ({
   evalIdx: index('idx_eval_executions_eval_id').on(table.evalId),
   traceIdx: index('idx_eval_executions_trace_id').on(table.traceId),
   executedTraceIdx: index('idx_eval_executions_executed_trace').on(table.evalId, table.executedAt, table.traceId),
+  successIdx: index('idx_eval_executions_success').on(table.success),
 }));
 
 // =============================================================================
