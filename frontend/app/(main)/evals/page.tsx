@@ -19,7 +19,7 @@ import { EvalSideSheet } from '@/components/evals/eval-side-sheet'
 import { GenerateEvalModal } from '@/components/modals/GenerateEvalModal'
 import { RefreshCw, Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Eval } from '@/types/api'
+import type { EvalSummary } from '@/types/api'
 
 function EvalsPageContent() {
   const router = useRouter()
@@ -27,7 +27,7 @@ function EvalsPageContent() {
   const queryClient = useQueryClient()
 
   // State
-  const [selectedEval, setSelectedEval] = useState<Eval | null>(null)
+  const [selectedEval, setSelectedEval] = useState<EvalSummary | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [agentFilter, setAgentFilter] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -86,7 +86,7 @@ function EvalsPageContent() {
   )
 
   // Handle row selection
-  const handleSelect = (evalItem: Eval) => {
+  const handleSelect = (evalItem: EvalSummary) => {
     setSelectedEval(evalItem)
     setSheetOpen(true)
     // Push to history so back button closes the modal instead of leaving the page
