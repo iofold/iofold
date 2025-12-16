@@ -6,6 +6,7 @@
 
 import type { TraceImportAdapter, TraceSource } from '../types';
 import type { OpenInferenceSpan } from '../../../types/openinference';
+import { PlaygroundAdapter } from './playground';
 
 /**
  * Registry mapping source types to their adapters
@@ -15,15 +16,13 @@ import type { OpenInferenceSpan } from '../../../types/openinference';
  * - langsmith.ts - LangSmith runs to OpenInference
  * - openai.ts - OpenAI API responses to OpenInference
  * - phoenix.ts - Phoenix Arize (already OpenInference-compliant)
- * - playground.ts - Playground stream events to OpenInference
+ * - playground.ts - ✓ IMPLEMENTED - Playground stream events to OpenInference
  * - taskset.ts - Taskset execution data to OpenInference
  */
 const adapterRegistry: Partial<Record<TraceSource, TraceImportAdapter>> = {
-  // Adapters will be registered here as they are implemented
-  // Example:
-  // langfuse: new LangfuseAdapter(),
-  // langsmith: new LangsmithAdapter(),
-  // etc.
+  // Playground adapter - transforms LangGraphExecutionStep[] to OpenInferenceSpan[]
+  // KEY FIX: Embeds tool_calls in LLM output messages instead of separate child spans
+  playground: new PlaygroundAdapter(),
 };
 
 /**
