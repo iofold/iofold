@@ -16,7 +16,7 @@ import { LangSmithAdapter } from './langsmith';
  *
  * Note: Adapters will be implemented in subsequent tasks:
  * - langfuse.ts - ✓ IMPLEMENTED - Langfuse observations to OpenInference
- * - langsmith.ts - LangSmith runs to OpenInference
+ * - langsmith.ts - ✓ IMPLEMENTED - LangSmith runs to OpenInference
  * - openai.ts - OpenAI API responses to OpenInference
  * - phoenix.ts - ✓ IMPLEMENTED - Phoenix Arize (validates and normalizes OpenInference)
  * - playground.ts - ✓ IMPLEMENTED - Playground stream events to OpenInference
@@ -34,6 +34,10 @@ const adapterRegistry: Partial<Record<TraceSource, TraceImportAdapter>> = {
   // Phoenix adapter - validates and normalizes Phoenix/OpenInference spans
   // Handles both nested JSON and flattened OTEL attribute formats
   phoenix: new PhoenixAdapter(),
+
+  // LangSmith adapter - transforms LangSmith runs to OpenInferenceSpan[]
+  // Maps run_type to span_kind and extracts messages, tool calls, and metadata
+  langsmith: new LangSmithAdapter(),
 };
 
 /**
