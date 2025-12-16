@@ -1,12 +1,18 @@
 /**
  * D1TraceCollector - D1 Database implementation of TraceCollector
  *
- * Buffers trace events in memory and converts them to LangGraphExecutionStep
- * format on flush, then persists to the traces table (source='playground').
- * Step data is embedded in the trace's steps JSON field.
+ * Buffers trace events in memory and converts them to both LangGraphExecutionStep
+ * format (for backwards compatibility) and OpenInference spans (canonical format).
+ * Both formats are persisted to the traces table (source='playground').
  */
 
 import type { LangGraphExecutionStep, Message, ToolCall } from '../../types/trace';
+import type {
+  OpenInferenceSpan,
+  OpenInferenceMessage,
+  ToolCallRequest,
+  OpenInferenceSpanKind,
+} from '../../types/openinference';
 import type {
   TraceCollector,
   TraceEvent,
@@ -20,22 +26,40 @@ interface Span {
   id: string;
   parentId?: string;
   name: string;
-  type: 'llm_call' | 'tool_call' | 'tool_result';
+  span_kind: OpenInferenceSpanKind;
   startTime: string;
   endTime?: string;
-  input?: unknown;
-  output?: unknown;
   error?: string;
+  metadata?: Record<string, unknown>;
+
+  // Usage/token tracking
   usage?: {
     inputTokens: number;
     outputTokens: number;
   };
-  metadata?: Record<string, unknown>;
-  // For tool calls
-  toolName?: string;
-  toolArgs?: Record<string, unknown>;
-  toolResult?: unknown;
-  toolError?: string;
+
+  // LLM-specific data (when span_kind = 'LLM')
+  llm?: {
+    model_name?: string;
+    provider?: string;
+    input_messages: OpenInferenceMessage[];
+    output_messages: OpenInferenceMessage[];
+  };
+
+  // Tool-specific data (when span_kind = 'TOOL')
+  tool?: {
+    name: string;
+    parameters?: Record<string, unknown>;
+    output?: unknown;
+    error?: string;
+  };
+
+  // Generic input/output for non-LLM/TOOL spans
+  input?: unknown;
+  output?: unknown;
+
+  // Buffered tool call requests (temporary storage before embedding in parent LLM span)
+  pendingToolCalls?: ToolCallRequest[];
 }
 
 export class D1TraceCollector implements TraceCollector {
@@ -82,7 +106,7 @@ export class D1TraceCollector implements TraceCollector {
       id: spanId,
       parentId: event.parentSpanId,
       name: event.name,
-      type: 'llm_call', // Default, will be updated based on events
+      span_kind: 'CHAIN', // Default, will be updated based on events
       startTime: timestamp,
       input: event.input,
       metadata: event.metadata,
@@ -131,13 +155,63 @@ export class D1TraceCollector implements TraceCollector {
   logGeneration(event: GenerationEvent): void {
     const span = this.spans.get(event.spanId);
     if (span) {
-      span.type = 'llm_call';
-      span.input = event.input;
-      span.output = event.output;
+      span.span_kind = 'LLM';
       span.usage = event.usage;
       if (event.metadata) {
         span.metadata = { ...span.metadata, ...event.metadata };
       }
+
+      // Build LLM structure with input/output messages
+      const inputMessages: OpenInferenceMessage[] = [];
+      const outputMessages: OpenInferenceMessage[] = [];
+
+      // Extract input messages
+      if (event.input) {
+        if (typeof event.input === 'string') {
+          inputMessages.push({
+            role: 'user',
+            content: event.input,
+          });
+        } else if (
+          typeof event.input === 'object' &&
+          'messages' in event.input &&
+          Array.isArray(event.input.messages)
+        ) {
+          // Convert existing messages to OpenInferenceMessage format
+          for (const msg of event.input.messages) {
+            inputMessages.push({
+              role: msg.role as 'user' | 'assistant' | 'system',
+              content: msg.content || '',
+            });
+          }
+        }
+      }
+
+      // Extract output messages
+      if (event.output) {
+        const content =
+          typeof event.output === 'string'
+            ? event.output
+            : typeof event.output === 'object' && 'content' in event.output
+              ? String(event.output.content)
+              : JSON.stringify(event.output);
+
+        outputMessages.push({
+          role: 'assistant',
+          content,
+        });
+      }
+
+      span.llm = {
+        model_name: event.metadata?.model as string | undefined,
+        provider: event.metadata?.provider as string | undefined,
+        input_messages: inputMessages,
+        output_messages: outputMessages,
+      };
+
+      // Keep generic input/output for backwards compatibility with LangGraphExecutionStep conversion
+      span.input = event.input;
+      span.output = event.output;
     }
 
     // Buffer the event
@@ -158,11 +232,38 @@ export class D1TraceCollector implements TraceCollector {
   logToolCall(event: ToolCallEvent): void {
     const span = this.spans.get(event.spanId);
     if (span) {
-      span.type = 'tool_call';
-      span.toolName = event.toolName;
-      span.toolArgs = event.input;
+      span.span_kind = 'TOOL';
       if (event.metadata) {
         span.metadata = { ...span.metadata, ...event.metadata };
+      }
+
+      // Build TOOL structure
+      span.tool = {
+        name: event.toolName,
+        parameters: event.input as Record<string, unknown>,
+      };
+
+      // Generate a unique tool_call_id
+      const toolCallId = `call_${event.spanId}_${event.toolName}_${Date.now()}`;
+
+      // Create a ToolCallRequest to buffer for parent LLM span
+      const toolCallRequest: ToolCallRequest = {
+        id: toolCallId,
+        function: {
+          name: event.toolName,
+          arguments: JSON.stringify(event.input),
+        },
+      };
+
+      // Find parent LLM span and buffer the tool call request
+      if (span.parentId) {
+        const parentSpan = this.spans.get(span.parentId);
+        if (parentSpan && parentSpan.span_kind === 'LLM') {
+          if (!parentSpan.pendingToolCalls) {
+            parentSpan.pendingToolCalls = [];
+          }
+          parentSpan.pendingToolCalls.push(toolCallRequest);
+        }
       }
     }
 
@@ -180,9 +281,12 @@ export class D1TraceCollector implements TraceCollector {
 
   logToolResult(spanId: string, result: unknown, error?: string): void {
     const span = this.spans.get(spanId);
-    if (span) {
-      span.toolResult = result;
-      span.toolError = error;
+    if (span && span.tool) {
+      span.tool.output = result;
+      span.tool.error = error;
+      if (error) {
+        span.error = error;
+      }
     }
 
     // Buffer the event
@@ -190,7 +294,7 @@ export class D1TraceCollector implements TraceCollector {
       type: 'tool_result',
       traceId: this.traceId!,
       spanId,
-      name: span?.toolName || 'unknown',
+      name: span?.tool?.name || 'unknown',
       timestamp: new Date().toISOString(),
       output: result,
       error,
@@ -202,8 +306,27 @@ export class D1TraceCollector implements TraceCollector {
       throw new Error('Cannot flush: trace not initialized');
     }
 
-    // Convert spans to LangGraphExecutionStep format
-    const steps = this.convertToLangGraphSteps();
+    // Convert spans to both formats
+    const steps = this.convertToLangGraphSteps(); // Old format (backwards compat)
+    const spans = this.convertToOpenInferenceSpans(); // New OpenInference format
+
+    // Calculate summary statistics from OpenInference spans
+    let totalTokens = 0;
+    let totalDurationMs = 0;
+    let hasErrors = false;
+
+    for (const span of spans) {
+      if (span.llm?.token_count_total) {
+        totalTokens += span.llm.token_count_total;
+      }
+      if (span.start_time && span.end_time) {
+        const duration = new Date(span.end_time).getTime() - new Date(span.start_time).getTime();
+        totalDurationMs += duration;
+      }
+      if (span.status === 'ERROR') {
+        hasErrors = true;
+      }
+    }
 
     // Prepare trace data
     // Use this.traceId as the id so it matches what's stored in session messages
@@ -214,25 +337,30 @@ export class D1TraceCollector implements TraceCollector {
       traceId: this.traceId,
       source: this.metadata.source || 'playground', // Use provided source or default to 'playground'
       timestamp: new Date().toISOString(),
-      steps: JSON.stringify(steps),
+      steps: JSON.stringify(steps), // Old format (backwards compat)
+      spans: JSON.stringify(spans), // New OpenInference format
       metadata: this.metadata.customMetadata ? JSON.stringify(this.metadata.customMetadata) : null,
       inputPreview: this.generateInputPreview(),
       outputPreview: this.generateOutputPreview(),
       stepCount: steps.length,
-      hasErrors: steps.some((s) => !!s.error),
+      spanCount: spans.length,
+      totalTokens: totalTokens > 0 ? totalTokens : null,
+      totalDurationMs: totalDurationMs > 0 ? totalDurationMs : null,
+      hasErrors,
       // Include agent version info from metadata for proper trace-agent linking
       agentVersionId: this.metadata.agentVersionId || null,
     };
 
     try {
-      // Insert into traces table with agent_version_id for proper trace-agent linking
+      // Insert into traces table with both steps and spans formats
       await this.db
         .prepare(
           `INSERT INTO traces (
           id, workspace_id, integration_id, trace_id, source, timestamp,
-          steps, metadata, input_preview, output_preview, step_count, has_errors, imported_at,
+          steps, spans, metadata, input_preview, output_preview,
+          step_count, span_count, total_tokens, total_duration_ms, has_errors, imported_at,
           agent_version_id, assignment_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           traceData.id,
@@ -242,10 +370,14 @@ export class D1TraceCollector implements TraceCollector {
           traceData.source,
           traceData.timestamp,
           traceData.steps,
+          traceData.spans,
           traceData.metadata,
           traceData.inputPreview,
           traceData.outputPreview,
           traceData.stepCount,
+          traceData.spanCount,
+          traceData.totalTokens,
+          traceData.totalDurationMs,
           traceData.hasErrors ? 1 : 0,
           new Date().toISOString(),
           traceData.agentVersionId,
@@ -253,8 +385,9 @@ export class D1TraceCollector implements TraceCollector {
         )
         .run();
 
-      // Note: playground_steps table was removed in migration 0002
-      // Step data is embedded in the trace's steps JSON field instead
+      // Note: Both steps and spans are stored for transition period
+      // - steps: Old LangGraphExecutionStep format (backwards compat)
+      // - spans: New OpenInference format (canonical)
     } catch (error) {
       console.error('Failed to flush trace:', error);
       throw error;
@@ -274,7 +407,7 @@ export class D1TraceCollector implements TraceCollector {
   }
 
   /**
-   * Convert buffered spans to LangGraphExecutionStep format
+   * Convert buffered spans to LangGraphExecutionStep format (backwards compatibility)
    */
   private convertToLangGraphSteps(): LangGraphExecutionStep[] {
     const steps: LangGraphExecutionStep[] = [];
@@ -290,46 +423,35 @@ export class D1TraceCollector implements TraceCollector {
       const toolCalls: ToolCall[] = [];
 
       // Extract messages from LLM calls
-      if (span.type === 'llm_call') {
-        if (span.input) {
-          // Assume input is either a string or has messages
-          if (typeof span.input === 'string') {
+      if (span.span_kind === 'LLM' && span.llm) {
+        // Add input messages (filter out 'tool' role for old format)
+        for (const msg of span.llm.input_messages) {
+          if (msg.role !== 'tool') {
             messages.push({
-              role: 'user',
-              content: span.input,
+              role: msg.role as 'user' | 'assistant' | 'system',
+              content: msg.content,
             });
-          } else if (
-            typeof span.input === 'object' &&
-            'messages' in span.input &&
-            Array.isArray(span.input.messages)
-          ) {
-            messages.push(...(span.input.messages as Message[]));
           }
         }
 
-        if (span.output) {
-          // Assume output is a string or has content
-          const content =
-            typeof span.output === 'string'
-              ? span.output
-              : typeof span.output === 'object' && 'content' in span.output
-                ? String(span.output.content)
-                : JSON.stringify(span.output);
-
-          messages.push({
-            role: 'assistant',
-            content,
-          });
+        // Add output messages (filter out 'tool' role for old format)
+        for (const msg of span.llm.output_messages) {
+          if (msg.role !== 'tool') {
+            messages.push({
+              role: msg.role as 'user' | 'assistant' | 'system',
+              content: msg.content,
+            });
+          }
         }
       }
 
       // Extract tool calls
-      if (span.type === 'tool_call' && span.toolName) {
+      if (span.span_kind === 'TOOL' && span.tool) {
         toolCalls.push({
-          tool_name: span.toolName,
-          arguments: span.toolArgs || {},
-          result: span.toolResult,
-          error: span.toolError,
+          tool_name: span.tool.name,
+          arguments: span.tool.parameters || {},
+          result: span.tool.output,
+          error: span.tool.error,
         });
       }
 
@@ -363,6 +485,111 @@ export class D1TraceCollector implements TraceCollector {
   }
 
   /**
+   * Convert buffered spans to OpenInference format
+   *
+   * Key feature: Embeds pending tool_calls from child TOOL spans
+   * into parent LLM span's output messages.
+   */
+  private convertToOpenInferenceSpans(): OpenInferenceSpan[] {
+    const oiSpans: OpenInferenceSpan[] = [];
+
+    // Sort spans by start time
+    const sortedSpans = Array.from(this.spans.values()).sort(
+      (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+    );
+
+    for (const span of sortedSpans) {
+      // Calculate end time if not present
+      const endTime = span.endTime || span.startTime;
+
+      // Determine status
+      const status: 'OK' | 'ERROR' | 'UNSET' = span.error ? 'ERROR' : 'OK';
+
+      // Base span structure
+      const baseSpan = {
+        span_id: span.id,
+        trace_id: this.traceId!,
+        parent_span_id: span.parentId,
+        span_kind: span.span_kind,
+        name: span.name,
+        start_time: span.startTime,
+        end_time: endTime,
+        status,
+        status_message: span.error,
+        source_span_id: span.id,
+      };
+
+      if (span.span_kind === 'LLM' && span.llm) {
+        // Embed pending tool calls in output messages
+        let outputMessages = [...span.llm.output_messages];
+
+        if (span.pendingToolCalls && span.pendingToolCalls.length > 0) {
+          // Add tool_calls to the last assistant message
+          if (outputMessages.length > 0) {
+            const lastMsg = outputMessages[outputMessages.length - 1];
+            if (lastMsg.role === 'assistant') {
+              outputMessages[outputMessages.length - 1] = {
+                ...lastMsg,
+                tool_calls: span.pendingToolCalls,
+              };
+            }
+          }
+        }
+
+        oiSpans.push({
+          ...baseSpan,
+          llm: {
+            model_name: span.llm.model_name,
+            provider: span.llm.provider,
+            input_messages: span.llm.input_messages,
+            output_messages: outputMessages,
+            token_count_prompt: span.usage?.inputTokens,
+            token_count_completion: span.usage?.outputTokens,
+            token_count_total:
+              (span.usage?.inputTokens || 0) + (span.usage?.outputTokens || 0) || undefined,
+          },
+          attributes: {
+            latency_ms: span.endTime
+              ? new Date(span.endTime).getTime() - new Date(span.startTime).getTime()
+              : undefined,
+            ...span.metadata,
+          },
+        });
+      } else if (span.span_kind === 'TOOL' && span.tool) {
+        oiSpans.push({
+          ...baseSpan,
+          tool: {
+            name: span.tool.name,
+            parameters: span.tool.parameters,
+            output: span.tool.output,
+          },
+          attributes: {
+            latency_ms: span.endTime
+              ? new Date(span.endTime).getTime() - new Date(span.startTime).getTime()
+              : undefined,
+            ...span.metadata,
+          },
+        });
+      } else {
+        // Generic span (CHAIN, AGENT, etc.)
+        oiSpans.push({
+          ...baseSpan,
+          input: span.input,
+          output: span.output,
+          attributes: {
+            latency_ms: span.endTime
+              ? new Date(span.endTime).getTime() - new Date(span.startTime).getTime()
+              : undefined,
+            ...span.metadata,
+          },
+        });
+      }
+    }
+
+    return oiSpans;
+  }
+
+  /**
    * Generate input preview (first 200 chars)
    */
   private generateInputPreview(): string {
@@ -370,14 +597,24 @@ export class D1TraceCollector implements TraceCollector {
       (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
     )[0];
 
-    if (!firstSpan?.input) return 'No input';
+    if (!firstSpan) return 'No input';
 
-    const inputStr =
-      typeof firstSpan.input === 'string'
-        ? firstSpan.input
-        : JSON.stringify(firstSpan.input);
+    // Try LLM input messages first
+    if (firstSpan.llm?.input_messages?.[0]) {
+      const content = firstSpan.llm.input_messages[0].content;
+      return content.length > 200 ? `${content.slice(0, 200)}...` : content;
+    }
 
-    return inputStr.length > 200 ? `${inputStr.slice(0, 200)}...` : inputStr;
+    // Fall back to generic input
+    if (firstSpan.input) {
+      const inputStr =
+        typeof firstSpan.input === 'string'
+          ? firstSpan.input
+          : JSON.stringify(firstSpan.input);
+      return inputStr.length > 200 ? `${inputStr.slice(0, 200)}...` : inputStr;
+    }
+
+    return 'No input';
   }
 
   /**
@@ -390,10 +627,18 @@ export class D1TraceCollector implements TraceCollector {
       (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
     );
 
-    // Find the last span with an output (LLM calls have output, tool calls don't)
+    // Find the last LLM span with output messages
+    for (const span of sortedSpans) {
+      if (span.llm?.output_messages && span.llm.output_messages.length > 0) {
+        const lastMsg = span.llm.output_messages[span.llm.output_messages.length - 1];
+        const content = lastMsg.content;
+        return content.length > 200 ? `${content.slice(0, 200)}...` : content;
+      }
+    }
+
+    // Fall back to generic output
     for (const span of sortedSpans) {
       if (span.output) {
-        // Handle output that might be {content: string} or just a string
         let outputStr: string;
         if (typeof span.output === 'object' && 'content' in span.output) {
           outputStr = String((span.output as { content: string }).content);
