@@ -17,6 +17,11 @@ export const traces = sqliteTable('traces', {
   timestamp: text('timestamp').notNull(),
   metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(),
   steps: text('steps', { mode: 'json' }).notNull().$type<unknown[]>(),
+  // OpenInference format (new columns for migration)
+  spans: text('spans', { mode: 'json' }).$type<unknown[]>(),
+  totalTokens: integer('total_tokens'),
+  totalDurationMs: integer('total_duration_ms'),
+  spanCount: integer('span_count'),
   rawData: text('raw_data', { mode: 'json' }).$type<unknown>(),
   inputPreview: text('input_preview'),
   outputPreview: text('output_preview'),
