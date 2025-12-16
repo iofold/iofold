@@ -7,15 +7,18 @@
 import type { TraceImportAdapter, TraceSource } from '../types';
 import type { OpenInferenceSpan } from '../../../types/openinference';
 import { PlaygroundAdapter } from './playground';
+import { LangfuseAdapter } from './langfuse';
+import { PhoenixAdapter } from './phoenix';
+import { LangSmithAdapter } from './langsmith';
 
 /**
  * Registry mapping source types to their adapters
  *
  * Note: Adapters will be implemented in subsequent tasks:
- * - langfuse.ts - Langfuse observations to OpenInference
+ * - langfuse.ts - ✓ IMPLEMENTED - Langfuse observations to OpenInference
  * - langsmith.ts - LangSmith runs to OpenInference
  * - openai.ts - OpenAI API responses to OpenInference
- * - phoenix.ts - Phoenix Arize (already OpenInference-compliant)
+ * - phoenix.ts - ✓ IMPLEMENTED - Phoenix Arize (validates and normalizes OpenInference)
  * - playground.ts - ✓ IMPLEMENTED - Playground stream events to OpenInference
  * - taskset.ts - Taskset execution data to OpenInference
  */
@@ -23,6 +26,14 @@ const adapterRegistry: Partial<Record<TraceSource, TraceImportAdapter>> = {
   // Playground adapter - transforms LangGraphExecutionStep[] to OpenInferenceSpan[]
   // KEY FIX: Embeds tool_calls in LLM output messages instead of separate child spans
   playground: new PlaygroundAdapter(),
+
+  // Langfuse adapter - transforms Langfuse observations to OpenInferenceSpan[]
+  // Handles GENERATION (LLM), SPAN (tool/chain), and EVENT observations
+  langfuse: new LangfuseAdapter(),
+
+  // Phoenix adapter - validates and normalizes Phoenix/OpenInference spans
+  // Handles both nested JSON and flattened OTEL attribute formats
+  phoenix: new PhoenixAdapter(),
 };
 
 /**
