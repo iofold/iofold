@@ -28,4 +28,13 @@ export interface Trace {
   steps: LangGraphExecutionStep[];
   source: 'langfuse' | 'langsmith' | 'openai' | 'playground';
   raw_data: any;
+  spans?: any[]; // OpenInference spans (new format)
+  summary?: {
+    inputPreview: string;
+    outputPreview: string;
+    hasErrors: boolean;
+    totalTokens: number;
+    totalDurationMs: number;
+    spanCount: number;
+  };
 }
