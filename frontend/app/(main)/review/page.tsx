@@ -835,10 +835,16 @@ function ReviewPageContent() {
             <div className="flex-none px-4 py-2 border-b border-border bg-gradient-to-r from-primary/10 to-primary/5">
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2 text-muted-foreground">
+                  <span className="font-mono text-[10px] px-1.5 py-0.5 bg-muted rounded">{currentTrace.id.slice(0, 12)}...</span>
+                  <span>•</span>
                   <Calendar className="w-3 h-3" />
                   <span className="font-medium">{formatDate(currentTrace.timestamp)}</span>
-                  <span>•</span>
-                  <span>{formatDuration(currentTrace.duration_ms)}</span>
+                  {traceDetails?.total_duration_ms && (
+                    <>
+                      <span>•</span>
+                      <span>{formatDuration(traceDetails.total_duration_ms)}</span>
+                    </>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 px-2 py-0.5 bg-primary rounded-full">
                   <TrendingUp className="w-3 h-3 text-white" />
