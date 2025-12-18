@@ -573,22 +573,26 @@ function ReviewPageContent() {
       const target = e.target as HTMLElement
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
 
-      if (e.key === '1') {
+      // Don't process feedback keys on completion screen
+      // (reviewedCount >= totalTraces means we're showing the completion UI)
+      const isCompleted = reviewedCount >= totalTraces
+
+      if (e.key === '1' && !isCompleted) {
         e.preventDefault()
         handleFeedback('bad')
-      } else if (e.key === '2') {
+      } else if (e.key === '2' && !isCompleted) {
         e.preventDefault()
         handleFeedback('okay')
-      } else if (e.key === '3') {
+      } else if (e.key === '3' && !isCompleted) {
         e.preventDefault()
         handleFeedback('good')
-      } else if (e.key === 'a' || e.key === 'A') {
+      } else if ((e.key === 'a' || e.key === 'A') && !isCompleted) {
         e.preventDefault()
         toggleAutoMode()
-      } else if (e.key === 'ArrowRight' && currentIndex < totalTraces - 1) {
+      } else if (e.key === 'ArrowRight' && currentIndex < totalTraces - 1 && !isCompleted) {
         e.preventDefault()
         setCurrentIndex(prev => prev + 1)
-      } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
+      } else if (e.key === 'ArrowLeft' && currentIndex > 0 && !isCompleted) {
         e.preventDefault()
         setCurrentIndex(prev => prev - 1)
       }
@@ -596,7 +600,7 @@ function ReviewPageContent() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [currentIndex, totalTraces, handleFeedback, toggleAutoMode])
+  }, [currentIndex, totalTraces, reviewedCount, handleFeedback, toggleAutoMode])
 
   // ============================================================================
   // Render States
