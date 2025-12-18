@@ -35,6 +35,8 @@ interface ConversationItem {
   content?: string
   // For tool calls group
   toolCalls?: ToolCallInfo[]
+  // Span ID for cross-pane selection (for messages, this is the LLM span ID)
+  spanId?: string
 }
 
 interface LegacyMessage {
@@ -141,6 +143,7 @@ function extractConversationItems(spans: OpenInferenceSpan[]): ConversationItem[
           id: `${span.span_id}_output_${msgIdx}_text`,
           type: 'assistant',
           content: cleanContent.trim(),
+          spanId: span.span_id, // LLM span ID for cross-pane selection
         })
       }
 
@@ -205,6 +208,7 @@ function extractConversationItems(spans: OpenInferenceSpan[]): ConversationItem[
             id: `${span.span_id}_tools_${msgIdx}`,
             type: 'tool_calls_group',
             toolCalls: toolCallsInfo,
+            spanId: span.span_id, // LLM span ID for cross-pane selection
           })
         }
       }
@@ -387,9 +391,12 @@ function MessageView({ item, isSelected, onClick }: MessageViewProps) {
 
   const config = roleConfig[item.type as 'user' | 'assistant' | 'system'] || roleConfig.system
 
+  // Use spanId for cross-pane selection, fallback to item.id
+  const selectionId = item.spanId || item.id
+
   return (
     <div
-      onClick={() => onClick?.(item.id)}
+      onClick={() => onClick?.(selectionId)}
       className={cn(
         'px-3 py-2 rounded-lg transition-all',
         config.bgColor,
@@ -416,8 +423,8 @@ interface ToolCallsButtonProps {
 function ToolCallsButton({ toolCalls, isSelected, onClick }: ToolCallsButtonProps) {
   const count = toolCalls.length
   const hasErrors = toolCalls.some(tc => tc.error)
-  // Use spanId for TraceExplorer selection, fallback to tool call ID
-  const firstSpanId = toolCalls[0]?.spanId || toolCalls[0]?.id
+  // Use spanId for TraceExplorer selection, fallback to parentSpanId (LLM span), then tool call ID
+  const firstSpanId = toolCalls[0]?.spanId || toolCalls[0]?.parentSpanId || toolCalls[0]?.id
 
   // Get unique tool names for display
   const toolNames = [...new Set(toolCalls.map(tc => tc.name))]
