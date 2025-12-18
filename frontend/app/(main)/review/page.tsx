@@ -32,14 +32,13 @@ import {
   Zap,
   Clock,
   TrendingUp,
-  Calendar,
-  Wrench,
-  ChevronDown,
-  ChevronUp
+  Calendar
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Trace } from '@/types/api'
 import { cn } from '@/lib/utils'
+import { ConversationThread } from '@/components/review/ConversationThread'
+import { TraceExplorer } from '@/components/review/TraceExplorer'
 
 // ============================================================================
 // Mock Data for Demonstration
@@ -114,6 +113,21 @@ interface TraceData {
   toolCalls?: { name: string; args: string; result?: string }[]
 }
 
+interface Message {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  toolCalls?: ToolCall[]
+}
+
+interface ToolCall {
+  id: string
+  name: string
+  arguments?: Record<string, any>
+  result?: any
+  error?: string
+}
+
 // Helper to extract user input from JSON messages format
 function extractUserInput(inputPreview: string): string {
   if (!inputPreview) return '';
@@ -128,6 +142,107 @@ function extractUserInput(inputPreview: string): string {
   } catch {
     return inputPreview;
   }
+}
+
+// Helper to extract ALL messages from trace steps for ConversationThread
+// This handles multiple assistant turns with distinct tool calls for each turn
+function extractMessagesFromSteps(steps: any[]): Message[] {
+  const messages: Message[] = []
+  if (!steps || !Array.isArray(steps)) return messages
+
+  // Build maps for linking tool calls to their parent assistant messages
+  // Map: span_id -> step data
+  const stepsBySpanId = new Map<string, { stepIndex: number; step: any }>()
+  // Map: parent_span_id -> list of child tool steps
+  const childToolStepsByParentId = new Map<string, any[]>()
+
+  // First pass: index steps by span_id and collect child tool steps
+  steps.forEach((step, stepIndex) => {
+    const spanId = step.metadata?.span_id
+    if (spanId) {
+      stepsBySpanId.set(spanId, { stepIndex, step })
+    }
+
+    // Check if this is a tool execution step (has toolName in input)
+    let inputObj = step.input
+    if (typeof step.input === 'string') {
+      try {
+        inputObj = JSON.parse(step.input)
+      } catch {
+        // Not valid JSON
+      }
+    }
+
+    const toolName = inputObj?.toolName
+    const parentSpanId = step.metadata?.parent_span_id
+
+    // If this step has a parent and is a tool step, add it to the parent's children
+    if (parentSpanId && toolName) {
+      const existing = childToolStepsByParentId.get(parentSpanId) || []
+      existing.push({ ...step, stepIndex, toolName })
+      childToolStepsByParentId.set(parentSpanId, existing)
+    }
+  })
+
+  // Second pass: extract messages and attach child tool calls
+  steps.forEach((step, stepIndex) => {
+    // Extract messages_added from each step
+    if (step.messages_added && Array.isArray(step.messages_added)) {
+      step.messages_added.forEach((msg: any, msgIndex: number) => {
+        // Generate a unique ID for this message (use span_id if available)
+        const messageId = step.metadata?.span_id || `step_${stepIndex}_msg_${msgIndex}`
+
+        // For assistant messages, find tool calls from child steps
+        let toolCalls: ToolCall[] | undefined = undefined
+
+        if (msg.role === 'assistant') {
+          // Get child tool steps for this assistant message's span
+          const childToolSteps = childToolStepsByParentId.get(messageId) || []
+
+          if (childToolSteps.length > 0) {
+            toolCalls = childToolSteps.map((childStep: any) => {
+              // Extract tool call details from the child step
+              const tc = childStep.tool_calls?.[0] || {}
+              const childStepId = childStep.step_id || childStep.metadata?.span_id || `step_${childStep.stepIndex}`
+
+              return {
+                id: childStepId,
+                name: childStep.toolName || tc.tool_name || 'Tool',
+                arguments: tc.arguments || childStep.input,
+                result: tc.result ?? childStep.output,
+                error: tc.error ?? childStep.error,
+              }
+            })
+          }
+
+          // Also check for tool calls embedded in the step itself
+          const stepToolCalls = step.tool_calls || []
+          const msgToolCalls = msg.tool_calls || []
+          const embeddedToolCalls = [...stepToolCalls, ...msgToolCalls]
+
+          if (embeddedToolCalls.length > 0) {
+            const embedded = embeddedToolCalls.map((tc: any, tcIdx: number) => ({
+              id: `${messageId}_tc_${tcIdx}`,
+              name: tc.tool_name || tc.name || 'Tool',
+              arguments: tc.arguments || tc.input,
+              result: tc.result,
+              error: tc.error,
+            }))
+            toolCalls = [...(toolCalls || []), ...embedded]
+          }
+        }
+
+        messages.push({
+          id: messageId,
+          role: msg.role,
+          content: msg.content || '',
+          toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
+        })
+      })
+    }
+  })
+
+  return messages
 }
 
 // ============================================================================
@@ -154,9 +269,10 @@ function ReviewPageContent() {
   const [useMockData, setUseMockData] = useState(false)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [displayedTrace, setDisplayedTrace] = useState<TraceData | null>(null)
-  const [showToolCalls, setShowToolCalls] = useState(false)
   // Track reviewed trace IDs locally to filter them out immediately
   const [reviewedTraceIds, setReviewedTraceIds] = useState<Set<string>>(new Set())
+  // Track selected message/tool call ID for cross-pane selection
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const autoAdvanceTimerRef = useRef<NodeJS.Timeout | null>(null)
   const sessionStartTimeRef = useRef<Date | null>(null)
@@ -319,6 +435,24 @@ function ReviewPageContent() {
 
     return baseTrace;
   }, [traces, currentIndex, traceDetails, useMockData, extractFromObservations])
+
+  // Extract messages for ConversationThread from trace details
+  // Prefer spans over steps for the new OpenInference format
+  const messages = useMemo(() => {
+    if (useMockData || !traceDetails) return []
+    const details = traceDetails as any
+    // Only extract from steps if spans are not available
+    // ConversationThread will handle spans directly
+    if (!details.spans || details.spans.length === 0) {
+      return extractMessagesFromSteps(details.steps || [])
+    }
+    return [] // Let ConversationThread extract from spans
+  }, [traceDetails, useMockData])
+
+  // Clear selected ID when trace changes
+  useEffect(() => {
+    setSelectedId(null)
+  }, [currentTraceId])
   const totalTraces = traces.length
   const reviewedCount = feedbackCounts.good + feedbackCounts.okay + feedbackCounts.bad
   const remainingCount = totalTraces - reviewedCount
@@ -715,80 +849,37 @@ function ReviewPageContent() {
               </div>
             </div>
 
-            {/* Card Body - scrollable */}
-            <div className="flex-1 overflow-auto p-4">
-              <div className="grid md:grid-cols-2 gap-4 h-full">
-                {/* USER INPUT Section */}
-                <div className="flex flex-col">
-                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                    USER INPUT
-                  </div>
-                  <div className="bg-muted rounded-lg p-3 border border-border flex-1 overflow-auto">
-                    <p className="text-sm text-foreground leading-relaxed">{currentTrace.input}</p>
-                  </div>
-                </div>
-
-                {/* AGENT RESPONSE Section */}
-                <div className="flex flex-col">
-                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 bg-secondary rounded-full"></div>
-                    AGENT RESPONSE
-                  </div>
-                  <div className="bg-gradient-to-br from-muted to-card rounded-lg p-3 border border-border flex-1 overflow-auto">
-                    <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap font-mono">
-                      {currentTrace.output}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tool Calls Section - collapsible */}
-              {currentTrace.toolCalls && currentTrace.toolCalls.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-border">
-                  <button
-                    onClick={() => setShowToolCalls(!showToolCalls)}
-                    className="flex items-center gap-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors w-full"
-                  >
-                    <Wrench className="w-3.5 h-3.5" />
-                    <span>Tool Calls ({currentTrace.toolCalls.length})</span>
-                    {showToolCalls ? <ChevronUp className="w-3.5 h-3.5 ml-auto" /> : <ChevronDown className="w-3.5 h-3.5 ml-auto" />}
-                  </button>
-                  {showToolCalls && (
-                    <div className="mt-2 space-y-2 max-h-48 overflow-auto">
-                      {currentTrace.toolCalls.map((tc, i) => (
-                        <div key={i} className="bg-muted/50 rounded-md p-2 text-xs">
-                          <div className="font-semibold text-foreground flex items-center gap-1.5">
-                            <Wrench className="w-3 h-3 text-primary" />
-                            {tc.name}
-                          </div>
-                          {tc.result && (
-                            <pre className="mt-1 text-muted-foreground text-[10px] overflow-auto max-h-20 whitespace-pre-wrap">
-                              {tc.result.substring(0, 200)}{tc.result.length > 200 ? '...' : ''}
-                            </pre>
-                          )}
-                        </div>
-                      ))}
+            {/* Card Body - Split Pane Layout */}
+            <div className="flex-1 overflow-hidden p-4">
+              <div className="grid grid-cols-12 gap-4 h-full">
+                {/* Left Pane - Conversation Thread */}
+                <div className="col-span-6 overflow-hidden flex flex-col">
+                  <h2 className="text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wide">Conversation</h2>
+                  {(traceDetails?.spans && traceDetails.spans.length > 0) || messages.length > 0 ? (
+                    <ConversationThread
+                      spans={traceDetails?.spans}
+                      messages={messages}
+                      selectedId={selectedId || undefined}
+                      onMessageClick={(id) => setSelectedId(id)}
+                      onToolCallClick={(id) => setSelectedId(id)}
+                    />
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center p-8">
+                      <p className="text-sm text-muted-foreground text-center">
+                        No conversation data available for this trace
+                      </p>
                     </div>
                   )}
                 </div>
-              )}
 
-              {/* Compact Metadata */}
-              <div className="mt-3 pt-3 border-t border-border">
-                <p className="text-xs text-muted-foreground">
-                  <span className="font-semibold">Model:</span> {currentTrace.metadata.model || 'N/A'}
-                  {currentTrace.metadata.tokens && (
-                    <> • <span className="font-semibold">Tokens:</span> {currentTrace.metadata.tokens}</>
-                  )}
-                  <span className="float-right text-muted-foreground">
-                    <kbd className="px-1.5 py-0.5 bg-muted rounded border text-xs font-mono">1</kbd> Bad
-                    <span className="mx-1">•</span>
-                    <kbd className="px-1.5 py-0.5 bg-muted rounded border text-xs font-mono">2</kbd> Okay
-                    <span className="mx-1">•</span>
-                    <kbd className="px-1.5 py-0.5 bg-muted rounded border text-xs font-mono">3</kbd> Good
-                  </span>
-                </p>
+                {/* Right Pane - Trace Explorer */}
+                <div className="col-span-6 overflow-hidden">
+                  <TraceExplorer
+                    trace={traceDetails}
+                    selectedId={selectedId || undefined}
+                    onSelect={(id) => setSelectedId(id)}
+                  />
+                </div>
               </div>
             </div>
 
@@ -798,7 +889,7 @@ function ReviewPageContent() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value.slice(0, 500))}
                 placeholder="Quick notes (optional)..."
-                className="w-full h-12 px-2 py-1 text-xs border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                className="w-full h-10 px-2 py-1 text-xs border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
                 maxLength={500}
               />
             </div>
@@ -807,40 +898,32 @@ function ReviewPageContent() {
       </div>
 
       {/* Fixed Footer with Feedback Buttons */}
-      <div className="flex-none px-4 py-3 border-t bg-card">
-        <div className="max-w-5xl mx-auto">
-          <div className="grid grid-cols-3 gap-3">
-            <Button
-              onClick={() => handleFeedback('bad')}
-              disabled={submitFeedbackMutation.isPending}
-              className="h-14 text-base font-bold bg-destructive hover:bg-destructive/90 text-destructive-foreground border-2 border-destructive shadow-lg hover:shadow-xl transition-all"
-            >
-              <div className="flex flex-col items-center">
-                <div className="text-xl">❌</div>
-                <div className="text-xs">Bad</div>
-              </div>
-            </Button>
-            <Button
-              onClick={() => handleFeedback('okay')}
-              disabled={submitFeedbackMutation.isPending}
-              className="h-14 text-base font-bold bg-warning hover:bg-warning/90 text-warning-foreground border-2 border-warning shadow-lg hover:shadow-xl transition-all"
-            >
-              <div className="flex flex-col items-center">
-                <div className="text-xl">➖</div>
-                <div className="text-xs">Okay</div>
-              </div>
-            </Button>
-            <Button
-              onClick={() => handleFeedback('good')}
-              disabled={submitFeedbackMutation.isPending}
-              className="h-14 text-base font-bold bg-success hover:bg-success/90 text-success-foreground border-2 border-success shadow-lg hover:shadow-xl transition-all"
-            >
-              <div className="flex flex-col items-center">
-                <div className="text-xl">✅</div>
-                <div className="text-xs">Good</div>
-              </div>
-            </Button>
-          </div>
+      <div className="flex-none px-4 py-2 border-t bg-card">
+        <div className="max-w-3xl mx-auto grid grid-cols-3 gap-3">
+          <Button
+            onClick={() => handleFeedback('bad')}
+            disabled={submitFeedbackMutation.isPending}
+            className="h-10 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+          >
+            <kbd className="px-1.5 py-0.5 bg-black/20 rounded text-xs font-mono mr-2">1</kbd>
+            Bad
+          </Button>
+          <Button
+            onClick={() => handleFeedback('okay')}
+            disabled={submitFeedbackMutation.isPending}
+            className="h-10 bg-warning hover:bg-warning/90 text-warning-foreground"
+          >
+            <kbd className="px-1.5 py-0.5 bg-black/20 rounded text-xs font-mono mr-2">2</kbd>
+            Okay
+          </Button>
+          <Button
+            onClick={() => handleFeedback('good')}
+            disabled={submitFeedbackMutation.isPending}
+            className="h-10 bg-success hover:bg-success/90 text-success-foreground"
+          >
+            <kbd className="px-1.5 py-0.5 bg-black/20 rounded text-xs font-mono mr-2">3</kbd>
+            Good
+          </Button>
         </div>
       </div>
     </div>

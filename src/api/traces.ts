@@ -26,6 +26,8 @@ import {
   feedback,
   jobs,
 } from '../db/schema';
+import { PlaygroundAdapter } from '../services/trace-import/adapters/playground';
+import type { OpenInferenceSpan } from '../types/openinference';
 
 export interface Env {
   DB: D1Database;
@@ -323,6 +325,9 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
         inputPreview: traces.inputPreview,
         outputPreview: traces.outputPreview,
         stepCount: traces.stepCount,
+        spanCount: traces.spanCount,  // Include span count
+        totalTokens: traces.totalTokens,  // Include total tokens
+        totalDurationMs: traces.totalDurationMs,  // Include total duration
         hasErrors: traces.hasErrors,
         agentVersionId: traces.agentVersionId,
         traceAgentId: agentVersions.agentId,
@@ -348,6 +353,9 @@ export async function listTraces(request: Request, env: Env): Promise<Response> 
         timestamp: row.timestamp,
         imported_at: row.importedAt,
         step_count: row.stepCount,
+        span_count: row.spanCount,  // Include span count
+        total_tokens: row.totalTokens,  // Include total tokens
+        total_duration_ms: row.totalDurationMs,  // Include total duration
         // Include agent_id from agent_version (trace's assigned agent)
         agent_id: row.traceAgentId || null,
         agent_version_id: row.agentVersionId || null,
@@ -487,6 +495,10 @@ export async function getTraceById(request: Request, env: Env, traceId: string):
         source: traces.source,  // Use traces.source directly (works for taskset/playground)
         timestamp: traces.timestamp,
         steps: traces.steps,
+        spans: traces.spans,  // Include spans (new OpenInference format)
+        totalTokens: traces.totalTokens,  // Include summary fields
+        totalDurationMs: traces.totalDurationMs,
+        spanCount: traces.spanCount,
         rawData: traces.rawData,
         metadata: traces.metadata,  // Include metadata for taskset info
         feedbackId: feedback.id,
@@ -512,8 +524,11 @@ export async function getTraceById(request: Request, env: Env, traceId: string):
 
     const row = result[0];
 
-    // Parse the steps JSON column
+    // Parse the steps JSON column (old format, backwards compatibility)
     const steps = row.steps || [];
+
+    // Parse spans JSON column (new OpenInference format)
+    const spans = row.spans || [];
 
     // Parse raw_data if it exists (typed as any to access its properties)
     const rawData = row.rawData as any || null;
@@ -526,10 +541,15 @@ export async function getTraceById(request: Request, env: Env, traceId: string):
       trace_id: row.traceId,
       source: row.source,
       timestamp: row.timestamp,
-      steps: steps,
+      steps: steps,  // Old format (backwards compatibility)
+      spans: spans,  // New OpenInference format
       observations: observations,
       raw_data: rawData,
       metadata: row.metadata || {},  // Include metadata (taskset info, scores, etc.)
+      // Summary fields from database
+      total_tokens: row.totalTokens,
+      total_duration_ms: row.totalDurationMs,
+      span_count: row.spanCount,
     };
 
     // Add feedback if exists
@@ -614,10 +634,35 @@ export async function createTrace(request: Request, env: Env): Promise<Response>
     const externalTraceId = body.trace_id || `ext_${crypto.randomUUID()}`;
     const timestamp = body.timestamp || new Date().toISOString();
     const steps = body.steps || [];
-    const inputPreview = body.input_preview || 'Test input';
-    const outputPreview = body.output_preview || 'Test output';
-    const hasErrors = body.has_errors || false;
     const source = integration[0].platform; // Use the integration's platform as the source
+
+    // Transform steps to OpenInference spans if steps are provided and source is playground
+    let spans: OpenInferenceSpan[] = [];
+    let inputPreview = body.input_preview || 'Test input';
+    let outputPreview = body.output_preview || 'Test output';
+    let hasErrors = body.has_errors || false;
+    let totalTokens: number | null = null;
+    let totalDurationMs: number | null = null;
+    let spanCount = 0;
+
+    if (steps.length > 0 && source === 'playground') {
+      try {
+        const adapter = new PlaygroundAdapter();
+        // Transform steps to spans
+        spans = adapter.transform({ steps });
+        // Extract summary information
+        const summary = adapter.extractSummary(spans);
+        inputPreview = summary.inputPreview;
+        outputPreview = summary.outputPreview;
+        hasErrors = summary.hasErrors;
+        totalTokens = summary.totalTokens > 0 ? summary.totalTokens : null;
+        totalDurationMs = summary.totalDurationMs > 0 ? summary.totalDurationMs : null;
+        spanCount = summary.spanCount;
+      } catch (error: any) {
+        console.warn('Failed to transform steps to spans:', error.message);
+        // Continue with provided values if transformation fails
+      }
+    }
 
     await drizzle.insert(traces).values({
       id: traceId,
@@ -627,9 +672,13 @@ export async function createTrace(request: Request, env: Env): Promise<Response>
       source: source as any,
       timestamp,
       steps: steps as any,
+      spans: spans.length > 0 ? (spans as any) : null,  // Store spans if available
       inputPreview,
       outputPreview,
       stepCount: steps.length,
+      spanCount: spanCount > 0 ? spanCount : null,
+      totalTokens,
+      totalDurationMs,
       hasErrors,
       importedAt: new Date().toISOString(),
     });
@@ -641,7 +690,11 @@ export async function createTrace(request: Request, env: Env): Promise<Response>
         integration_id: body.integration_id,
         timestamp,
         steps,
+        spans: spans.length > 0 ? spans : undefined,  // Include spans in response if available
         step_count: steps.length,
+        span_count: spanCount > 0 ? spanCount : undefined,
+        total_tokens: totalTokens,
+        total_duration_ms: totalDurationMs,
         input_preview: inputPreview,
         output_preview: outputPreview,
         has_errors: hasErrors,

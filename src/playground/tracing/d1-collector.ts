@@ -140,6 +140,27 @@ export class D1TraceCollector implements TraceCollector {
     span.output = output;
     span.error = error;
 
+    // For LLM spans, populate output_messages if they're empty and output is provided
+    // This handles the streaming case where logGeneration is called before output is available
+    if (span.span_kind === 'LLM' && span.llm && output) {
+      if (span.llm.output_messages.length === 0) {
+        // Extract content from output
+        let content: string;
+        if (typeof output === 'string') {
+          content = output;
+        } else if (typeof output === 'object' && output !== null && 'content' in output) {
+          content = String((output as { content: unknown }).content);
+        } else {
+          content = JSON.stringify(output);
+        }
+
+        span.llm.output_messages.push({
+          role: 'assistant',
+          content,
+        });
+      }
+    }
+
     // Buffer the event
     this.buffer.push({
       type: 'span_end',

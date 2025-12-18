@@ -294,8 +294,14 @@ export async function createPlaygroundDeepAgent(config: DeepAgentConfig) {
      *
      * Uses LangGraph's streamEvents for fine-grained streaming control.
      * The ReactAgent from deepagents supports this via LangGraph.
+     *
+     * @param messages - Array of messages to send to the agent
+     * @param options - Optional configuration including callbacks for tracing
      */
-    async *stream(messages: Array<{ role: string; content: string }>): AsyncGenerator<StreamEvent> {
+    async *stream(
+      messages: Array<{ role: string; content: string }>,
+      options?: { callbacks?: any[] }
+    ): AsyncGenerator<StreamEvent> {
       const messageId = `msg_${Date.now()}`;
       const DEBUG = false; // Set to true for detailed logging
 
@@ -314,7 +320,11 @@ export async function createPlaygroundDeepAgent(config: DeepAgentConfig) {
         // Set recursion limit to prevent infinite tool loops
         const eventStream = agent.streamEvents(
           { messages: agentMessages },
-          { version: 'v2', recursionLimit: DEFAULT_RECURSION_LIMIT }
+          {
+            version: 'v2',
+            recursionLimit: DEFAULT_RECURSION_LIMIT,
+            callbacks: options?.callbacks,
+          }
         );
 
         // Track tool calls for proper event emission
