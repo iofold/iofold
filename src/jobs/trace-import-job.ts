@@ -10,7 +10,7 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types';
-import { LangfuseAdapter } from '../adapters/langfuse';
+import { getAdapter } from '../services/trace-import';
 import type { Trace } from '../types/trace';
 import { JobManager } from './job-manager';
 import { SSEStream } from '../utils/sse';
@@ -124,10 +124,20 @@ export class TraceImportJob {
       }
 
       const config = integration.config as Record<string, any> || {};
-      const adapter = new LangfuseAdapter({
+
+      // Get the appropriate adapter based on platform
+      const traceAdapter = getAdapter(integration.platform as any);
+      if (!traceAdapter) {
+        throw new Error(`No adapter available for platform: ${integration.platform}`);
+      }
+
+      // For Langfuse, we need to fetch traces using the SDK (not the import adapter)
+      // This is a temporary workaround until we have a proper fetch API for all adapters
+      const Langfuse = (await import('langfuse')).default;
+      const langfuseClient = new Langfuse({
         publicKey,
         secretKey,
-        baseUrl: config.base_url as string | undefined
+        baseUrl: config.base_url as string || 'https://cloud.langfuse.com'
       });
 
       // Step 3: Fetch traces from Langfuse
@@ -139,17 +149,70 @@ export class TraceImportJob {
         total: limit
       });
 
-      const traces = await adapter.fetchTraces({
+      const response = await langfuseClient.api.traceList({
         limit,
         userId: this.config.filters?.user_ids?.[0],
         tags: this.config.filters?.tags,
-        fromTimestamp: this.config.filters?.date_from
-          ? new Date(this.config.filters.date_from)
-          : undefined,
+        fromTimestamp: this.config.filters?.date_from,
         toTimestamp: this.config.filters?.date_to
-          ? new Date(this.config.filters.date_to)
-          : undefined
       });
+
+      const tracesData = response.data || [];
+
+      // Fetch observations for each trace
+      const tracesWithObservations = await Promise.all(
+        tracesData.map(async (trace: any) => {
+          const observations = await langfuseClient.api.observationsGetMany({
+            traceId: trace.id,
+            limit: 100
+          });
+          return {
+            trace,
+            observations: observations.data || []
+          };
+        })
+      );
+
+      const traces: Trace[] = [];
+
+      // Transform traces using the adapter
+      for (const { trace, observations } of tracesWithObservations) {
+        try {
+          // Transform to OpenInference spans
+          const spans = traceAdapter.transform({ trace, observations });
+          const summary = traceAdapter.extractSummary(spans);
+
+          // Build legacy Trace format for compatibility
+          traces.push({
+            id: trace.id,
+            trace_id: trace.id,
+            steps: [], // Legacy format, not used anymore
+            source: 'langfuse',
+            raw_data: {
+              ...trace,
+              observations: observations.map((obs: any) => ({
+                id: obs.id,
+                type: obs.type,
+                name: obs.name,
+                parentObservationId: obs.parentObservationId,
+                startTime: obs.startTime,
+                endTime: obs.endTime,
+                input: obs.input,
+                output: obs.output,
+                metadata: obs.metadata,
+                model: obs.model,
+                usage: obs.usage,
+                level: obs.level,
+                statusMessage: obs.statusMessage,
+              }))
+            },
+            spans,
+            summary
+          });
+        } catch (error: any) {
+          console.warn(`Failed to transform trace ${trace.id}:`, error.message);
+        }
+      }
 
       this.emitProgress('running', 30, {
         status: `Fetched ${traces.length} traces. Starting import...`,
@@ -259,16 +322,25 @@ export class TraceImportJob {
   ): Promise<void> {
     const now = new Date().toISOString();
 
-    // Extract summary information for performance
+    // Extract summary information from spans or legacy steps
+    const spans = trace.spans || [];
     const steps = trace.steps || [];
-    const inputPreview = this.extractInputPreview(steps);
-    const outputPreview = this.extractOutputPreview(steps);
-    const hasErrors = steps.some(step => step.error);
+    const summary = trace.summary;
 
-    // Determine timestamp (use first step's timestamp or current time)
-    const timestamp = steps.length > 0 && steps[0].timestamp
-      ? steps[0].timestamp
-      : now;
+    const inputPreview = summary?.inputPreview || this.extractInputPreview(steps);
+    const outputPreview = summary?.outputPreview || this.extractOutputPreview(steps);
+    const hasErrors = summary?.hasErrors || steps.some(step => step.error);
+    const totalTokens = summary?.totalTokens || null;
+    const totalDurationMs = summary?.totalDurationMs || null;
+    const spanCount = summary?.spanCount || spans.length;
+
+    // Determine timestamp (use first span/step's timestamp or current time)
+    let timestamp = now;
+    if (spans.length > 0 && spans[0].start_time) {
+      timestamp = spans[0].start_time;
+    } else if (steps.length > 0 && steps[0].timestamp) {
+      timestamp = steps[0].timestamp;
+    }
 
     // Store trace
     const traceId = `trc_${crypto.randomUUID()}`;
@@ -282,11 +354,16 @@ export class TraceImportJob {
         source: trace.source,
         timestamp,
         metadata: trace.raw_data?.metadata || {},
-        steps,
+        steps: steps.length > 0 ? steps : [], // Legacy format
+        spans: spans.length > 0 ? spans : null, // New OpenInference format
         inputPreview,
         outputPreview,
         stepCount: steps.length,
+        spanCount: spanCount > 0 ? spanCount : null,
+        totalTokens,
+        totalDurationMs,
         hasErrors,
+        rawData: trace.raw_data,
         importedAt: now
       });
   }
