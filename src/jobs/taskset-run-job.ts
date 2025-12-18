@@ -315,7 +315,7 @@ export class TasksetRunJob {
 
   /**
    * Execute a single task and create a trace with the results
-   * Uses D1TraceCollector to create traces in the same format as playground
+   * Uses D1CallbackHandler to create traces in the same format as playground
    */
   private async executeTask(
     task: {
