@@ -3,9 +3,11 @@
  *
  * Transforms raw API trace data into optimized format for card display.
  * Handles edge cases, truncation, and message extraction.
+ * Supports both legacy steps format and new OpenInference spans format.
  */
 
 import type { Trace, ExecutionStep, Message, ToolCall } from '@/types/api'
+import type { OpenInferenceSpan } from '@/types/openinference'
 import type {
   ParsedTrace,
   TraceHeader,
@@ -23,6 +25,7 @@ const DEFAULT_CONFIG: ParserConfig = {
 
 /**
  * Main parser function - converts raw trace to ParsedTrace
+ * Prefers OpenInference spans over legacy steps format
  */
 export function parseTrace(
   trace: Trace,
@@ -31,11 +34,20 @@ export function parseTrace(
 ): ParsedTrace {
   const finalConfig = { ...DEFAULT_CONFIG, ...config }
 
+  // Prefer OpenInference spans over legacy steps
+  const useSpans = trace.spans && trace.spans.length > 0
+
   return {
     header: buildHeader(trace, traceNumber),
-    lastExchange: extractLastExchange(trace.steps || [], finalConfig),
-    toolCalls: extractToolCalls(trace.steps || []),
-    previousSteps: extractPreviousSteps(trace.steps || [], finalConfig),
+    lastExchange: useSpans
+      ? extractLastExchangeFromSpans(trace.spans!, finalConfig)
+      : extractLastExchange(trace.steps || [], finalConfig),
+    toolCalls: useSpans
+      ? extractToolCallsFromSpans(trace.spans!)
+      : extractToolCalls(trace.steps || []),
+    previousSteps: useSpans
+      ? extractPreviousStepsFromSpans(trace.spans!, finalConfig)
+      : extractPreviousSteps(trace.steps || [], finalConfig),
     raw: trace,
   }
 }
@@ -371,4 +383,146 @@ export function parseTraces(
   return traces
     .filter(validateTrace)
     .map((trace, index) => parseTrace(trace, index + 1, config))
+}
+
+// ============================================================================
+// OpenInference Span Extraction Functions
+// ============================================================================
+
+/**
+ * Extract last exchange from OpenInference spans
+ */
+function extractLastExchangeFromSpans(
+  spans: OpenInferenceSpan[],
+  config: ParserConfig
+): LastExchange {
+  if (!spans || spans.length === 0) return {}
+
+  let lastUserMessage: string | undefined
+  let lastAssistantMessage: string | undefined
+
+  // Iterate through LLM spans to find last user/assistant messages
+  for (const span of spans) {
+    if (span.span_kind === 'LLM' && span.llm) {
+      // Check input messages for user messages
+      span.llm.input_messages?.forEach((msg) => {
+        if (msg.role === 'user' && msg.content) {
+          lastUserMessage = msg.content
+        }
+      })
+
+      // Check output messages for assistant messages
+      span.llm.output_messages?.forEach((msg) => {
+        if (msg.role === 'assistant' && msg.content) {
+          lastAssistantMessage = msg.content
+        }
+      })
+    }
+  }
+
+  const exchange: LastExchange = {}
+
+  if (lastUserMessage) {
+    exchange.human = truncateMessage(lastUserMessage, config.maxMessageLength)
+  }
+
+  if (lastAssistantMessage) {
+    exchange.assistant = truncateMessage(lastAssistantMessage, config.maxMessageLength)
+  }
+
+  return exchange
+}
+
+/**
+ * Extract tool calls from OpenInference spans
+ */
+function extractToolCallsFromSpans(spans: OpenInferenceSpan[]): ParsedToolCall[] {
+  if (!spans || spans.length === 0) return []
+
+  const toolCalls: ParsedToolCall[] = []
+
+  for (const span of spans) {
+    if (span.span_kind === 'TOOL' && span.tool) {
+      // Extract module from tool name if present
+      let name = span.tool.name
+      let moduleName: string | undefined
+
+      if (name.includes('.')) {
+        const parts = name.split('.')
+        moduleName = parts.slice(0, -1).join('.')
+        name = parts[parts.length - 1]
+      }
+
+      toolCalls.push({
+        name,
+        module: moduleName,
+        arguments: span.tool.parameters as Record<string, any> | undefined,
+        result: span.tool.output,
+        error: span.status === 'ERROR' ? span.status_message : undefined,
+      })
+    }
+  }
+
+  return toolCalls
+}
+
+/**
+ * Extract previous steps from OpenInference spans
+ */
+function extractPreviousStepsFromSpans(
+  spans: OpenInferenceSpan[],
+  config: ParserConfig
+): PreviousStep[] {
+  if (!spans || spans.length === 0) return []
+
+  const previousSteps: PreviousStep[] = []
+  const toolCallsBySpanId = new Map<string, ParsedToolCall[]>()
+
+  // First pass: collect tool calls
+  for (const span of spans) {
+    if (span.span_kind === 'TOOL' && span.tool) {
+      const parentId = span.parent_span_id
+      if (parentId) {
+        const tools = toolCallsBySpanId.get(parentId) || []
+        tools.push({
+          name: span.tool.name,
+          arguments: span.tool.parameters as Record<string, any> | undefined,
+          result: span.tool.output,
+          error: span.status === 'ERROR' ? span.status_message : undefined,
+        })
+        toolCallsBySpanId.set(parentId, tools)
+      }
+    }
+  }
+
+  // Second pass: extract messages from LLM spans
+  for (const span of spans) {
+    if (span.span_kind === 'LLM' && span.llm) {
+      // Add input messages
+      span.llm.input_messages?.forEach((msg) => {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          previousSteps.push({
+            role: msg.role === 'user' ? 'human' : 'assistant',
+            content: msg.content,
+            timestamp: span.start_time,
+          })
+        }
+      })
+
+      // Add output messages
+      span.llm.output_messages?.forEach((msg) => {
+        if (msg.role === 'assistant') {
+          const tools = toolCallsBySpanId.get(span.span_id)
+          previousSteps.push({
+            role: 'assistant',
+            content: msg.content,
+            timestamp: span.end_time || span.start_time,
+            tools,
+          })
+        }
+      })
+    }
+  }
+
+  return previousSteps
 }

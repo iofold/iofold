@@ -16,6 +16,7 @@ import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 import { createDb } from './db/client';
 import { eq } from 'drizzle-orm';
 import { traces, evals, evalExecutions } from './db/schema';
+import { installLangSmithInterceptor, type LangSmithBatchPayload } from './ai/langsmith-tracer';
 
 // Re-export Sandbox Durable Object class for wrangler
 // This is required for the SANDBOX binding to work
@@ -94,6 +95,8 @@ function addCorsHeaders(response: Response): Response {
 
 // Track if we've already logged the polyfill setup (to avoid log spam on every request)
 let polyfillLogged = false;
+// Track if we've already installed the LangSmith interceptor
+let langsmithInterceptorInstalled = false;
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -125,6 +128,21 @@ export default {
       if (!polyfillLogged) {
         console.log(`[LangSmith] Tracing configured - project: ${globalThis.process.env.LANGSMITH_PROJECT}`);
         polyfillLogged = true;
+      }
+
+      // Install LangSmith interceptor to capture traces locally (once per worker lifecycle)
+      if (!langsmithInterceptorInstalled) {
+        installLangSmithInterceptor(async (payload: LangSmithBatchPayload, projectName: string) => {
+          // Log captured traces for now - can be extended to store in D1
+          const postCount = payload.post?.length || 0;
+          const patchCount = payload.patch?.length || 0;
+          console.log(`[LangSmith Interceptor] Captured ${postCount} new runs, ${patchCount} updated runs for project "${projectName}"`);
+
+          // TODO: Store in D1 traces table for local viewing/analysis
+          // This would enable showing traces in the Quick Review UI without
+          // fetching from LangSmith API
+        });
+        langsmithInterceptorInstalled = true;
       }
     }
 

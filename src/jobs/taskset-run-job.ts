@@ -6,7 +6,7 @@ import { createGatewayClient, chatCompletion, DEFAULT_MODEL } from '../ai/gatewa
 import { createDb, type Database } from '../db/client';
 import { eq, and, asc, sql } from 'drizzle-orm';
 import { tasksetTasks, traces, agents, agentVersions, integrations } from '../db/schema';
-import { D1TraceCollector } from '../playground/tracing/d1-collector';
+import { D1CallbackHandler } from '../playground/tracing/d1-callback-handler';
 
 /**
  * Simple concurrency limiter - executes async functions with a max concurrency limit
@@ -382,9 +382,8 @@ export class TasksetRunJob {
       taskMetadata: task.metadata,
     };
 
-    // Initialize trace collector (same as playground but with taskset source)
-    const collector = new D1TraceCollector(this.deps.db);
-    collector.startTrace(traceId, {
+    // Initialize trace callback handler (automatically captures multi-turn LLM interactions)
+    const traceHandler = new D1CallbackHandler(this.deps.db, traceId, {
       workspaceId: this.config.workspaceId,
       sessionId,
       agentId: agent.id,
@@ -396,29 +395,10 @@ export class TasksetRunJob {
       customMetadata: tasksetMetadata,
     });
 
-    // Track active tool call spans
-    const toolSpans = new Map<string, string>();
     let response = '';
-
-    // Create main LLM generation span
     const agentMessages = [{ role: 'user' as const, content: task.user_message }];
-    const mainSpanId = collector.startSpan({
-      traceId,
-      name: 'LLM Generation',
-      input: {
-        messages: agentMessages,
-        model: this.config.modelId || 'claude-sonnet-4-5',
-        provider: this.config.modelProvider || 'anthropic',
-      },
-    });
-    collector.logGeneration({
-      traceId,
-      spanId: mainSpanId,
-      name: 'LLM Generation',
-      input: { messages: agentMessages },
-    });
 
-    // Execute agent with timeout using streaming (to capture spans properly)
+    // Execute agent with timeout using streaming
     const timeoutMs = this.config.config?.timeout_per_task_ms || 120000;
     let hasError = false;
     let errorMessage: string | undefined;
@@ -428,56 +408,19 @@ export class TasksetRunJob {
         setTimeout(() => reject(new Error('Task timeout')), timeoutMs)
       );
 
-      // Stream events from the agent (like playground does)
+      // Stream events from the agent with trace callbacks attached
+      // The callback handler automatically captures each LLM turn and tool call
       const streamPromise = (async () => {
-        for await (const event of playgroundAgent.stream(agentMessages)) {
+        for await (const event of playgroundAgent.stream(agentMessages, {
+          callbacks: [traceHandler],
+        })) {
           // Track text for response
           if (event.type === 'text-delta' && event.text) {
             response += event.text;
           }
 
-          // Track tool calls in collector
-          if (event.type === 'tool-call-start' && event.toolCallId && event.toolName) {
-            const spanId = collector.startSpan({
-              traceId,
-              parentSpanId: mainSpanId,
-              name: event.toolName,
-              input: { toolName: event.toolName },
-            });
-            toolSpans.set(event.toolCallId, spanId);
-          } else if (event.type === 'tool-call-args' && event.toolCallId && event.args) {
-            const spanId = toolSpans.get(event.toolCallId);
-            if (spanId) {
-              try {
-                const parsedArgs = JSON.parse(event.args);
-                collector.logToolCall({
-                  traceId,
-                  spanId,
-                  toolName: 'tool',
-                  input: parsedArgs,
-                });
-              } catch {
-                collector.logToolCall({
-                  traceId,
-                  spanId,
-                  toolName: 'tool',
-                  input: { raw: event.args },
-                });
-              }
-            }
-          } else if (event.type === 'tool-result' && event.toolCallId && event.result) {
-            const spanId = toolSpans.get(event.toolCallId);
-            if (spanId) {
-              let resultData: unknown;
-              try {
-                resultData = JSON.parse(event.result);
-              } catch {
-                resultData = event.result;
-              }
-              collector.logToolResult(spanId, resultData);
-              collector.endSpan(spanId);
-            }
-          } else if (event.type === 'error') {
+          // Track errors
+          if (event.type === 'error') {
             hasError = true;
             errorMessage = typeof event.error === 'string'
               ? event.error
@@ -496,16 +439,10 @@ export class TasksetRunJob {
 
     const executionTimeMs = Date.now() - startTime;
 
-    // End main span with output
-    collector.endSpan(mainSpanId, {
-      output: response,
-      usage: { totalTokens: 0 }, // We don't have token counts here
-    });
-
     // Compare response with expected output
     const { score, scoreReason } = await this.compareOutput(response, task.expected_output);
 
-    // Update custom metadata with score results before ending trace
+    // Update custom metadata with score results before flushing trace
     // Since tasksetMetadata is passed by reference, updating it here will
     // be reflected when the trace is flushed
     tasksetMetadata.score = score;
@@ -516,8 +453,12 @@ export class TasksetRunJob {
       tasksetMetadata.error = errorMessage;
     }
 
-    // End trace (will flush to DB with proper LangGraphExecutionStep format)
-    await collector.endTrace(traceId, response);
+    // Flush trace to DB
+    try {
+      await traceHandler.flush();
+    } catch (traceError) {
+      console.warn('Failed to flush trace:', traceError);
+    }
 
     return { score, execution_time_ms: executionTimeMs };
   }

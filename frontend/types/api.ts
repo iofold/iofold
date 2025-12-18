@@ -2,13 +2,16 @@
 // Core Entities
 // ============================================================================
 
+import type { OpenInferenceSpan } from './openinference';
+
 export interface Trace {
   id: string;
   trace_id: string;
   source: 'langfuse' | 'langsmith' | 'openai';
   timestamp: string; // ISO 8601
   metadata: Record<string, any>;
-  steps: ExecutionStep[];
+  steps: ExecutionStep[]; // Legacy format - kept for backwards compatibility
+  spans?: OpenInferenceSpan[]; // New OpenInference format - prefer this over steps
   feedback?: Feedback;
   raw_data?: {
     observations?: any[];
@@ -19,6 +22,10 @@ export interface Trace {
     output_preview?: string;
     has_errors?: boolean;
   };
+  // OpenInference summary fields
+  total_tokens?: number;
+  total_duration_ms?: number;
+  span_count?: number;
 }
 
 export interface TraceSummary {

@@ -53,6 +53,7 @@ services:
       - corepack_cache:/root/.cache/node/corepack
     ports:
       - "8787:8787"
+      - "4983:4983"  # Drizzle Studio
     depends_on:
       - python-sandbox
     environment:

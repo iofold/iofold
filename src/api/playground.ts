@@ -15,7 +15,7 @@ import {
   parseJsonBody,
 } from './utils';
 import { createPlaygroundDeepAgent, type StreamEvent } from '../playground/agent-deepagents';
-import { D1TraceCollector } from '../playground/tracing/d1-collector';
+import { D1CallbackHandler } from '../playground/tracing/d1-callback-handler';
 import { createDb, type Database } from '../db/client';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { agents, agentVersions } from '../db/schema/agents';
@@ -335,25 +335,19 @@ export async function playgroundChat(
           playgroundIntegration = playgroundIntegrationResult[0];
         }
 
-        // Initialize trace collector
-        const collector = new D1TraceCollector(env.DB);
-        try {
-          collector.startTrace(traceId, {
-            workspaceId,
-            sessionId: currentSession.id,
-            agentId,
-            agentVersionId: currentSession.agentVersionId,
-            modelProvider: currentSession.modelProvider,
-            modelId: currentSession.modelId,
-            integrationId: playgroundIntegration.id as string,
-          } as any);
-        } catch (collectorError) {
-          console.warn('Failed to start trace collector:', collectorError);
-        }
+        // Initialize trace callback handler
+        // This automatically captures LLM turns and tool calls via LangChain callbacks
+        const traceHandler = new D1CallbackHandler(env.DB, traceId, {
+          workspaceId,
+          sessionId: currentSession.id,
+          agentId,
+          agentVersionId: currentSession.agentVersionId,
+          modelProvider: currentSession.modelProvider,
+          modelId: currentSession.modelId,
+          integrationId: playgroundIntegration.id as string,
+        });
 
-        // Track active tool call spans
-        const toolSpans = new Map<string, string>();
-        // Track tool calls for persistence
+        // Track tool calls for persistence in session messages
         interface ToolCallRecord {
           id: string;
           name: string;
@@ -362,103 +356,33 @@ export async function playgroundChat(
         }
         const toolCallRecords = new Map<string, ToolCallRecord>();
 
-        // Create a main LLM generation span to capture input/output
-        let mainSpanId: string | undefined;
-        try {
-          mainSpanId = collector.startSpan({
-            traceId,
-            name: 'LLM Generation',
-            input: {
-              messages: agentMessages,
-              model: currentSession.modelId,
-              provider: currentSession.modelProvider,
-            },
-          });
-          // Log as generation event
-          collector.logGeneration({
-            traceId,
-            spanId: mainSpanId,
-            name: 'LLM Generation',
-            input: { messages: agentMessages },
-          });
-        } catch (collectorError) {
-          console.warn('Failed to create main generation span:', collectorError);
-        }
-
-        // Stream events from the agent
-        for await (const event of playgroundAgent.stream(agentMessages)) {
+        // Stream events from the agent with trace callbacks attached
+        // The callback handler automatically captures each LLM turn and tool call
+        for await (const event of playgroundAgent.stream(agentMessages, {
+          callbacks: [traceHandler],
+        })) {
           // Track text for session update
           if (event.type === 'text-delta' && event.text) {
             assistantResponse += event.text;
           }
 
-          // Track tool calls in collector and for persistence
-          try {
-            if (event.type === 'tool-call-start' && event.toolCallId && event.toolName) {
-              const spanId = collector.startSpan({
-                traceId,
-                parentSpanId: mainSpanId,
-                name: event.toolName,
-                input: { toolName: event.toolName },
-              });
-              toolSpans.set(event.toolCallId, spanId);
-              // Track for persistence
-              toolCallRecords.set(event.toolCallId, {
-                id: event.toolCallId,
-                name: event.toolName,
-                args: '',
-              });
-            } else if (event.type === 'tool-call-args' && event.toolCallId && event.args) {
-              // Update args for persistence
-              const record = toolCallRecords.get(event.toolCallId);
-              if (record) {
-                record.args = event.args;
-              }
-              const spanId = toolSpans.get(event.toolCallId);
-              if (spanId) {
-                // Get toolName from the record (saved during tool-call-start), not from event
-                const toolName = record?.name || 'unknown';
-                // Log tool call with parsed args
-                try {
-                  const parsedArgs = JSON.parse(event.args);
-                  collector.logToolCall({
-                    traceId,
-                    spanId,
-                    toolName,
-                    input: parsedArgs,
-                  });
-                } catch (parseError) {
-                  // If args aren't valid JSON, log as string
-                  collector.logToolCall({
-                    traceId,
-                    spanId,
-                    toolName,
-                    input: { raw: event.args },
-                  });
-                }
-              }
-            } else if (event.type === 'tool-result' && event.toolCallId && event.result) {
-              // Update result for persistence
-              const record = toolCallRecords.get(event.toolCallId);
-              if (record) {
-                record.result = event.result;
-              }
-              const spanId = toolSpans.get(event.toolCallId);
-              if (spanId) {
-                // Parse result if possible
-                let resultData: unknown;
-                try {
-                  resultData = JSON.parse(event.result);
-                } catch {
-                  resultData = event.result;
-                }
-                collector.logToolResult(spanId, resultData);
-                collector.endSpan(spanId, resultData);
-                toolSpans.delete(event.toolCallId);
-              }
+          // Track tool calls for session persistence (separate from tracing)
+          if (event.type === 'tool-call-start' && event.toolCallId && event.toolName) {
+            toolCallRecords.set(event.toolCallId, {
+              id: event.toolCallId,
+              name: event.toolName,
+              args: '',
+            });
+          } else if (event.type === 'tool-call-args' && event.toolCallId && event.args) {
+            const record = toolCallRecords.get(event.toolCallId);
+            if (record) {
+              record.args = event.args;
             }
-          } catch (collectorError) {
-            console.warn('Error tracking event in collector:', collectorError);
+          } else if (event.type === 'tool-result' && event.toolCallId && event.result) {
+            const record = toolCallRecords.get(event.toolCallId);
+            if (record) {
+              record.result = event.result;
+            }
           }
 
           // Format and send the event
@@ -466,20 +390,11 @@ export async function playgroundChat(
           await writer.write(encoder.encode(`data: ${formattedEvent}\n\n`));
         }
 
-        // End the main LLM generation span with the response
-        if (mainSpanId) {
-          try {
-            collector.endSpan(mainSpanId, { content: assistantResponse });
-          } catch (collectorError) {
-            console.warn('Failed to end main generation span:', collectorError);
-          }
-        }
-
-        // End trace and flush to DB
+        // Flush trace data to DB
         try {
-          await collector.endTrace(traceId, assistantResponse);
-        } catch (collectorError) {
-          console.warn('Failed to end trace collector:', collectorError);
+          await traceHandler.flush();
+        } catch (traceError) {
+          console.warn('Failed to flush trace:', traceError);
         }
 
         // Update session with new messages, including traceId and tool calls for the assistant message

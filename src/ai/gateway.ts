@@ -11,7 +11,7 @@
  */
 
 import OpenAI from 'openai';
-import { wrapOpenAIWithLangSmith, type LangSmithEnv } from './langsmith-tracer';
+import { wrapOpenAIWithInterception, type LangSmithEnv } from './langsmith-tracer';
 
 /**
  * Supported AI providers through Cloudflare AI Gateway
@@ -161,8 +161,8 @@ export function createGatewayClient(env: GatewayEnv): OpenAI {
     baseURL,
   });
 
-  // Wrap with LangSmith tracing if enabled
-  return wrapOpenAIWithLangSmith(client, env);
+  // Wrap with LangSmith tracing and local interception if enabled
+  return wrapOpenAIWithInterception(client, env);
 }
 
 /**

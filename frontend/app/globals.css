@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&display=swap');
 @import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
 @config "../tailwind.config.ts";
 
 @layer base {
@@ -124,6 +126,23 @@
     --heatmap-success: #4CAF50;
     --heatmap-error: #D84315;
     --heatmap-neutral: #B2DFDB;
+
+    /* Sidebar Colors - matching brand color HSL values */
+    --sidebar: 210 20% 98%;
+    --sidebar-foreground: 215 14% 15%;
+    --sidebar-primary: 174 58% 56%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 174 37% 79%;
+    --sidebar-accent-foreground: 215 14% 15%;
+    --sidebar-border: 210 14% 84%;
+    --sidebar-ring: 174 58% 56%;
+
+    /* Chart Colors for shadcn compatibility */
+    --chart-1: 174 58% 56%;
+    --chart-2: 342 100% 71%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 45 100% 51%;
+    --chart-5: 16 25% 47%;
   }
 
   .dark {
@@ -187,6 +206,23 @@
     --chart-grid: #30363D;
     --chart-axis: #8B949E;
     --chart-text: #EAEEF2;
+
+    /* Sidebar Colors - Dark Mode (matching dark brand HSL values) */
+    --sidebar: 215 21% 11%;
+    --sidebar-foreground: 210 17% 93%;
+    --sidebar-primary: 174 58% 56%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 14% 15%;
+    --sidebar-accent-foreground: 210 17% 93%;
+    --sidebar-border: 212 12% 21%;
+    --sidebar-ring: 174 58% 56%;
+
+    /* Chart Colors - Dark Mode */
+    --chart-1: 174 58% 56%;
+    --chart-2: 342 100% 71%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 45 100% 51%;
+    --chart-5: 16 25% 47%;
   }
 }
 
@@ -380,5 +416,66 @@
     box-shadow: 0 0 10px hsl(var(--primary)), 0 0 5px hsl(var(--primary));
     opacity: 1.0;
     transform: rotate(3deg) translate(0px, -4px);
+  }
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  /* Colors wrapped in hsl() for Tailwind v4 compatibility */
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+  /* Semantic colors */
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-error: hsl(var(--error));
+  --color-error-foreground: hsl(var(--error-foreground));
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
   }
 }
