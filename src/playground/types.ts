@@ -171,7 +171,7 @@ export interface ToolCallEvent {
  * Abstract trace collector interface
  *
  * Implementations:
- * - D1TraceCollector: Persists to D1 database
+ * - D1CallbackHandler: LangChain callback handler for tracing to D1
  * - LangfuseCollector: Exports to Langfuse (future)
  * - ConsoleCollector: Debug logging (dev only)
  */

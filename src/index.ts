@@ -1,7 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { z } from 'zod';
-import { LangfuseAdapter } from './adapters/langfuse';
 import { EvalGenerator } from './eval-generator/generator';
 import { EvalTester } from './eval-generator/tester';
 import { PythonRunner } from './sandbox/python-runner';
@@ -27,9 +26,6 @@ export { Sandbox as PythonSandbox } from '@cloudflare/sandbox';
 
 export interface Env {
   DB: D1Database;
-  LANGFUSE_PUBLIC_KEY: string;
-  LANGFUSE_SECRET_KEY: string;
-  LANGFUSE_BASE_URL?: string;
   SANDBOX?: DurableObjectNamespace<SandboxType>;
   /** URL for dev Python executor service (used when sandbox binding isn't available) */
   PYTHON_EXECUTOR_URL?: string;
@@ -56,10 +52,6 @@ export interface Env {
   /** Benchmarks database for ART-E and other benchmarks (optional) */
   BENCHMARKS_DB?: D1Database;
 }
-
-const FetchTracesRequestSchema = z.object({
-  limit: z.number().int().positive().min(1).max(100).optional().default(10)
-});
 
 const GenerateEvalRequestSchema = z.object({
   name: z.string().min(1),
@@ -277,55 +269,26 @@ export default {
     // LEGACY ENDPOINTS (kept for backward compatibility)
     // ============================================================================
 
-    // Fetch traces from Langfuse
+    // Fetch traces from Langfuse - DEPRECATED
+    // Use POST /api/traces/import instead (handled by handleApiRequest above)
     if (url.pathname === '/api/traces/fetch' && request.method === 'POST') {
-      try {
-        const body = await request.json();
-        const validatedBody = FetchTracesRequestSchema.parse(body);
-        const { limit } = validatedBody;
-
-        const adapter = new LangfuseAdapter({
-          publicKey: env.LANGFUSE_PUBLIC_KEY,
-          secretKey: env.LANGFUSE_SECRET_KEY,
-          baseUrl: env.LANGFUSE_BASE_URL
-        });
-
-        const fetchedTraces = await adapter.fetchTraces({ limit });
-
-        // Store traces in D1 using batch API
-        // Note: Kept as raw SQL because D1 batch() is more efficient than individual Drizzle inserts
-        // and this legacy endpoint uses old column names (raw_data, normalized_data) not in current schema
-        const statements = fetchedTraces.map(trace =>
-          env.DB.prepare(
-            'INSERT OR REPLACE INTO traces (id, trace_id, source, raw_data, normalized_data) VALUES (?, ?, ?, ?, ?)'
-          ).bind(
-            trace.id,
-            trace.trace_id,
-            trace.source,
-            JSON.stringify(trace.raw_data),
-            JSON.stringify(trace.steps)
-          )
-        );
-
-        if (statements.length > 0) {
-          await env.DB.batch(statements);
+      return new Response(JSON.stringify({
+        error: 'DEPRECATED',
+        message: 'This endpoint is deprecated. Use POST /api/traces/import instead.',
+        migration: {
+          old_endpoint: 'POST /api/traces/fetch',
+          new_endpoint: 'POST /api/traces/import',
+          new_payload: {
+            integration_id: 'your_integration_id',
+            filters: {
+              limit: 10
+            }
+          }
         }
-
-        return new Response(JSON.stringify({
-          success: true,
-          count: fetchedTraces.length,
-          traces: fetchedTraces.map(t => ({
-            id: t.id,
-            trace_id: t.trace_id,
-            steps_count: t.steps.length,
-            source: t.source
-          }))
-        }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      } catch (error: any) {
-        return handleError(error);
-      }
+      }), {
+        status: 410, // Gone
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     // Generate eval function (legacy endpoint - now prefer /api/agents/:id/generate-eval)
