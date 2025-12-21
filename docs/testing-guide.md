@@ -185,15 +185,19 @@ frontend/e2e/
 ├── fixtures/
 │   └── clerk-auth.ts          # Clerk auth helpers and fixtures
 ├── global.setup.ts             # Clerk testing token setup
-├── 01-auth/                    # Authentication tests
-├── 02-dashboard/               # Dashboard tests
 ├── 03-traces/                  # Trace management tests
 │   ├── trace-list.spec.ts
 │   └── import-traces.spec.ts
+├── 04-accessibility/           # Accessibility tests
 ├── 04-review/                  # Review workflow tests
 ├── 05-playground/              # Playground tests
 ├── 06-evals/                   # Eval generation tests
-└── 07-accessibility/           # Accessibility tests
+├── 07-staging/                 # Staging environment tests (6 files)
+├── *-comprehensive-test.spec.ts  # Comprehensive test suites
+├── *-manual-test.spec.ts         # Manual/interactive tests
+└── *-standalone.spec.ts          # Standalone feature tests
+
+# Total: 33 test specification files
 ```
 
 ### Troubleshooting

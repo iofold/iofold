@@ -211,8 +211,8 @@ Docker uses named volumes to improve performance and prevent corruption:
 
 **Container Resource Limits**:
 - Python Sandbox: 256MB RAM, 0.5 CPU cores (matches production sandbox)
-- Backend: Unlimited (adjust in docker-compose.dev.yml if needed)
-- Frontend: Unlimited (adjust in docker-compose.dev.yml if needed)
+- Backend: Unlimited (adjust in docker-compose.yml if needed)
+- Frontend: Unlimited (adjust in docker-compose.yml if needed)
 
 **Troubleshooting Docker Issues**:
 
@@ -272,7 +272,7 @@ docker exec -it iofold-backend curl http://python-sandbox:9999/health
 **Problem**: "Module not found" after adding dependencies
 ```bash
 # Reinstall dependencies in container
-docker compose -f docker-compose.dev.yml restart backend
+docker compose restart backend
 # Or rebuild if that doesn't work
 ./scripts/dev-docker.sh rebuild
 ```
@@ -299,7 +299,7 @@ If you see weird build errors or stale content:
 ./scripts/dev-docker.sh start
 
 # 3. Nuclear option (removes all Docker state)
-docker compose -f docker-compose.dev.yml down -v --remove-orphans
+docker compose down -v --remove-orphans
 docker system prune -af --volumes
 ./scripts/dev-docker.sh start
 ```
