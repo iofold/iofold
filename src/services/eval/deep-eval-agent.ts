@@ -14,8 +14,8 @@ import { createPlaygroundTools } from '../../playground/tools/definitions';
 import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 import type { Sandbox } from '@cloudflare/sandbox';
 
-const RECURSION_LIMIT = 50;
-const WRAP_UP_THRESHOLD = 45;
+const RECURSION_LIMIT = 25;  // Reduced to avoid context overflow
+const WRAP_UP_THRESHOLD = 20;  // Start wrapping up before limit
 
 export interface DeepEvalAgentConfig {
   agentId: string;
@@ -30,155 +30,97 @@ export interface DeepEvalResult {
   code: string;
   accuracy: number;
   iterations: number;
+  testResults: {
+    correct: number;
+    incorrect: number;
+    errors: number;
+    total: number;
+  };
 }
 
 /**
  * Build the system prompt for the eval agent
  */
 function buildSystemPrompt(evalName: string): string {
-  return `You are an eval function generator. Your job is to write a Python function that accurately classifies agent trace quality based on labeled examples.
+  return `You are an eval function generator. Write a Python function that classifies agent trace quality.
 
-## Your Process
+## CRITICAL: Train/Test Split
+- You ONLY see TRAIN SET traces (70%). Test set (30%) is held out.
+- fetch_traces, get_trace_details, write_traces_to_file: TRAIN SET only
+- test_eval_code: Tests on HELD-OUT TEST SET to measure generalization
+- Low test accuracy = overfitting. Write generalizable patterns, not memorized rules.
 
-1. **Fetch samples** - Use fetch_traces to get positive and negative examples
-2. **Analyze patterns** - Study what distinguishes good from bad traces
-3. **Write eval** - Create a Python function: def eval_${evalName}(trace, ctx=None) -> tuple[float, str]
-4. **Test** - Use test_eval_code to measure accuracy
-5. **Refine** - If accuracy < 80%, analyze mismatches and improve
+## CRITICAL: Context Management
+- NEVER call get_trace_details more than 2 times
+- Use write_traces_to_file for bulk analysis
+- Keep responses SHORT
 
-## Eval Function Requirements
+## Process
+1. fetch_traces - get train set summaries
+2. write_traces_to_file - dump train traces to file
+3. read_file/execute_python_analysis - analyze patterns
+4. Write eval function using SEMANTIC patterns
+5. test_eval_code - test on held-out test set (aim >= 80%)
 
-- Signature: def eval_${evalName}(trace: dict, ctx=None) -> tuple[float, str]
-- Return: (score 0.0-1.0, "explanation string")
-- Score >= 0.5 means "positive/good quality"
-- Score < 0.5 means "negative/bad quality"
-- Allowed imports: json, re, typing, math, datetime, difflib
-
-## Trace Structure
-
-The trace dict has this structure:
-\`\`\`python
-{
-  "trace_id": "abc123",
-  "steps": [
-    {
-      "input": {"messages": [...]},  # User input
-      "output": {"content": "..."},  # Agent response
-      "tool_calls": [                # Tools called by agent
-        {"name": "search", "args": {...}, "result": {...}}
-      ],
-      "error": null  # Or error message if failed
-    }
-  ]
-}
-\`\`\`
-
-## Example Eval Functions
-
-### Example 1: Check if agent used required tools
+## Eval Function Spec
 \`\`\`python
 def eval_${evalName}(trace: dict, ctx=None) -> tuple[float, str]:
-    """Check if agent used the required tools to answer."""
+    steps = trace.get("steps", [])
+    # Score >= 0.5 = positive, < 0.5 = negative
+    return (score, "reason")
+\`\`\`
+Allowed imports: json, re, typing, math, datetime, difflib
+
+## IMPORTANT: Writing Robust Evals
+DO NOT write fragile evals that:
+- Search for exact phrases (e.g., "successfully completed")
+- Check for specific tool names that won't generalize
+- Look for hardcoded keywords from training examples
+
+DO write semantic evals that check:
+- Structural patterns (did the trace have X type of step?)
+- Outcome indicators (was the task completed? was there an error?)
+- Quality signals (appropriate tool usage, response completeness)
+- Behavioral patterns (retry logic, error handling, appropriate flow)
+
+## Example: WRONG (fragile)
+\`\`\`python
+def eval_bad(trace, ctx=None):
+    # FRAGILE: memorizes training examples
+    outputs = [s.get("output", "") for s in trace.get("steps", [])]
+    if any("email sent successfully" in str(o).lower() for o in outputs):
+        return (1.0, "Found success phrase")
+    return (0.0, "No success phrase")
+\`\`\`
+
+## Example: RIGHT (semantic)
+\`\`\`python
+def eval_${evalName}(trace: dict, ctx=None) -> tuple[float, str]:
     steps = trace.get("steps", [])
     if not steps:
-        return (0.0, "No steps in trace")
+        return (0.0, "Empty trace")
 
-    # Extract all tool calls across steps
-    tool_names = []
-    for step in steps:
-        for tc in step.get("tool_calls", []):
-            tool_names.append(tc.get("name", ""))
+    # Check for structural patterns
+    tool_calls = [tc for s in steps for tc in s.get("tool_calls", [])]
+    has_action_tools = any(
+        tc.get("name", "").lower() in ["send_email", "create_task", "update_record"]
+        for tc in tool_calls
+    )
 
-    # Check for required tools
-    has_search = any("search" in name.lower() for name in tool_names)
-    has_answer = any("answer" in name.lower() or "final" in name.lower() for name in tool_names)
+    # Check final output for completion signals
+    last_output = str(steps[-1].get("output", ""))
+    has_error = any(word in last_output.lower() for word in ["error", "failed", "exception"])
+    has_completion = len(last_output) > 50 and not has_error
 
-    if has_search and has_answer:
-        return (1.0, f"Agent used search and provided answer. Tools: {tool_names}")
-    elif has_answer:
-        return (0.5, f"Agent answered but didn't search. Tools: {tool_names}")
+    if has_action_tools and has_completion:
+        return (1.0, "Action taken with completion")
+    elif has_error:
+        return (0.0, "Error in output")
     else:
-        return (0.0, f"Agent didn't complete task. Tools: {tool_names}")
+        return (0.3, "Unclear outcome")
 \`\`\`
 
-### Example 2: Use LLM to judge response quality
-\`\`\`python
-def eval_${evalName}(trace: dict, ctx=None) -> tuple[float, str]:
-    """Use LLM to evaluate if the agent's response is correct."""
-    steps = trace.get("steps", [])
-    if not steps:
-        return (0.0, "No steps in trace")
-
-    # Get the final output
-    final_output = steps[-1].get("output", {}).get("content", "")
-    user_query = steps[0].get("input", {}).get("messages", [{}])[-1].get("content", "")
-
-    if not final_output or not user_query:
-        return (0.0, "Missing query or response")
-
-    # Use LLM to judge (ctx.call_llm available)
-    if ctx:
-        judgment = ctx.call_llm(
-            prompt=f\"\"\"Judge if this agent response correctly answers the user's question.
-
-User question: {user_query}
-
-Agent response: {final_output}
-
-Respond with only "CORRECT" or "INCORRECT" followed by a brief reason.\"\"\",
-            model="anthropic/claude-sonnet-4-5",
-            temperature=0.0,
-            max_tokens=100
-        )
-
-        is_correct = "CORRECT" in judgment.upper() and "INCORRECT" not in judgment.upper()
-        return (1.0 if is_correct else 0.0, judgment.strip())
-
-    # Fallback: basic heuristics
-    has_content = len(final_output) > 50
-    return (0.7 if has_content else 0.3, f"Response length: {len(final_output)}")
-\`\`\`
-
-### Example 3: Check for errors and completeness
-\`\`\`python
-def eval_${evalName}(trace: dict, ctx=None) -> tuple[float, str]:
-    """Check if agent completed without errors."""
-    steps = trace.get("steps", [])
-    if not steps:
-        return (0.0, "No steps in trace")
-
-    # Check for errors
-    errors = [s.get("error") for s in steps if s.get("error")]
-    if errors:
-        return (0.0, f"Errors found: {errors[0]}")
-
-    # Check for tool call failures
-    for step in steps:
-        for tc in step.get("tool_calls", []):
-            result = tc.get("result", {})
-            if isinstance(result, dict) and result.get("error"):
-                return (0.3, f"Tool {tc.get('name')} failed: {result.get('error')}")
-
-    # Check final output exists
-    final = steps[-1].get("output", {}).get("content", "")
-    if not final or len(final) < 10:
-        return (0.2, "No meaningful final output")
-
-    return (1.0, "Completed successfully without errors")
-\`\`\`
-
-## Tips
-
-- Use get_trace_details to inspect specific traces deeply
-- Focus on patterns that generalize, not trace-specific hacks
-- The ctx parameter provides call_llm() for semantic evaluation
-- Always handle missing/empty data gracefully
-
-## Success Criteria
-
-Stop when accuracy >= 80%. You have up to 5 test attempts.
-
-When you achieve >= 80% accuracy or have exhausted your attempts, output your final eval function clearly marked.`;
+## Stop when test set accuracy >= 80% or after 3 test attempts.`;
 }
 
 export class DeepEvalAgent {
@@ -217,14 +159,14 @@ export class DeepEvalAgent {
       provider: 'anthropic',
       modelId: DEFAULT_MODEL,
       env: this.config.env,
-      temperature: 0.7,
     });
 
-    // Build eval-specific tools
+    // Build eval-specific tools (with sessionId for file-based tools)
     const evalToolContext: ToolContext = {
       db: this.config.db,
       agentId: this.config.agentId,
       sandbox: this.config.sandbox,
+      sessionId,  // Enable write_traces_to_file and execute_python_analysis
     };
     const evalTools = createEvalTools(evalToolContext);
 
@@ -261,6 +203,7 @@ export class DeepEvalAgent {
     let iterations = 0;
     let bestCode = '';
     let bestAccuracy = 0;
+    let bestTestResults = { correct: 0, incorrect: 0, errors: 0, total: 0 };
     let accumulatedText = ''; // Accumulate all agent output
 
     try {
@@ -342,6 +285,12 @@ export class DeepEvalAgent {
 
                   if (result.accuracy > bestAccuracy) {
                     bestAccuracy = result.accuracy;
+                    bestTestResults = {
+                      correct: result.correct || 0,
+                      incorrect: result.incorrect || 0,
+                      errors: result.errors || 0,
+                      total: result.total || (result.correct || 0) + (result.incorrect || 0) + (result.errors || 0),
+                    };
                   }
 
                   if (result.accuracy >= 0.8) {
@@ -410,6 +359,7 @@ export class DeepEvalAgent {
       code: bestCode,
       accuracy: bestAccuracy,
       iterations,
+      testResults: bestTestResults,
     };
   }
 }

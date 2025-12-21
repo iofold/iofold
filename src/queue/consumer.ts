@@ -460,8 +460,8 @@ export class QueueConsumer {
         sandbox: this.sandboxBinding,
         sessionId,
         systemPrompt: payload.system_prompt,
-        modelProvider: 'anthropic',
-        modelId: payload.config?.model_id || 'claude-sonnet-4-5',
+        modelProvider: 'google',
+        modelId: payload.config?.model_id || 'google-vertex-ai/google/gemini-2.5-flash',
         env: {
           DB: this.db,
           CF_ACCOUNT_ID: this.cfAccountId,
@@ -500,7 +500,7 @@ export class QueueConsumer {
         tool_calls: [],
         metadata: {
           system_prompt: payload.system_prompt,
-          model_id: payload.config?.model_id || 'claude-sonnet-4-5',
+          model_id: payload.config?.model_id || 'google-vertex-ai/google/gemini-2.5-flash',
           execution_time_ms: executionTimeMs
         }
       }];

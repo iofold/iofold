@@ -103,8 +103,8 @@ export default function TasksetDetailPage() {
   // Run taskset mutation
   const runTasksetMutation = useMutation({
     mutationFn: () => apiClient.runTaskset(agentId, tasksetId, {
-      model_provider: 'anthropic',
-      model_id: 'anthropic/claude-sonnet-4-5',
+      model_provider: 'google',
+      model_id: 'google-vertex-ai/google/gemini-2.5-flash',
     }),
     onSuccess: (data) => {
       toast.success('Taskset run started!')

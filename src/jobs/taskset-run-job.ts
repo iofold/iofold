@@ -352,8 +352,8 @@ export class TasksetRunJob {
       sandbox: this.deps.sandboxBinding,
       sessionId,
       systemPrompt,
-      modelProvider: (this.config.modelProvider as any) || 'anthropic',
-      modelId: this.config.modelId || 'claude-sonnet-4-5',
+      modelProvider: (this.config.modelProvider as any) || 'google',
+      modelId: this.config.modelId || 'google-vertex-ai/google/gemini-2.5-flash',
       env: {
         DB: this.deps.db,
         BENCHMARKS_DB: this.deps.benchmarksDb,
@@ -388,8 +388,8 @@ export class TasksetRunJob {
       sessionId,
       agentId: agent.id,
       agentVersionId: agent.active_version_id || '',
-      modelProvider: (this.config.modelProvider as any) || 'anthropic',
-      modelId: this.config.modelId || 'claude-sonnet-4-5',
+      modelProvider: (this.config.modelProvider as any) || 'google',
+      modelId: this.config.modelId || 'google-vertex-ai/google/gemini-2.5-flash',
       integrationId,
       source: 'taskset',  // Use taskset as source (not playground)
       customMetadata: tasksetMetadata,

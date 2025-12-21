@@ -208,8 +208,8 @@ export async function playgroundChat(
     if (!session) {
       const sessionId = `sess_${crypto.randomUUID()}`;
       const now = new Date().toISOString();
-      const modelProvider = body.modelProvider || 'anthropic';
-      const modelId = body.modelId || 'anthropic/claude-sonnet-4-5';
+      const modelProvider = body.modelProvider || 'google';
+      const modelId = body.modelId || 'google-vertex-ai/google/gemini-2.5-flash';
       const activeVersionId = agent.active_version_id!;
 
       await drizzle.insert(playgroundSessions).values({

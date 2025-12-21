@@ -56,7 +56,7 @@ export interface StreamingCompletion {
  * @throws Error if gateway not configured
  */
 export function getStreamingClient(config: StreamingModelConfig): StreamingCompletion {
-  const { modelId, env, maxOutputTokens = 4096, temperature = 0.7 } = config;
+  const { modelId, env, maxOutputTokens = 4096, temperature = 1 } = config;
 
   // Validate model exists
   if (!MODELS[modelId]) {
@@ -76,13 +76,13 @@ export function getStreamingClient(config: StreamingModelConfig): StreamingCompl
 }
 
 /**
- * Check if a model is an OpenAI gpt-5 model that requires max_completion_tokens
- * These models don't accept max_tokens parameter
+ * Check if a model is an OpenAI model that requires max_completion_tokens
+ * GPT-5 series models don't accept the max_tokens parameter.
  */
 function isOpenAIReasoningModel(modelId: string): boolean {
   // Extract bare model name from provider-prefixed ID (e.g., "openai/gpt-5-nano" -> "gpt-5-nano")
   const bareModel = modelId.includes('/') ? modelId.split('/').pop() || modelId : modelId;
-  return bareModel.startsWith('gpt-5') || bareModel.startsWith('o1') || bareModel.startsWith('o3');
+  return bareModel.startsWith('gpt-5');
 }
 
 /**
@@ -96,7 +96,7 @@ export async function* streamCompletion(
   completion: StreamingCompletion,
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
 ): AsyncGenerator<string, void, unknown> {
-  // Build request params - use max_completion_tokens for OpenAI gpt-5/o1/o3 models
+  // Build request params - use max_completion_tokens for OpenAI gpt-5 models
   const requestParams: OpenAI.Chat.ChatCompletionCreateParams = {
     model: completion.model,
     messages,
@@ -170,7 +170,6 @@ export interface ChatModelConfig {
   provider: ModelProvider;
   modelId: string;
   env: Env;
-  temperature?: number;
   maxTokens?: number;
 }
 
@@ -190,11 +189,15 @@ export function hasApiKey(provider: ModelProvider, env: Env): boolean {
  * with custom baseURL. The gateway handles routing to the correct provider
  * based on the model prefix (anthropic/, openai/, google/).
  *
+ * IMPORTANT: Gemini models via the /compat endpoint do NOT support multiple
+ * tool calls (Gemini's OpenAI compat layer limitation). For tool-enabled
+ * agents, use Claude or GPT models.
+ *
  * Automatically enables LangSmith tracing if LANGSMITH_TRACING_V2=true
  * and LANGSMITH_API_KEY is set in the environment.
  */
 export function getChatModel(config: ChatModelConfig) {
-  const { provider, modelId, env, temperature = 0.7, maxTokens = 4096 } = config;
+  const { provider, modelId, env, maxTokens = 4096 } = config;
 
   // Construct provider-prefixed model name if not already prefixed
   let fullModelId = modelId;
@@ -233,17 +236,37 @@ export function getChatModel(config: ChatModelConfig) {
   // The gateway's /compat endpoint accepts OpenAI-compatible requests and routes
   // to the correct provider based on the model name prefix
   //
-  // For OpenAI gpt-5/o1/o3 models, use maxCompletionTokens instead of maxTokens
-  // because these models require the max_completion_tokens parameter
-  const tokenConfig = isOpenAIReasoningModel(fullModelId)
-    ? { maxCompletionTokens: maxTokens }
-    : { maxTokens };
+  // IMPORTANT: LangChain's internal isReasoningModel() doesn't recognize provider-prefixed
+  // models like "openai/gpt-5-mini". To work around this, we use modelKwargs to force
+  // max_completion_tokens for OpenAI reasoning models, and set maxTokens=-1 to prevent
+  // LangChain from adding max_tokens.
+  const isReasoning = isOpenAIReasoningModel(fullModelId);
 
+  console.log(`[getChatModel] model=${fullModelId} isReasoning=${isReasoning} maxTokens=${maxTokens}`);
+
+  if (isReasoning) {
+    // For OpenAI gpt-5 models, use modelKwargs to force max_completion_tokens
+    // and set maxTokens=-1 to prevent LangChain from adding max_tokens
+    return new ChatOpenAI({
+      model: fullModelId,
+      openAIApiKey: env.CF_AI_GATEWAY_TOKEN,
+      temperature: 1,
+      maxTokens: -1, // -1 tells LangChain not to set any token limit
+      modelKwargs: {
+        max_completion_tokens: maxTokens,
+      },
+      configuration: {
+        baseURL: `${gatewayUrl}/compat`,
+      },
+    });
+  }
+
+  // For non-reasoning models (Anthropic, Google, older OpenAI), use standard maxTokens
   return new ChatOpenAI({
     model: fullModelId,
     openAIApiKey: env.CF_AI_GATEWAY_TOKEN,
-    temperature,
-    ...tokenConfig,
+    temperature: 1,
+    maxTokens,
     configuration: {
       baseURL: `${gatewayUrl}/compat`,
     },

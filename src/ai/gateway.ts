@@ -91,6 +91,9 @@ export const MODELS: Record<string, ModelConfig> = {
     inputCostPer1M: 1.25,
     outputCostPer1M: 5.00,
   },
+  // NOTE: Gemini 3.0 Flash Preview is NOT supported via /compat endpoint
+  // because it requires thought_signatures for function calling which
+  // LangChain/OpenAI SDK doesn't handle. Use native Google GenAI SDK instead.
   // Workers AI (Cloudflare's native models)
   'workers-ai/@cf/meta/llama-3.1-8b-instruct': {
     id: 'workers-ai/@cf/meta/llama-3.1-8b-instruct',
@@ -104,7 +107,7 @@ export const MODELS: Record<string, ModelConfig> = {
 /**
  * Default model for general use
  */
-export const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
+export const DEFAULT_MODEL = 'google-vertex-ai/google/gemini-2.5-flash';
 
 /**
  * Gateway environment configuration

@@ -38,6 +38,20 @@ const DEFAULT_ALLOWED_IMPORTS = ['json', 're', 'typing', 'math', 'datetime', 'di
 
 // Extended imports for GEPA optimization (requires network access via httpx)
 export const GEPA_ALLOWED_IMPORTS = ['json', 're', 'typing', 'httpx', 'openai', 'time', 'dataclasses', 'traceback', 'asyncio'];
+
+// Data science imports for trace analysis (numpy, pandas, scikit-learn, etc.)
+export const DATASCIENCE_ALLOWED_IMPORTS = [
+  // Standard library
+  'json', 're', 'typing', 'math', 'datetime', 'difflib', 'collections', 'itertools', 'functools',
+  // Data science core
+  'numpy', 'pandas', 'scipy',
+  // Machine learning
+  'sklearn',  // scikit-learn
+  // Statistics
+  'statistics',
+  // String processing
+  'string', 'textwrap',
+];
 const BLOCKED_IMPORTS = [
   'os', 'sys', 'subprocess', 'socket', 'urllib',
   'requests', 'http', 'ftplib', 'smtplib',
@@ -309,7 +323,11 @@ print(json.dumps({'results': results}))`;
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, timeout: this.config.timeout })
+        body: JSON.stringify({
+          code,
+          timeout: this.config.timeout,
+          allowedImports: this.allowedImports,
+        })
       });
 
       const text = await response.text();

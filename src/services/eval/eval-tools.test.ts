@@ -65,7 +65,9 @@ describe('eval-tools', () => {
         expect.stringContaining("rating = ?")
       );
       // Verify rating parameter was bound correctly
-      expect(mockDb.bind).toHaveBeenCalledWith('agent_123', 'negative', 5, 0);
+      // Note: Implementation fetches 2x limit to account for train/test split filtering
+      const expectedFetchLimit = Math.ceil(5 * 2); // 10
+      expect(mockDb.bind).toHaveBeenCalledWith('agent_123', 'negative', expectedFetchLimit, 0);
     });
   });
 });

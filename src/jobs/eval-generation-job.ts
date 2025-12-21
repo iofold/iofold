@@ -130,10 +130,10 @@ export class EvalGenerationJob {
         eval_id: evalId,
         accuracy: agentResult.accuracy,
         test_results: {
-          correct: 0,
-          incorrect: 0,
-          errors: 0,
-          total: 0,
+          correct: agentResult.testResults.correct,
+          incorrect: agentResult.testResults.incorrect,
+          errors: agentResult.testResults.errors,
+          total: agentResult.testResults.total,
           details: [],
         },
       };

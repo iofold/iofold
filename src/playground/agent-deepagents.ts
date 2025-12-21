@@ -226,7 +226,6 @@ export async function createPlaygroundDeepAgent(config: DeepAgentConfig) {
     provider: config.modelProvider,
     modelId: config.modelId,
     env: config.env,
-    temperature: 0.7,
   });
 
   // Build custom tools array (only non-filesystem tools)

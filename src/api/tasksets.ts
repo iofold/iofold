@@ -719,8 +719,8 @@ export async function runTaskset(
       return createErrorResponse('VALIDATION_ERROR', 'Taskset has no tasks', 400);
     }
 
-    const modelProvider = body.model_provider || 'anthropic';
-    const modelId = body.model_id || 'anthropic/claude-sonnet-4-5';
+    const modelProvider = body.model_provider || 'google';
+    const modelId = body.model_id || 'google-vertex-ai/google/gemini-2.5-flash';
 
     // Enqueue job - jobs table tracks all status/progress
     if (!env.JOB_QUEUE) {

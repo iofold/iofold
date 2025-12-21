@@ -11,39 +11,48 @@ import { spawn } from 'node:child_process';
 const PORT = 9999;
 const DEFAULT_TIMEOUT = 5000;
 
-// Match python-runner.ts DEFAULT_ALLOWED_IMPORTS
-const ALLOWED_IMPORTS = ['json', 're', 'typing', 'math', 'datetime', 'difflib'];
+// Match python-runner.ts import lists
+const DEFAULT_ALLOWED_IMPORTS = ['json', 're', 'typing', 'math', 'datetime', 'difflib'];
+
+// Data science imports (matches DATASCIENCE_ALLOWED_IMPORTS in python-runner.ts)
+const DATASCIENCE_ALLOWED_IMPORTS = [
+  'json', 're', 'typing', 'math', 'datetime', 'difflib', 'collections', 'itertools', 'functools',
+  'numpy', 'pandas', 'scipy', 'sklearn', 'statistics', 'string', 'textwrap',
+];
+
 const BLOCKED_IMPORTS = [
   'os', 'sys', 'subprocess', 'socket', 'urllib',
   'requests', 'http', 'ftplib', 'smtplib',
   'pickle', 'shelve', 'dbm'
 ];
 
-function validateCode(code: string): string | null {
+function validateCode(code: string, allowedImports: string[] = DEFAULT_ALLOWED_IMPORTS): string | null {
   for (const blocked of BLOCKED_IMPORTS) {
     if (new RegExp(`import\\s+${blocked}|from\\s+${blocked}`, 'i').test(code)) {
       return `Blocked import: ${blocked}`;
     }
   }
-  if (/\beval\s*\(|\bexec\s*\(|\bcompile\s*\(/.test(code)) {
+  // Check for eval/exec/compile (but allow re.compile)
+  if (/(?<!\.)(\beval\s*\(|\bexec\s*\(|\bcompile\s*\()/.test(code)) {
     return 'Blocked: eval/exec/compile';
   }
   for (const match of code.matchAll(/^import\s+(\w+)/gm)) {
-    if (match[1] && !ALLOWED_IMPORTS.includes(match[1])) {
-      return `Import not whitelisted: ${match[1]}`;
+    if (match[1] && !allowedImports.includes(match[1])) {
+      return `Import not whitelisted: ${match[1]}. Allowed: ${allowedImports.join(', ')}`;
     }
   }
   for (const match of code.matchAll(/^from\s+(\w+)\s+import/gm)) {
-    if (match[1] && !ALLOWED_IMPORTS.includes(match[1])) {
-      return `Import not whitelisted: ${match[1]}`;
+    if (match[1] && !allowedImports.includes(match[1])) {
+      return `Import not whitelisted: ${match[1]}. Allowed: ${allowedImports.join(', ')}`;
     }
   }
   return null;
 }
 
-async function executePython(code: string, timeout: number) {
+async function executePython(code: string, timeout: number, allowedImports?: string[]) {
   const startTime = Date.now();
-  const validationError = validateCode(code);
+  const imports = allowedImports || DEFAULT_ALLOWED_IMPORTS;
+  const validationError = validateCode(code, imports);
   if (validationError) {
     return { success: false, error: validationError, executionTimeMs: Date.now() - startTime };
   }
@@ -92,7 +101,14 @@ const server = Bun.serve({
     if (url.pathname === '/execute' && req.method === 'POST') {
       const body = await req.json();
       if (!body.code) return Response.json({ success: false, error: 'Missing code', executionTimeMs: 0 }, { status: 400, headers: cors });
-      const result = await executePython(body.code, body.timeout || DEFAULT_TIMEOUT);
+
+      // Support custom allowedImports or preset profiles
+      let allowedImports = body.allowedImports;
+      if (body.profile === 'datascience') {
+        allowedImports = DATASCIENCE_ALLOWED_IMPORTS;
+      }
+
+      const result = await executePython(body.code, body.timeout || DEFAULT_TIMEOUT, allowedImports);
       return Response.json(result, { headers: cors });
     }
 

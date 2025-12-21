@@ -26,6 +26,9 @@ import {
 // Model configuration - synced with backend gateway.ts MODELS registry
 // All models use provider-prefixed IDs for Cloudflare AI Gateway routing
 const MODEL_OPTIONS = [
+  // Google Vertex AI - Gemini series (default first)
+  { provider: 'google', modelId: 'google-vertex-ai/google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { provider: 'google', modelId: 'google-vertex-ai/google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
   // Anthropic - Claude 4.5 series
   { provider: 'anthropic', modelId: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
   { provider: 'anthropic', modelId: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
@@ -33,9 +36,6 @@ const MODEL_OPTIONS = [
   // OpenAI - GPT-5 series
   { provider: 'openai', modelId: 'openai/gpt-5-mini', label: 'GPT-5 Mini' },
   { provider: 'openai', modelId: 'openai/gpt-5-nano', label: 'GPT-5 Nano' },
-  // Google Vertex AI - Gemini 2.5 series
-  { provider: 'google', modelId: 'google-vertex-ai/google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { provider: 'google', modelId: 'google-vertex-ai/google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
 ] as const
 
 type ModelProvider = 'anthropic' | 'openai' | 'google'
@@ -49,8 +49,8 @@ export default function AgentPlaygroundPage() {
   const [variableValues, setVariableValues] = useState<Record<string, string>>({})
   const [copied, setCopied] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
-  const [modelProvider, setModelProvider] = useState<ModelProvider>('anthropic')
-  const [modelId, setModelId] = useState('anthropic/claude-sonnet-4-5')
+  const [modelProvider, setModelProvider] = useState<ModelProvider>('google')
+  const [modelId, setModelId] = useState('google-vertex-ai/google/gemini-2.5-flash')
   const [input, setInput] = useState('')
   const [isEditingPrompt, setIsEditingPrompt] = useState(false)
   const [editedPrompt, setEditedPrompt] = useState('')

@@ -5,6 +5,7 @@ import './globals.css'
 import { Providers } from '@/components/providers'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { NProgressProvider } from '@/components/providers/nprogress-provider'
+import { PostHogProvider } from '@/components/providers/posthog-provider'
 import { SkipLink } from '@/components/skip-link'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -26,14 +27,16 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning>
         <body className={inter.className}>
-          <SkipLink />
-          <Providers>
-            <ErrorBoundary>
-              <NProgressProvider>
-                {children}
-              </NProgressProvider>
-            </ErrorBoundary>
-          </Providers>
+          <PostHogProvider>
+            <SkipLink />
+            <Providers>
+              <ErrorBoundary>
+                <NProgressProvider>
+                  {children}
+                </NProgressProvider>
+              </ErrorBoundary>
+            </Providers>
+          </PostHogProvider>
         </body>
       </html>
     </ClerkProvider>
