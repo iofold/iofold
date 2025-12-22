@@ -599,6 +599,225 @@ def print_trace_summary(trace: Trace | dict):
 
 
 # ---------------------------------------------------------------------------
+# Taskset and Job Functions
+# ---------------------------------------------------------------------------
+
+def get_recent_jobs(job_type: Optional[str] = None, limit: int = 20) -> list[dict]:
+    """
+    Fetch recent jobs from the jobs table.
+
+    Args:
+        job_type: Filter by job type (e.g., 'taskset_run', 'eval_execution')
+        limit: Maximum number of jobs to return
+    """
+    sql = """
+    SELECT
+        id,
+        type,
+        status,
+        metadata,
+        result,
+        error,
+        agent_id,
+        created_at,
+        started_at,
+        completed_at
+    FROM jobs
+    WHERE 1=1
+    """
+    params = []
+
+    if job_type:
+        sql += " AND type = ?"
+        params.append(job_type)
+
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    rows = query(sql, tuple(params))
+
+    # Parse JSON fields
+    for row in rows:
+        if row.get("metadata") and isinstance(row["metadata"], str):
+            try:
+                row["metadata"] = json.loads(row["metadata"])
+            except:
+                pass
+        if row.get("result") and isinstance(row["result"], str):
+            try:
+                row["result"] = json.loads(row["result"])
+            except:
+                pass
+
+    return rows
+
+
+def get_taskset_runs(limit: int = 10) -> list[dict]:
+    """Get recent taskset runs with parsed metadata."""
+    jobs = get_recent_jobs(job_type="taskset_run", limit=limit)
+
+    results = []
+    for job in jobs:
+        metadata = job.get("metadata", {}) or {}
+        result = job.get("result", {}) or {}
+
+        results.append({
+            "job_id": job["id"],
+            "status": job["status"],
+            "agent_id": job.get("agent_id") or metadata.get("agent_id"),
+            "taskset_id": metadata.get("taskset_id"),
+            "task_count": result.get("task_count") or metadata.get("task_count"),
+            "completed_count": result.get("completed_count"),
+            "average_score": result.get("average_score"),
+            "created_at": job["created_at"],
+            "completed_at": job["completed_at"],
+        })
+
+    return results
+
+
+def get_traces_for_job(job_id: str) -> list[dict]:
+    """
+    Fetch all traces associated with a specific job.
+
+    Traces from taskset runs store the job_id in their metadata.
+    """
+    sql = """
+    SELECT t.*
+    FROM traces t
+    WHERE json_extract(t.metadata, '$.jobId') = ?
+       OR json_extract(t.metadata, '$.job_id') = ?
+    ORDER BY t.imported_at
+    """
+    traces = query(sql, (job_id, job_id))
+
+    if not traces:
+        # Try searching in metadata as string (fallback)
+        sql = """
+        SELECT t.*
+        FROM traces t
+        WHERE t.metadata LIKE ?
+        ORDER BY t.imported_at
+        """
+        traces = query(sql, (f'%{job_id}%',))
+
+    # Parse JSON fields
+    for trace in traces:
+        if trace.get("metadata") and isinstance(trace["metadata"], str):
+            try:
+                trace["metadata"] = json.loads(trace["metadata"])
+            except:
+                pass
+
+    return traces
+
+
+def get_feedback_for_traces(trace_ids: list[str]) -> dict[str, dict]:
+    """
+    Fetch feedback for a list of trace IDs.
+
+    Returns dict mapping trace_id -> feedback record.
+    """
+    if not trace_ids:
+        return {}
+
+    placeholders = ",".join("?" * len(trace_ids))
+    sql = f"""
+    SELECT * FROM feedback
+    WHERE trace_id IN ({placeholders})
+    """
+
+    rows = query(sql, tuple(trace_ids))
+    return {row["trace_id"]: row for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# Benchmarks Database Functions
+# ---------------------------------------------------------------------------
+
+def get_benchmarks_connection(readonly: bool = True) -> sqlite3.Connection:
+    """
+    Get a connection to the benchmarks D1 database.
+    """
+    db_path = find_benchmarks_database()
+
+    if readonly:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    else:
+        conn = sqlite3.connect(db_path)
+
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def get_art_e_task(task_id: int) -> Optional[dict]:
+    """Fetch a single ART-E task by ID from the benchmarks database."""
+    try:
+        conn = get_benchmarks_connection()
+        cursor = conn.execute(
+            "SELECT * FROM art_e_tasks WHERE id = ?",
+            (task_id,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            result = dict(row)
+            # Parse message_ids JSON
+            if result.get("message_ids") and isinstance(result["message_ids"], str):
+                try:
+                    result["message_ids"] = json.loads(result["message_ids"])
+                except:
+                    pass
+            return result
+        return None
+    except Exception as e:
+        print(f"Warning: Could not fetch ART-E task {task_id}: {e}")
+        return None
+
+
+def get_art_e_tasks(limit: int = 100, split: Optional[str] = None) -> list[dict]:
+    """
+    Fetch ART-E tasks from the benchmarks database.
+
+    Args:
+        limit: Maximum number of tasks to return
+        split: Filter by split ('train' or 'test')
+    """
+    try:
+        conn = get_benchmarks_connection()
+
+        sql = "SELECT * FROM art_e_tasks WHERE 1=1"
+        params = []
+
+        if split:
+            sql += " AND split = ?"
+            params.append(split)
+
+        sql += " ORDER BY id LIMIT ?"
+        params.append(limit)
+
+        cursor = conn.execute(sql, params)
+        rows = cursor.fetchall()
+        conn.close()
+
+        results = []
+        for row in rows:
+            result = dict(row)
+            if result.get("message_ids") and isinstance(result["message_ids"], str):
+                try:
+                    result["message_ids"] = json.loads(result["message_ids"])
+                except:
+                    pass
+            results.append(result)
+
+        return results
+    except Exception as e:
+        print(f"Warning: Could not fetch ART-E tasks: {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Example Usage
 # ---------------------------------------------------------------------------
 
