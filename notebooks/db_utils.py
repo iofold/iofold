@@ -1,8 +1,12 @@
 """
 Database utilities for iofold notebook experimentation.
 
-Provides direct SQLite access to the local D1 database for trace analysis
+Provides direct SQLite access to a D1 SQLite snapshot for trace analysis
 and eval experimentation without modifying the main system.
+
+Important:
+- This module intentionally does NOT fall back to host `.wrangler` state.
+- Use the snapshot under `notebooks/data/` (or set env vars below).
 """
 
 import sqlite3
@@ -26,66 +30,82 @@ except ImportError:
 # Database Connection
 # ---------------------------------------------------------------------------
 
+def _env_path(name: str) -> Optional[Path]:
+    """Read a path from env var, returning None if unset/empty."""
+    value = os.getenv(name)
+    if not value:
+        return None
+    return Path(value).expanduser()
+
+
 def get_project_root() -> Path:
     """Get the project root directory."""
     notebook_dir = Path(__file__).parent
     return notebook_dir.parent
 
 
-def find_d1_database(required_table: str = "traces") -> Path:
+def _resolve_snapshot_db_path(*, env_var: str, default_relpath: Path, purpose: str) -> Path:
     """
-    Find the main D1 SQLite database file that contains application data.
+    Resolve the path to a D1 SQLite snapshot.
 
-    The D1 database is stored by Miniflare in .wrangler/state/v3/d1/
-    The main database has traces, agents, evals tables.
+    Precedence:
+    1) env var override
+    2) default snapshot in repo (relative path)
 
-    Args:
-        required_table: Table name that must exist in the database (default: "traces")
+    No other fallbacks are used by design.
     """
     project_root = get_project_root()
-    d1_dir = project_root / ".wrangler" / "state" / "v3" / "d1" / "miniflare-D1DatabaseObject"
 
-    if not d1_dir.exists():
-        raise FileNotFoundError(
-            f"D1 database directory not found at {d1_dir}. "
-            "Run 'pnpm run dev' first to initialize the local database."
+    override_db_path = _env_path(env_var)
+    if override_db_path is not None:
+        if not override_db_path.exists():
+            raise FileNotFoundError(
+                f"{env_var} points to missing file: {override_db_path}"
+            )
+        return override_db_path
+
+    default_path = project_root / default_relpath
+    if default_path.exists():
+        return default_path
+
+    raise FileNotFoundError(
+        f"Missing D1 snapshot for {purpose}.\n"
+        f"- Expected: {default_path}\n"
+        f"- Or set: {env_var}=/path/to/*.sqlite\n\n"
+        "To create/update the snapshot from Docker, run:\n"
+        "  ./scripts/snapshot-d1-to-notebooks-data.sh\n"
+    )
+
+
+def find_d1_database(required_table: str = "traces") -> Path:
+    """
+    Resolve the SQLite file used by notebooks.
+
+    - Main DB (traces): `IOFOLD_D1_DB_PATH` or `notebooks/data/iofold_d1_main.sqlite`
+    - Benchmarks DB (emails): `IOFOLD_BENCHMARKS_DB_PATH` or
+      `notebooks/data/iofold_benchmarks.sqlite` (if you create one)
+
+    Note: `required_table` is used only to pick which DB is intended; we do not
+    scan directories to "find" a DB.
+    """
+    if required_table == "traces":
+        return _resolve_snapshot_db_path(
+            env_var="IOFOLD_D1_DB_PATH",
+            default_relpath=Path("notebooks/data/iofold_d1_main.sqlite"),
+            purpose="main traces database",
         )
 
-    sqlite_files = list(d1_dir.glob("*.sqlite"))
-    if not sqlite_files:
-        raise FileNotFoundError(f"No SQLite files found in {d1_dir}")
+    if required_table == "emails":
+        return _resolve_snapshot_db_path(
+            env_var="IOFOLD_BENCHMARKS_DB_PATH",
+            default_relpath=Path("notebooks/data/iofold_benchmarks.sqlite"),
+            purpose="benchmarks database",
+        )
 
-    # Find the database that contains the required table
-    for db_path in sqlite_files:
-        try:
-            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                (required_table,)
-            )
-            if cursor.fetchone():
-                conn.close()
-                return db_path
-            conn.close()
-        except Exception:
-            continue
-
-    # Fallback: return the database with most tables (likely the main one)
-    max_tables = 0
-    best_db = sqlite_files[0]
-    for db_path in sqlite_files:
-        try:
-            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-            cursor = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
-            count = cursor.fetchone()[0]
-            if count > max_tables:
-                max_tables = count
-                best_db = db_path
-            conn.close()
-        except Exception:
-            continue
-
-    return best_db
+    raise ValueError(
+        f"Unsupported required_table={required_table!r}. "
+        "Use 'traces' for the main DB or 'emails' for benchmarks."
+    )
 
 
 def find_benchmarks_database() -> Path:
@@ -138,7 +158,8 @@ def query(sql: str, params: tuple = (), as_df: bool = False):
 
         if as_df:
             if not PANDAS_AVAILABLE:
-                raise ImportError("pandas is required for as_df=True. Install with: pip install pandas")
+                raise ImportError(
+                    "pandas is required for as_df=True. Install with: pip install pandas")
             return pd.DataFrame(results)
         return results
     finally:
@@ -205,8 +226,10 @@ class Trace:
             timestamp=row["timestamp"],
             imported_at=row["imported_at"],
             steps=json.loads(row["steps"]) if row["steps"] else [],
-            raw_data=json.loads(row["raw_data"]) if row.get("raw_data") else None,
-            metadata=json.loads(row["metadata"]) if row.get("metadata") else None,
+            raw_data=json.loads(row["raw_data"]) if row.get(
+                "raw_data") else None,
+            metadata=json.loads(row["metadata"]) if row.get(
+                "metadata") else None,
             input_preview=row.get("input_preview"),
             output_preview=row.get("output_preview"),
             step_count=row.get("step_count", 0),
@@ -269,8 +292,10 @@ class EvalCandidate:
             accuracy=row.get("accuracy"),
             cohen_kappa=row.get("cohen_kappa"),
             f1_score=row.get("f1_score"),
-            confusion_matrix=json.loads(row["confusion_matrix"]) if row.get("confusion_matrix") else None,
-            per_trace_results=json.loads(row["per_trace_results"]) if row.get("per_trace_results") else None,
+            confusion_matrix=json.loads(row["confusion_matrix"]) if row.get(
+                "confusion_matrix") else None,
+            per_trace_results=json.loads(row["per_trace_results"]) if row.get(
+                "per_trace_results") else None,
             total_cost_usd=row.get("total_cost_usd"),
             avg_duration_ms=row.get("avg_duration_ms"),
             created_at=row.get("created_at", ""),
@@ -284,7 +309,8 @@ class EvalCandidate:
 
 def list_tables() -> list[str]:
     """List all tables in the database."""
-    rows = query("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+    rows = query(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     return [row["name"] for row in rows]
 
 
@@ -426,7 +452,8 @@ def get_trace_statistics() -> dict:
     stats["total_traces"] = rows[0]["count"]
 
     # Traces by source
-    rows = query("SELECT source, COUNT(*) as count FROM traces GROUP BY source")
+    rows = query(
+        "SELECT source, COUNT(*) as count FROM traces GROUP BY source")
     stats["by_source"] = {row["source"]: row["count"] for row in rows}
 
     # Traces with feedback
@@ -441,8 +468,10 @@ def get_trace_statistics() -> dict:
     stats["without_feedback"] = stats["total_traces"] - stats["with_feedback"]
 
     # Feedback distribution
-    rows = query("SELECT rating, COUNT(*) as count FROM feedback GROUP BY rating")
-    stats["feedback_distribution"] = {row["rating"]: row["count"] for row in rows}
+    rows = query(
+        "SELECT rating, COUNT(*) as count FROM feedback GROUP BY rating")
+    stats["feedback_distribution"] = {
+        row["rating"]: row["count"] for row in rows}
 
     return stats
 
@@ -555,9 +584,11 @@ def trace_to_dict_for_eval(trace: Trace | dict) -> dict:
     if isinstance(result.get("steps"), str):
         result["steps"] = json.loads(result["steps"])
     if isinstance(result.get("raw_data"), str):
-        result["raw_data"] = json.loads(result["raw_data"]) if result["raw_data"] else None
+        result["raw_data"] = json.loads(
+            result["raw_data"]) if result["raw_data"] else None
     if isinstance(result.get("metadata"), str):
-        result["metadata"] = json.loads(result["metadata"]) if result["metadata"] else None
+        result["metadata"] = json.loads(
+            result["metadata"]) if result["metadata"] else None
     return result
 
 
@@ -578,7 +609,8 @@ def print_trace_summary(trace: Trace | dict):
     print(f"  External ID: {data.get('trace_id', 'N/A')}")
     print(f"  Source: {data.get('source', 'N/A')}")
     print(f"  Timestamp: {data.get('timestamp', 'N/A')}")
-    print(f"  Steps: {data.get('step_count', len(trace_obj.steps if trace_obj else []))}")
+    print(
+        f"  Steps: {data.get('step_count', len(trace_obj.steps if trace_obj else []))}")
     print(f"  Has Errors: {has_errors(trace)}")
 
     user_msg = extract_user_message(trace)

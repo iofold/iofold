@@ -1,7 +1,5 @@
-# Jupyter notebook environment for iofold eval experimentation
-jupyter>=1.0.0
-jupyterlab>=4.0.0
-ipykernel>=6.0.0
+# Marimo notebook environment for iofold eval experimentation
+marimo>=0.18.0
 
 # Data manipulation
 pandas>=2.0.0
