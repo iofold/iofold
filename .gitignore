@@ -45,6 +45,7 @@ bun.lock
 notebooks/.venv/
 notebooks/.ipynb_checkpoints/
 **/.ipynb_checkpoints/
+notebooks/data/
 *.pyc
 __pycache__/
 
