@@ -6,6 +6,7 @@ execution results with ground truth data from the ART-E benchmark.
 """
 
 import json
+import os
 import sqlite3
 import random
 import re
@@ -13,6 +14,20 @@ from dataclasses import dataclass
 from typing import Optional, Any
 from datetime import datetime
 import numpy as np
+from pathlib import Path
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Look for .env in project root (parent of notebooks/)
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+    else:
+        # Fallback to current directory
+        load_dotenv()
+except ImportError:
+    pass  # dotenv not installed, rely on environment variables
 
 # Optional imports
 try:
@@ -93,21 +108,57 @@ Provide brief reasoning for your rating.
 
 
 # ---------------------------------------------------------------------------
-# LLM Client Wrapper
+# LLM Client Wrapper (with Cloudflare AI Gateway support)
 # ---------------------------------------------------------------------------
 
-class LLMClient:
-    """Unified LLM client supporting multiple providers."""
+# Cloudflare AI Gateway configuration
+CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID", "b26e4af8b7631a2c8d99476fd7bce974")
+CF_GATEWAY_ID = os.getenv("CF_GATEWAY_ID", "iofold-ai-gw")
+CF_GATEWAY_URL = f"https://gateway.ai.cloudflare.com/v1/{CF_ACCOUNT_ID}/{CF_GATEWAY_ID}/compat"
 
-    def __init__(self, model: str = "gemini-2.5-flash", api_key: Optional[str] = None):
+# Model mapping to Cloudflare gateway format
+MODEL_GATEWAY_MAP = {
+    "gemini-2.5-flash": "google-ai-studio/gemini-2.5-flash",
+    "gemini-2.5-pro": "google-ai-studio/gemini-2.5-pro",
+    "gpt-4o-mini": "openai/gpt-4o-mini",
+    "gpt-4o": "openai/gpt-4o",
+    "gpt-5-nano": "openai/gpt-5-nano",
+    "claude-3-haiku-20240307": "anthropic/claude-3-haiku-20240307",
+    "claude-sonnet-4-5": "anthropic/claude-sonnet-4-5-20250929",
+}
+
+
+class LLMClient:
+    """Unified LLM client supporting Cloudflare AI Gateway and direct providers."""
+
+    def __init__(self, model: str = "gemini-2.5-flash", api_key: Optional[str] = None, use_gateway: bool = True):
         self.model = model
         self.api_key = api_key
+        self.use_gateway = use_gateway and bool(CF_ACCOUNT_ID)
         self._client = None
         self._setup_client()
 
     def _setup_client(self):
         """Initialize the appropriate client based on model name."""
-        if "gemini" in self.model.lower():
+        if self.use_gateway:
+            # Use Cloudflare AI Gateway with OpenAI SDK
+            if not OPENAI_AVAILABLE:
+                raise ImportError("openai not installed. Run: pip install openai")
+            # Try multiple API key sources
+            api_key = (
+                self.api_key or
+                os.getenv("CF_AI_GATEWAY_TOKEN") or
+                os.getenv("OPENAI_API_KEY") or
+                os.getenv("CF_API_KEY", "")
+            )
+            self._client = OpenAI(
+                api_key=api_key,
+                base_url=CF_GATEWAY_URL
+            )
+            # Map model to gateway format
+            self._gateway_model = MODEL_GATEWAY_MAP.get(self.model, f"openai/{self.model}")
+            print(f"Using Cloudflare AI Gateway: {self._gateway_model}")
+        elif "gemini" in self.model.lower():
             if not GEMINI_AVAILABLE:
                 raise ImportError("google-generativeai not installed. Run: pip install google-generativeai")
             if self.api_key:
@@ -126,7 +177,16 @@ class LLMClient:
 
     def generate(self, prompt: str, temperature: float = 0.3) -> str:
         """Generate a response from the LLM."""
-        if "gemini" in self.model.lower():
+        if self.use_gateway:
+            # All models go through OpenAI-compatible gateway
+            response = self._client.chat.completions.create(
+                model=self._gateway_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                max_tokens=1000
+            )
+            return response.choices[0].message.content
+        elif "gemini" in self.model.lower():
             response = self._client.generate_content(
                 prompt,
                 generation_config=genai.GenerationConfig(temperature=temperature)
@@ -454,10 +514,11 @@ def generate_feedback_for_trace(
 def get_traces_for_job(job_id: str) -> list[dict]:
     """Fetch all traces from a taskset job with their ground truth data."""
 
-    # First get traces from the main database
+    # First get traces from the main database, joining with agent_versions to get agent_id
     traces_sql = """
-    SELECT t.*
+    SELECT t.*, av.agent_id
     FROM traces t
+    LEFT JOIN agent_versions av ON t.agent_version_id = av.id
     WHERE json_extract(t.metadata, '$.jobId') = ?
        OR json_extract(t.metadata, '$.job_id') = ?
     ORDER BY t.imported_at
@@ -467,8 +528,9 @@ def get_traces_for_job(job_id: str) -> list[dict]:
     if not traces:
         # Try alternate metadata field
         traces_sql = """
-        SELECT t.*
+        SELECT t.*, av.agent_id
         FROM traces t
+        LEFT JOIN agent_versions av ON t.agent_version_id = av.id
         WHERE t.metadata LIKE ?
         ORDER BY t.imported_at
         """
@@ -499,6 +561,30 @@ def get_art_e_task(task_id: int) -> Optional[dict]:
         return None
 
 
+def get_taskset_task(task_id: str) -> Optional[dict]:
+    """Fetch taskset task from main database (for expected_output)."""
+    try:
+        rows = db_utils.query(
+            "SELECT * FROM taskset_tasks WHERE id = ?",
+            (task_id,)
+        )
+        if rows:
+            task = rows[0]
+            # Convert to format expected by extract_comparison_data
+            return {
+                "id": task["id"],
+                "answer": task.get("expected_output", ""),
+                "user_message": task.get("user_message", ""),
+                "query_date": "",  # Not available in taskset_tasks
+                "inbox_address": "",  # Not available
+                "message_ids": [],  # Not available
+            }
+        return None
+    except Exception as e:
+        print(f"Warning: Could not fetch taskset task {task_id}: {e}")
+        return None
+
+
 def generate_simulated_feedback(
     job_id: str,
     coverage: float = 0.8,
@@ -508,7 +594,9 @@ def generate_simulated_feedback(
     model: str = "gemini-2.5-flash",
     api_key: Optional[str] = None,
     dry_run: bool = False,
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
+    backend_url: str = "http://localhost:8787",
+    workspace_id: str = "workspace_default"
 ) -> "pd.DataFrame":
     """
     Generate simulated human feedback for traces from a taskset run.
@@ -521,8 +609,10 @@ def generate_simulated_feedback(
         rubric: Text rubric guiding LLM evaluation (editable)
         model: LLM model to use (gemini-2.5-flash, gpt-4o-mini, claude-3-haiku)
         api_key: Optional API key for the model
-        dry_run: If True, don't write to database, just preview
+        dry_run: If True, don't call API, just preview
         seed: Random seed for reproducibility
+        backend_url: Backend API URL (default: http://localhost:8787)
+        workspace_id: Workspace ID for API calls (default: workspace_default)
 
     Returns:
         DataFrame with columns: trace_id, task_id, rating, rating_detail,
@@ -555,21 +645,35 @@ def generate_simulated_feedback(
         if random.random() > coverage:
             continue
 
-        # Get task ID from metadata
+        # Get task ID and agent ID from trace/metadata
         metadata = trace.get("metadata", {})
         if isinstance(metadata, str):
             metadata = json.loads(metadata) if metadata else {}
 
         task_id = metadata.get("taskId") or metadata.get("task_id")
+        agent_id = trace.get("agent_id") or metadata.get("agentId") or metadata.get("agent_id")
+
         if not task_id:
             print(f"Warning: No task_id in trace {trace_id}, skipping")
             continue
 
-        # Get ground truth from ART-E
-        art_e_task = get_art_e_task(int(task_id))
-        if not art_e_task:
-            print(f"Warning: Could not find ART-E task {task_id}, skipping")
+        # Get ground truth - try taskset_tasks first (string IDs), then ART-E (numeric IDs)
+        if isinstance(task_id, str) and task_id.startswith("task_"):
+            # Taskset task ID format
+            ground_truth = get_taskset_task(task_id)
+        else:
+            # Try as numeric ART-E task ID
+            try:
+                ground_truth = get_art_e_task(int(task_id))
+            except (ValueError, TypeError):
+                ground_truth = get_taskset_task(str(task_id))
+
+        if not ground_truth:
+            print(f"Warning: Could not find task {task_id}, skipping")
             continue
+
+        # Alias for compatibility
+        art_e_task = ground_truth
 
         # Extract comparison data
         trace_dict = db_utils.trace_to_dict_for_eval(trace)
@@ -589,11 +693,15 @@ def generate_simulated_feedback(
             rating = "neutral"
             rating_detail = None
 
-        # Insert into database (unless dry_run)
+        # Insert via API (unless dry_run)
         was_inserted = False
         if not dry_run:
             try:
-                was_inserted = _insert_feedback(trace_id, rating, rating_detail)
+                was_inserted = _insert_feedback(
+                    trace_id, rating, rating_detail,
+                    agent_id=agent_id,
+                    backend_url=backend_url, workspace_id=workspace_id
+                )
             except Exception as e:
                 print(f"Error inserting feedback for trace {trace_id}: {e}")
 
@@ -624,47 +732,34 @@ def generate_simulated_feedback(
     return df
 
 
-def _insert_feedback(trace_id: str, rating: str, rating_detail: Optional[str]) -> bool:
-    """Insert or update feedback in the database."""
-    import uuid
+def _insert_feedback(trace_id: str, rating: str, rating_detail: Optional[str],
+                     agent_id: Optional[str] = None,
+                     backend_url: str = "http://localhost:8787",
+                     workspace_id: str = "workspace_default") -> bool:
+    """Insert or update feedback via the API (not direct DB writes)."""
+    import requests
 
-    db_path = db_utils.find_d1_database()
-    conn = sqlite3.connect(db_path)
+    url = f"{backend_url}/api/feedback"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Workspace-Id": workspace_id
+    }
+    payload = {
+        "trace_id": trace_id,
+        "rating": rating,
+        "notes": rating_detail  # API uses 'notes', stored as 'rating_detail'
+    }
+    # agent_id is required for feedback to appear in list queries
+    if agent_id:
+        payload["agent_id"] = agent_id
 
     try:
-        # Check if feedback already exists
-        cursor = conn.execute(
-            "SELECT id FROM feedback WHERE trace_id = ?",
-            (trace_id,)
-        )
-        existing = cursor.fetchone()
-
-        if existing:
-            # Update existing
-            conn.execute(
-                """UPDATE feedback
-                   SET rating = ?, rating_detail = ?
-                   WHERE trace_id = ?""",
-                (rating, rating_detail, trace_id)
-            )
-        else:
-            # Insert new
-            feedback_id = f"feedback_{uuid.uuid4().hex[:12]}"
-            created_at = datetime.utcnow().isoformat() + "Z"
-
-            conn.execute(
-                """INSERT INTO feedback (id, trace_id, rating, rating_detail, created_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (feedback_id, trace_id, rating, rating_detail, created_at)
-            )
-
-        conn.commit()
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response.raise_for_status()
         return True
-    except Exception as e:
-        conn.rollback()
-        raise e
-    finally:
-        conn.close()
+    except requests.exceptions.RequestException as e:
+        print(f"API error for trace {trace_id}: {e}")
+        return False
 
 
 def get_recent_taskset_runs(limit: int = 10) -> "pd.DataFrame":

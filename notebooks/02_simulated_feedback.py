@@ -17,7 +17,11 @@ def _(mo):
     - Test eval sensitivity to feedback patterns
 
     ## Prerequisites
-    1. Backend running (`pnpm run dev`)
+    1. Backend running (from project root):
+       ```bash
+       docker compose up -d
+       curl http://localhost:8787/health  # Verify backend is running
+       ```
     2. At least one taskset run completed
     3. ART-E tasks loaded in benchmarks database
     """)
@@ -43,7 +47,25 @@ def _():
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    # Local modules
+    # iofold-eval-core package - models and utilities
+    from iofold_eval_core import (
+        # Models for type annotations
+        Feedback,
+        Trace,
+        LabeledTrace,
+        # LLM utilities (can be used as alternative to feedback_simulator's LLMClient)
+        create_llm_client,
+        LLMClient as CoreLLMClient,
+        # Extraction utilities
+        extract_user_message,
+        extract_assistant_response,
+        extract_tool_calls,
+        count_tool_calls,
+        has_errors,
+        detect_issues,
+    )
+
+    # Local modules (notebook-specific logic)
     import db_utils
     from feedback_simulator import (
         generate_simulated_feedback,
@@ -57,14 +79,101 @@ def _():
     pd.set_option('display.max_colwidth', 100)
     plt.style.use('seaborn-v0_8-whitegrid')
 
+    # API helper for triggering taskset runs
+    import requests
+    import time
+    import os
+
+    BACKEND_URL = os.getenv("IOFOLD_BACKEND_URL", "http://localhost:8787")
+    WORKSPACE_ID = os.getenv("IOFOLD_WORKSPACE_ID", "workspace_default")
+
+    def api_get(endpoint: str) -> dict:
+        """Make GET request to backend API."""
+        resp = requests.get(
+            f"{BACKEND_URL}{endpoint}",
+            headers={"X-Workspace-Id": WORKSPACE_ID}
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def api_post(endpoint: str, data: dict = None) -> dict:
+        """Make POST request to backend API."""
+        resp = requests.post(
+            f"{BACKEND_URL}{endpoint}",
+            json=data or {},
+            headers={"X-Workspace-Id": WORKSPACE_ID, "Content-Type": "application/json"}
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def list_agents() -> list[dict]:
+        """List available agents from backend."""
+        try:
+            return api_get("/v1/api/agents").get("agents", [])
+        except Exception as e:
+            print(f"Warning: Could not fetch agents: {e}")
+            return []
+
+    def list_tasksets(agent_id: str) -> list[dict]:
+        """List tasksets for an agent."""
+        try:
+            return api_get(f"/v1/api/agents/{agent_id}/tasksets").get("tasksets", [])
+        except Exception as e:
+            print(f"Warning: Could not fetch tasksets: {e}")
+            return []
+
+    def trigger_taskset_run(agent_id: str, taskset_id: str) -> dict:
+        """Trigger a taskset run and return job info."""
+        return api_post(f"/v1/api/agents/{agent_id}/tasksets/{taskset_id}/run")
+
+    def get_job_status(agent_id: str, taskset_id: str, job_id: str) -> dict:
+        """Get status of a taskset run job."""
+        return api_get(f"/v1/api/agents/{agent_id}/tasksets/{taskset_id}/runs/{job_id}")
+
+    def wait_for_job(agent_id: str, taskset_id: str, job_id: str, timeout: int = 300) -> dict:
+        """Wait for a job to complete, with progress updates."""
+        start = time.time()
+        while time.time() - start < timeout:
+            status = get_job_status(agent_id, taskset_id, job_id)
+            job_status = status.get("status", "unknown")
+            print(f"  Job {job_id[:20]}... status: {job_status}")
+            if job_status in ["completed", "failed", "partial", "cancelled"]:
+                return status
+            time.sleep(5)
+        raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
+
     print("Setup complete!")
+    print(f"  - iofold_eval_core models: Feedback, Trace, LabeledTrace")
+    print(f"  - iofold_eval_core utils: extract_*, count_tool_calls, has_errors, detect_issues")
+    print(f"  - LLM clients available: create_llm_client (core), feedback_simulator.LLMClient")
+    print(f"  - Backend API: {BACKEND_URL}")
     return (
+        BACKEND_URL,
+        CoreLLMClient,
         EVALUATION_RUBRIC,
+        Feedback,
+        LabeledTrace,
+        Trace,
+        WORKSPACE_ID,
+        api_get,
+        api_post,
+        count_tool_calls,
+        create_llm_client,
         db_utils,
+        detect_issues,
+        extract_assistant_response,
+        extract_tool_calls,
+        extract_user_message,
         generate_simulated_feedback,
+        get_job_status,
         get_recent_taskset_runs,
+        has_errors,
+        list_agents,
+        list_tasksets,
         pd,
         plt,
+        trigger_taskset_run,
+        wait_for_job,
     )
 
 
@@ -79,16 +188,114 @@ def _(mo):
 
 
 @app.cell
-def _(get_recent_taskset_runs, mo):
+def _(get_recent_taskset_runs, list_agents, list_tasksets, mo, pd):
     # Get recent taskset runs
     runs = get_recent_taskset_runs(limit=10)
 
     if len(runs) > 0:
-        _output = mo.vstack([mo.md(f"Found {len(runs)} taskset runs:"), mo.ui.table(runs)])
+        # Create dropdown for job selection
+        job_options = {
+            f"{r['job_id'][:20]}... ({r['status']}, {r.get('task_count', '?')} tasks)": r['job_id']
+            for _, r in runs.iterrows()
+        }
+        # Note: marimo dropdown value must be a key (display label), not the actual value
+        first_key = list(job_options.keys())[0] if job_options else None
+        job_dropdown = mo.ui.dropdown(
+            options=job_options,
+            value=first_key,
+            label="Select Taskset Run"
+        )
+        agent_dropdown = None
+        taskset_dropdown = None
+        _output = mo.vstack([
+            mo.md(f"Found {len(runs)} taskset runs. Select one:"),
+            job_dropdown,
+            mo.ui.table(runs)
+        ])
     else:
-        _output = mo.md("No taskset runs found. Run a taskset first using the iofold UI or API.")
+        job_dropdown = None
+        # No runs - show available agents and tasksets
+        agents = list_agents()
+        if agents:
+            agent_options = {a.get('name', a['id']): a['id'] for a in agents}
+            first_agent_key = list(agent_options.keys())[0] if agent_options else None
+            agent_dropdown = mo.ui.dropdown(
+                options=agent_options,
+                value=first_agent_key,
+                label="Select Agent"
+            )
+            # Get tasksets for first agent
+            first_agent_id = list(agent_options.values())[0] if agent_options else None
+            tasksets_list = list_tasksets(first_agent_id) if first_agent_id else []
+            if tasksets_list:
+                taskset_options = {
+                    f"{t['name']} ({t.get('task_count', 0)} tasks)": t['id']
+                    for t in tasksets_list
+                }
+                first_taskset_key = list(taskset_options.keys())[0] if taskset_options else None
+                taskset_dropdown = mo.ui.dropdown(
+                    options=taskset_options,
+                    value=first_taskset_key,
+                    label="Select Taskset"
+                )
+            else:
+                taskset_dropdown = None
+            _output = mo.vstack([
+                mo.md("**No taskset runs found.** Select an agent and taskset to trigger a new run:"),
+                agent_dropdown,
+                taskset_dropdown if taskset_dropdown else mo.md("*No tasksets available for this agent*"),
+            ])
+        else:
+            agent_dropdown = None
+            taskset_dropdown = None
+            _output = mo.md("No agents found. Create an agent first using the iofold UI.")
     _output
-    return (runs,)
+    return agent_dropdown, job_dropdown, runs, taskset_dropdown
+
+
+@app.cell
+def _(agent_dropdown, db_utils, mo, runs, taskset_dropdown, trigger_taskset_run, wait_for_job):
+    # Cell: Check traces and optionally trigger taskset run
+    trigger_button = None
+    run_status = None
+
+    if len(runs) == 0 and agent_dropdown and taskset_dropdown:
+        # No runs exist - offer to trigger one
+        trigger_button = mo.ui.button(label="🚀 Trigger Taskset Run", kind="success")
+
+        if trigger_button.value:
+            # Button was clicked - trigger the run
+            try:
+                agent_id = agent_dropdown.value
+                taskset_id = taskset_dropdown.value
+                print(f"Triggering taskset run for agent={agent_id}, taskset={taskset_id}...")
+                result = trigger_taskset_run(agent_id, taskset_id)
+                job_id = result.get("job_id")
+                print(f"Job created: {job_id}")
+
+                # Wait for completion
+                print("Waiting for job to complete...")
+                final_status = wait_for_job(agent_id, taskset_id, job_id, timeout=600)
+                run_status = mo.md(f"✅ **Taskset run completed!** Job: `{job_id}` Status: `{final_status.get('status')}`\n\nRefresh the notebook to see traces.")
+            except Exception as e:
+                run_status = mo.md(f"❌ **Error triggering run:** {e}")
+
+        _output = mo.vstack([
+            mo.md("### Trigger Taskset Run"),
+            mo.md(f"No existing runs. Click below to execute taskset `{taskset_dropdown.value}`:"),
+            trigger_button,
+            run_status if run_status else mo.md(""),
+        ])
+    elif len(runs) > 0:
+        # Check trace count for first run
+        first_job = runs.iloc[0]
+        traces = db_utils.get_traces_for_job(first_job['job_id'])
+        _output = mo.md(f"✅ Found **{len(traces)} traces** for selected job `{first_job['job_id'][:20]}...`")
+    else:
+        _output = mo.md("*Select an agent and taskset above to trigger a run*")
+
+    _output
+    return run_status, trigger_button
 
 
 @app.cell(hide_code=True)
@@ -114,13 +321,18 @@ def _(mo):
 
 
 @app.cell
-def _():
+def _(job_dropdown, runs):
     # Cell tags: parameters
     # Parameters (papermill will inject values here)
     # ========================================
 
-    # Pick a job_id from the runs above
-    JOB_ID = "job_REPLACE_ME"  # <-- Replace with actual job_id
+    # Auto-select job_id from dropdown, or use first available run
+    if job_dropdown and job_dropdown.value:
+        JOB_ID = job_dropdown.value
+    elif len(runs) > 0:
+        JOB_ID = runs.iloc[0]['job_id']
+    else:
+        JOB_ID = None
 
     # Knobs
     COVERAGE = 0.8           # 80% of traces get feedback
@@ -140,7 +352,7 @@ def _():
     DRY_RUN = True  # Set to False to write to database
 
     print(f"Configuration:")
-    print(f"  Job ID: {JOB_ID}")
+    print(f"  Job ID: {JOB_ID or '(none available)'}")
     print(f"  Coverage: {COVERAGE*100:.0f}%")
     print(f"  Detail Level: {DETAIL_LEVEL}")
     print(f"  Detail Variance: {DETAIL_VARIANCE}")
@@ -320,7 +532,7 @@ def _(mo):
 def _(plt, results):
     if len(results) > 0:
         fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-    
+
         # Rating distribution
         rating_counts = results['rating'].value_counts()
         colors = {'positive': 'forestgreen', 'neutral': 'steelblue', 'negative': 'coral'}
@@ -328,21 +540,24 @@ def _(plt, results):
         axes[0].set_title('Rating Distribution')
         axes[0].set_ylabel('Count')
         axes[0].set_xticklabels(axes[0].get_xticklabels(), rotation=0)
-    
+
         # Detail score distribution
         results['detail_score'].hist(ax=axes[1], bins=20, color='steelblue', edgecolor='white')
         axes[1].axvline(x=0.5, color='red', linestyle='--', label='Threshold')
         axes[1].set_title('Detail Score Distribution')
         axes[1].set_xlabel('Detail Score')
         axes[1].legend()
-    
+
         # With vs without textual detail
         has_detail = results['rating_detail'].notna().value_counts()
-        has_detail.index = ['With Text', 'Rating Only'] if True in has_detail.index else ['Rating Only', 'With Text']
-        has_detail.plot(kind='pie', ax=axes[2], autopct='%1.1f%%', colors=['forestgreen', 'lightgray'])
+        # Rename index safely based on actual values present
+        label_map = {True: 'With Text', False: 'Rating Only'}
+        has_detail.index = [label_map.get(idx, str(idx)) for idx in has_detail.index]
+        colors = ['forestgreen' if 'With' in str(idx) else 'lightgray' for idx in has_detail.index]
+        has_detail.plot(kind='pie', ax=axes[2], autopct='%1.1f%%', colors=colors)
         axes[2].set_title('Textual Feedback Coverage')
         axes[2].set_ylabel('')
-    
+
         plt.tight_layout()
         plt.show()
     return
@@ -387,10 +602,11 @@ def _(db_utils, results):
     if len(results) > 0:
         trace_ids = results['trace_id'].tolist()[:5]
         feedback_map = db_utils.get_feedback_for_traces(trace_ids)
-    
+
         print("Feedback in database:")
         for trace_id, feedback in feedback_map.items():
-            print(f"  {trace_id[:20]}... -> {feedback['rating']} | {feedback.get('rating_detail', '(none)')[:50]}")
+            detail = feedback.get('rating_detail') or '(none)'
+            print(f"  {trace_id[:20]}... -> {feedback['rating']} | {detail[:50]}")
     return
 
 

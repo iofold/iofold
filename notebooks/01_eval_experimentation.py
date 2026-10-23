@@ -1,3 +1,11 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "marimo",
+#     "pyzmq",
+# ]
+# ///
+
 import marimo
 
 __generated_with = "0.18.4"
@@ -13,7 +21,11 @@ def _(mo):
 
     ## Setup
 
-    1. Make sure the backend is running (`pnpm run dev` in project root)
+    1. Make sure the backend is running (from project root):
+       ```bash
+       docker compose up -d
+       curl http://localhost:8787/health  # Verify backend is running
+       ```
     2. Install dependencies: `pip install -r requirements.txt`
     3. Run cells in order
 
@@ -49,9 +61,28 @@ def _():
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    # Statistics
-    from scipy import stats
-    from sklearn.metrics import confusion_matrix, cohen_kappa_score, f1_score, accuracy_score
+    # iofold-eval-core package imports
+    from iofold_eval_core import (
+        # Extraction utilities
+        extract_user_message,
+        extract_assistant_response,
+        extract_tool_calls,
+        has_errors,
+        detect_issues,
+        # Metrics utilities
+        calculate_confusion_matrix,
+        accuracy as calc_accuracy,
+        precision as calc_precision,
+        recall as calc_recall,
+        f1_score as calc_f1_score,
+        pearson_correlation,
+        cohen_kappa,
+        # LLM utilities
+        OpenAIClient,
+        create_llm_client,
+        # Serialization utilities
+        trace_to_dict_for_eval,
+    )
 
     # LLM clients (optional, for LLM-as-judge evals)
     try:
@@ -66,7 +97,7 @@ def _():
     except ImportError:
         ANTHROPIC_AVAILABLE = False
 
-    # Local utilities
+    # Local utilities (for database queries - notebook-specific)
     import db_utils
 
     # Display settings
@@ -79,16 +110,24 @@ def _():
     print(f"Anthropic available: {ANTHROPIC_AVAILABLE}")
     return (
         OPENAI_AVAILABLE,
-        accuracy_score,
-        cohen_kappa_score,
-        confusion_matrix,
+        calc_accuracy,
+        calc_f1_score,
+        calc_precision,
+        calc_recall,
+        calculate_confusion_matrix,
+        cohen_kappa,
         db_utils,
-        f1_score,
+        detect_issues,
+        extract_assistant_response,
+        extract_tool_calls,
+        extract_user_message,
+        has_errors,
         json,
         np,
         pd,
+        pearson_correlation,
         plt,
-        stats,
+        trace_to_dict_for_eval,
     )
 
 
@@ -163,16 +202,16 @@ def _(db_utils, mo):
 
 
 @app.cell
-def _(db_utils, traces_df):
+def _(db_utils, extract_tool_calls, has_errors, traces_df):
     # Examine a single trace in detail
     if len(traces_df) > 0:
         sample_trace_id = traces_df.iloc[0]['id']
         trace = db_utils.get_trace_by_id(sample_trace_id)
-    
+
         if trace:
             print("Sample Trace Details:")
             db_utils.print_trace_summary(trace)
-        
+
             print("\n--- Steps Structure ---")
             for i, step in enumerate(trace.steps[:3]):  # First 3 steps
                 print(f"\nStep {i}:")
@@ -203,7 +242,7 @@ def _(db_utils, pd):
         labeled_df = pd.DataFrame(labeled_traces)
         print("\nRating distribution:")
         print(labeled_df['rating'].value_counts())
-    
+
         print("\nHuman score distribution:")
         print(labeled_df['human_score'].describe())
     return (labeled_traces,)
@@ -266,20 +305,21 @@ def _():
 
 
 @app.cell
-def _(db_utils):
+def _(extract_assistant_response):
     # Example Eval Function 1: Simple heuristic-based eval
     def eval_response_length(task: dict, task_metadata: dict, trace: dict, ctx) -> tuple[float, str]:
         """
         Simple eval: Score based on response length.
         Longer responses get higher scores (up to a point).
         """
-        response = db_utils.extract_assistant_response(trace)
-    
+        # Use iofold_eval_core extraction function
+        response = extract_assistant_response(trace)
+
         if not response:
             return (0.0, "No assistant response found")
-    
+
         length = len(response)
-    
+
         # Score based on length brackets
         if length < 50:
             score = 0.2
@@ -293,7 +333,7 @@ def _(db_utils):
         else:
             score = 1.0
             feedback = "Response is comprehensive"
-    
+
         return (score, f"{feedback} ({length} chars)")
 
     print("Eval function 'eval_response_length' defined.")
@@ -301,32 +341,36 @@ def _(db_utils):
 
 
 @app.cell
-def _(json):
+def _(has_errors, json):
     # Example Eval Function 2: Error detection
     def eval_no_errors(task: dict, task_metadata: dict, trace: dict, ctx) -> tuple[float, str]:
         """
         Eval: Penalize traces with errors.
+        Uses iofold_eval_core has_errors for initial check.
         """
+        # Quick check using iofold_eval_core
+        if not has_errors(trace):
+            return (1.0, "No errors detected")
+
+        # If errors exist, count them for detailed feedback
         steps = trace.get('steps', [])
         if isinstance(steps, str):
             steps = json.loads(steps)
-    
+
         error_count = 0
         error_messages = []
-    
+
         for step in steps:
             if step.get('error'):
                 error_count += 1
                 error_messages.append(step['error'][:50])
-        
+
             for tc in step.get('tool_calls', []):
                 if tc.get('error'):
                     error_count += 1
                     error_messages.append(tc['error'][:50])
-    
-        if error_count == 0:
-            return (1.0, "No errors detected")
-        elif error_count <= 2:
+
+        if error_count <= 2:
             return (0.5, f"Minor errors: {'; '.join(error_messages[:2])}")
         else:
             return (0.0, f"Multiple errors ({error_count}): {'; '.join(error_messages[:3])}")
@@ -336,16 +380,18 @@ def _(json):
 
 
 @app.cell
-def _(db_utils):
+def _(extract_tool_calls):
     # Example Eval Function 3: Tool usage efficiency
     def eval_tool_efficiency(task: dict, task_metadata: dict, trace: dict, ctx) -> tuple[float, str]:
         """
         Eval: Score based on reasonable tool usage.
         Penalize too few or too many tool calls.
+        Uses iofold_eval_core extraction function.
         """
-        tool_calls = db_utils.extract_tool_calls(trace)
+        # Use iofold_eval_core extraction function
+        tool_calls = extract_tool_calls(trace)
         num_tools = len(tool_calls)
-    
+
         if num_tools == 0:
             # No tools - might be okay for simple tasks
             return (0.6, "No tool calls - may be appropriate for simple queries")
@@ -370,19 +416,21 @@ def _(mo):
 
 @app.cell
 def _(
-    accuracy_score,
-    cohen_kappa_score,
-    confusion_matrix,
+    calc_accuracy,
+    calc_f1_score,
+    calculate_confusion_matrix,
+    cohen_kappa,
     ctx,
-    db_utils,
-    f1_score,
-    np,
-    stats,
+    extract_user_message,
+    pearson_correlation,
+    trace_to_dict_for_eval,
 ):
     def test_eval_function(eval_fn, labeled_traces: list[dict]) -> dict:
         """
         Test an eval function against labeled traces and compute metrics.
-    
+
+        Uses iofold_eval_core metrics for calculations.
+
         Returns dict with:
         - predictions: list of (trace_id, predicted_score, human_score)
         - pearson_r: Pearson correlation coefficient
@@ -392,17 +440,19 @@ def _(
         - confusion_matrix: dict with tp, tn, fp, fn
         """
         predictions = []
-    
+        pred_scores = []
+        human_scores = []
+
         for trace_row in labeled_traces:
-            # Prepare trace dict
-            trace_dict = db_utils.trace_to_dict_for_eval(trace_row)
-        
-            # Prepare task dict
-            task = {"user_message": db_utils.extract_user_message(trace_dict) or ""}
-        
+            # Prepare trace dict using iofold_eval_core utility
+            trace_dict = trace_to_dict_for_eval(trace_row)
+
+            # Prepare task dict using iofold_eval_core extraction
+            task = {"user_message": extract_user_message(trace_dict) or ""}
+
             # Empty task_metadata for now
             task_metadata = {}
-        
+
             try:
                 score, feedback = eval_fn(task, task_metadata, trace_dict, ctx)
                 predictions.append({
@@ -412,6 +462,8 @@ def _(
                     "feedback": feedback,
                     "human_rating": trace_row["rating"]
                 })
+                pred_scores.append(score)
+                human_scores.append(trace_row["human_score"])
             except Exception as e:
                 print(f"Error evaluating trace {trace_row['id']}: {e}")
                 predictions.append({
@@ -421,40 +473,38 @@ def _(
                     "feedback": f"Error: {e}",
                     "human_rating": trace_row["rating"]
                 })
-    
+                pred_scores.append(0.5)
+                human_scores.append(trace_row["human_score"])
+
         if not predictions:
             return {"error": "No predictions made"}
-    
-        # Calculate metrics
-        pred_scores = np.array([p["predicted_score"] for p in predictions])
-        human_scores = np.array([p["human_score"] for p in predictions])
-    
+
+        # Calculate metrics using iofold_eval_core metrics module
         # Pearson correlation
-        if len(set(pred_scores)) > 1 and len(set(human_scores)) > 1:
-            pearson_r, pearson_p = stats.pearsonr(pred_scores, human_scores)
-        else:
-            pearson_r, pearson_p = 0.0, 1.0
-    
-        # Binary classification at 0.5 threshold
-        pred_binary = (pred_scores >= 0.5).astype(int)
-        human_binary = (human_scores >= 0.5).astype(int)
-    
-        acc = accuracy_score(human_binary, pred_binary)
-        kappa = cohen_kappa_score(human_binary, pred_binary)
-        f1 = f1_score(human_binary, pred_binary, zero_division=0)
-    
-        # Confusion matrix
-        cm = confusion_matrix(human_binary, pred_binary, labels=[0, 1])
-        tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
-    
+        pearson_r = pearson_correlation(pred_scores, human_scores)
+
+        # Confusion matrix and derived metrics
+        cm = calculate_confusion_matrix(pred_scores, human_scores, threshold=0.5)
+        acc = calc_accuracy(cm)
+        f1 = calc_f1_score(cm)
+
+        # Cohen's kappa
+        total = len(labeled_traces)
+        kappa = cohen_kappa(cm, total)
+
         return {
             "predictions": predictions,
             "pearson_r": pearson_r,
-            "pearson_p": pearson_p,
+            "pearson_p": 0.0,  # Not computed by iofold_eval_core (use scipy if needed)
             "accuracy": acc,
             "cohen_kappa": kappa,
             "f1_score": f1,
-            "confusion_matrix": {"tp": int(tp), "tn": int(tn), "fp": int(fp), "fn": int(fn)}
+            "confusion_matrix": {
+                "tp": cm["true_positive"],
+                "tn": cm["true_negative"],
+                "fp": cm["false_positive"],
+                "fn": cm["false_negative"]
+            }
         }
 
     print("Test function defined.")
@@ -478,7 +528,7 @@ def _(
             _result = test_eval_function(eval_fn, labeled_traces)
             _result['name'] = name
             results.append(_result)
-            print(f"  Pearson r: {_result['pearson_r']:.3f} (p={_result['pearson_p']:.3f})")
+            print(f"  Pearson r: {_result['pearson_r']:.3f}")
             print(f"  Accuracy:  {_result['accuracy']:.3f}")
             print(f"  Cohen's k: {_result['cohen_kappa']:.3f}")
             print(f"  F1 Score:  {_result['f1_score']:.3f}")
@@ -550,33 +600,44 @@ def _(mo):
 
 
 @app.cell
-def _(db_utils, labeled_traces, test_eval_function):
+def _(extract_assistant_response, extract_tool_calls, labeled_traces, test_eval_function):
     # Template for custom eval function
     def my_custom_eval(task: dict, task_metadata: dict, trace: dict, ctx) -> tuple[float, str]:
         """
         Your custom eval function.
-    
+
         Args:
             task: {"user_message": "the user's request"}
             task_metadata: Additional context (expected_output, success_criteria, etc.)
             trace: The agent's execution trace with steps, tool_calls, etc.
             ctx: EvalContext with LLM access (ctx.call_llm()) and utilities
-    
+
         Returns:
             (score, feedback) where score is 0.0-1.0 and feedback explains the score
         """
-        user_message = task.get('user_message', '')  # Extract useful data
-        assistant_response = db_utils.extract_assistant_response(trace)
-        tool_calls = db_utils.extract_tool_calls(trace)
+        # Extract useful data using iofold_eval_core functions
+        user_message = task.get('user_message', '')
+        assistant_response = extract_assistant_response(trace)
+        tool_calls = extract_tool_calls(trace)
+
+        # Your evaluation logic here
+        # TODO: Implement your custom logic
+        # For example:
+        # - Check response relevance to user message
+        # - Verify tool usage is appropriate
+        # - Check for specific patterns or content
+        # - Use ctx.call_llm() for semantic evaluation
+
         score = 0.5
         feedback = 'Default evaluation'
-        return (score, feedback)  # Your evaluation logic here
-    if labeled_traces:  # Example: Check if response mentions key terms from the user message
-        print('Testing custom eval...')  # Default score
-        _result = test_eval_function(my_custom_eval, labeled_traces[:10])
-        print(f"Accuracy: {_result['accuracy']:.3f}")
+        return (score, feedback)
+
     # Test your custom eval
-        print(f"Cohen's Kappa: {_result['cohen_kappa']:.3f}")  # TODO: Implement your custom logic  # For example:  # - Check response relevance to user message  # - Verify tool usage is appropriate  # - Check for specific patterns or content  # - Use ctx.call_llm() for semantic evaluation  # Test on first 10
+    if labeled_traces:
+        print('Testing custom eval...')
+        _result = test_eval_function(my_custom_eval, labeled_traces[:10])  # Test on first 10
+        print(f"Accuracy: {_result['accuracy']:.3f}")
+        print(f"Cohen's Kappa: {_result['cohen_kappa']:.3f}")
     return
 
 
@@ -591,30 +652,51 @@ def _(mo):
 
 
 @app.cell
-def _(OPENAI_AVAILABLE, db_utils, json, labeled_traces):
+def _(OPENAI_AVAILABLE, extract_assistant_response, json, labeled_traces):
     # LLM-as-Judge eval function (requires API keys)
     def eval_llm_judge(task: dict, task_metadata: dict, trace: dict, ctx) -> tuple[float, str]:
         """
         Use an LLM to evaluate the trace quality.
+        Uses iofold_eval_core extraction for response extraction.
         """
         user_message = task.get('user_message', '')
-        assistant_response = db_utils.extract_assistant_response(trace)
+        # Use iofold_eval_core extraction function
+        assistant_response = extract_assistant_response(trace)
+
         if not assistant_response:
             return (0.0, 'No response to evaluate')
-        prompt = f"""Evaluate this AI assistant response on a scale of 0-10.\n\nUser Request: {user_message[:500]}\n\nAssistant Response: {assistant_response[:1000]}\n\nRate the response based on:\n1. Relevance: Does it address the user's request?\n2. Completeness: Is it thorough?\n3. Accuracy: Is the information correct?\n4. Clarity: Is it well-written?\n\nRespond with ONLY a JSON object:\n{{"score": <0-10>, "reasoning": "<brief explanation>"}}"""
+
+        prompt = f"""Evaluate this AI assistant response on a scale of 0-10.
+
+User Request: {user_message[:500]}
+
+Assistant Response: {assistant_response[:1000]}
+
+Rate the response based on:
+1. Relevance: Does it address the user's request?
+2. Completeness: Is it thorough?
+3. Accuracy: Is the information correct?
+4. Clarity: Is it well-written?
+
+Respond with ONLY a JSON object:
+{{"score": <0-10>, "reasoning": "<brief explanation>"}}"""
+
         try:
             response = ctx.call_llm(prompt, model='gpt-4o-mini', temperature=0)
             _result = json.loads(response)
-            score = _result.get('score', 5) / 10.0
+            score = _result.get('score', 5) / 10.0  # Normalize to 0-1
             reasoning = _result.get('reasoning', 'No reasoning provided')
             return (score, reasoning)
         except Exception as e:
             return (0.5, f'LLM evaluation failed: {e}')
+
+    # Test LLM judge (only if API is available)
     if OPENAI_AVAILABLE and labeled_traces:
         print('LLM-as-Judge eval defined. Set ctx.openai to test.')
+        # Initialize OpenAI client (add your API key)
+        # ctx.openai = OpenAI(api_key="your-api-key")
     else:
-    # Test LLM judge (only if API is available)
-        print('OpenAI not available or no labeled traces. Skipping LLM eval test.')  # Parse JSON response  # Normalize to 0-1  # Initialize OpenAI client (add your API key)  # ctx.openai = OpenAI(api_key="your-api-key")
+        print('OpenAI not available or no labeled traces. Skipping LLM eval test.')
     return
 
 
@@ -635,20 +717,29 @@ def _():
         """Export an eval function to a standalone Python file."""
         import inspect
         source = inspect.getsource(eval_fn)
-    
+
         template = '''"""Auto-generated eval function from notebook experimentation."""
-    import json
-    from typing import Any, Optional
+import json
+from typing import Any, Optional
 
-    {source}
+# iofold-eval-core imports for extraction utilities
+from iofold_eval_core import (
+    extract_user_message,
+    extract_assistant_response,
+    extract_tool_calls,
+    has_errors,
+    detect_issues,
+)
 
-    # Main function that will be called by the eval runner
-    eval_function = {fn_name}
-    '''.format(source=source, fn_name=eval_fn.__name__)
-    
+{source}
+
+# Main function that will be called by the eval runner
+eval_function = {fn_name}
+'''.format(source=source, fn_name=eval_fn.__name__)
+
         with open(filepath, 'w') as f:
             f.write(template)
-    
+
         print(f"Exported to {filepath}")
 
     # Example: export_eval_function(eval_response_length, "my_eval.py")
