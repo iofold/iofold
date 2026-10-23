@@ -288,10 +288,12 @@ Tests include console.log statements for debugging:
 
 ### Tests failing locally
 
-1. Ensure dev server is running: `pnpm run dev`
-2. Clear browser cache
-3. Check base URL in config
-4. Verify element selectors are up to date
+1. Ensure containers are running: `docker compose up -d`
+2. Check container status: `docker compose ps`
+3. View logs: `docker logs iofold-frontend` or `docker logs iofold-backend`
+4. Clear browser cache
+5. Check base URL in config
+6. Verify element selectors are up to date
 
 ### Color contrast failures
 

@@ -57,7 +57,7 @@ All services run in Docker with auto-restart:
 
 **Services**: Frontend (:3000) | Backend (:8787) | Python Sandbox (:9999)
 
-**Required**: `CLOUDFLARE_API_TOKEN` in `.dev.vars`
+**Required**: `CLOUDFLARE_API_TOKEN` in `.env`
 
 See [Docker Development](#option-a-docker-development-recommended) for full details.
 
@@ -83,7 +83,7 @@ All services run in Docker containers with auto-restart:
 **Prerequisites**:
 - Docker Engine 20.10+ or Docker Desktop
 - Docker Compose V2
-- `CLOUDFLARE_API_TOKEN` in `.dev.vars`
+- `CLOUDFLARE_API_TOKEN` in `.env`
 
 **Quick Start**:
 ```bash
@@ -168,13 +168,13 @@ All services run in Docker containers with auto-restart:
 
 **Environment Variables**:
 
-Docker setup requires a `.dev.vars` file in your home directory (`~/.dev.vars`). Copy from `.env.example`:
+Docker setup requires a `.env` file in the project root. Copy from `.env.example`:
 ```bash
-# Copy template to home directory
-cp .env.example ~/.dev.vars
+# Copy template
+cp .env.example .env
 
 # Edit with your API keys
-nano ~/.dev.vars
+nano .env
 ```
 
 **Required variables**:
@@ -325,20 +325,27 @@ docker stats
 docker inspect iofold-backend
 ```
 
-#### Option B: Native Development (Traditional)
+#### Option B: Docker Compose (Simplified)
 
-**Access**:
+For a simpler Docker workflow without the dev script:
+
 ```bash
-# Backend
-cd /home/ygupta/workspace/iofold
-pnpm dev
+# Start all services
+docker compose up -d
 
-# Frontend
-cd /home/ygupta/workspace/iofold/frontend
-pnpm dev
+# View logs
+docker logs -f iofold-backend    # Backend :8787
+docker logs -f iofold-frontend   # Frontend :3000
+
+# Execute commands in container
+docker exec iofold-backend <command>
+docker exec iofold-frontend <command>
+
+# Stop services
+docker compose down
 ```
 
-**Note**: Native development requires local installation of Node.js 22+, pnpm, and Python 3.11+ for the sandbox service.
+**Note**: This is the preferred method for local development. The dev script provides additional convenience commands.
 
 ### 2. Staging
 

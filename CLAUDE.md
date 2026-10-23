@@ -16,18 +16,16 @@ After ANY task: `docs/progress_log.ndjson` (see user CLAUDE.md for jq protocol)
 ## Commands
 
 ```bash
-# Dev servers
-pnpm run dev                    # Backend :8787
-cd frontend && pnpm dev         # Frontend :3000
+# Dev servers (Docker - recommended)
+docker compose up -d            # Start all services
+docker logs -f iofold-backend   # View backend logs (:8787)
+docker logs -f iofold-frontend  # View frontend logs (:3000)
+docker compose down             # Stop all services
+docker exec iofold-backend CMD  # Run command in backend container
 
 # Tests
 pnpm test                       # Unit
 cd frontend && pnpm test:e2e    # E2E
-
-# Docker
-docker compose up -d            # Start all
-docker logs -f iofold-backend   # Logs
-docker exec iofold-backend CMD  # Run command
 
 # Deploy to staging (run from repo root)
 npx wrangler deploy --env staging                    # Backend → api.staging.iofold.com

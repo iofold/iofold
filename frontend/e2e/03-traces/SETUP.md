@@ -3,8 +3,9 @@
 ## Prerequisites
 
 - Node.js installed
+- Docker and Docker Compose installed
 - Frontend dependencies installed (`pnpm install`)
-- Development server running (`pnpm run dev`)
+- Services running via Docker (`docker compose up -d`)
 
 ## Installation Steps
 
@@ -38,10 +39,14 @@ Should output: `Version 1.48.2` (or similar)
 ### Quick Start
 
 ```bash
-# Start dev server (in one terminal)
-pnpm run dev
+# Start all services via Docker
+docker compose up -d
 
-# Run all traces tests (in another terminal)
+# View logs (optional)
+docker logs -f iofold-backend    # Backend :8787
+docker logs -f iofold-frontend   # Frontend :3000
+
+# Run all traces tests
 pnpm exec playwright test e2e/03-traces
 ```
 
@@ -145,9 +150,10 @@ pnpm exec playwright install
 
 ### "Target closed" or "Navigation timeout"
 
-Dev server not running:
+Containers not running:
 ```bash
-pnpm run dev
+docker compose up -d
+docker compose ps   # Verify containers are running
 ```
 
 ### "No tests found"
@@ -182,6 +188,16 @@ Should not cause test failures.
 Tests are CI-ready. In your CI config:
 
 ```yaml
+- name: Start services
+  run: docker compose up -d
+
+- name: Wait for services
+  run: |
+    # Wait for backend
+    timeout 60 bash -c 'until curl -s http://localhost:8787/health; do sleep 2; done'
+    # Wait for frontend
+    timeout 60 bash -c 'until curl -s http://localhost:3000; do sleep 2; done'
+
 - name: Install Playwright
   run: pnpm exec playwright install --with-deps
 
@@ -194,6 +210,10 @@ Tests are CI-ready. In your CI config:
   with:
     name: playwright-report
     path: playwright-report/
+
+- name: Stop services
+  if: always()
+  run: docker compose down
 ```
 
 ## Getting Help

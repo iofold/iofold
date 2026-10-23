@@ -25,11 +25,12 @@ export LANGFUSE_BASE_URL="https://cloud.langfuse.com"
 
 3. **Start Backend and Frontend**:
 ```bash
-# Terminal 1: Backend
-pnpm run dev
+# Start all services via Docker
+docker compose up -d
 
-# Terminal 2: Frontend
-cd frontend && pnpm run dev
+# View logs (optional)
+docker logs -f iofold-backend    # Backend :8787
+docker logs -f iofold-frontend   # Frontend :3000
 ```
 
 ### Run Tests
@@ -286,20 +287,30 @@ jobs:
           node-version: 18
       - run: pnpm install --frozen-lockfile
       - run: npx playwright install --with-deps chromium
-      - run: pnpm run dev &
-      - run: cd frontend && pnpm run dev &
+      - name: Start services
+        run: docker compose up -d
+      - name: Wait for services
+        run: |
+          # Wait for backend
+          timeout 60 bash -c 'until curl -s http://localhost:8787/health; do sleep 2; done'
+          # Wait for frontend
+          timeout 60 bash -c 'until curl -s http://localhost:3000; do sleep 2; done'
       - run: npx playwright test
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+      - name: Stop services
+        if: always()
+        run: docker compose down
 ```
 
 ## Troubleshooting
 
 ### Tests Timeout
 - Increase timeout in `playwright.config.ts`
-- Check if backend/frontend are running
+- Check if containers are running: `docker compose ps`
+- View container logs: `docker logs iofold-backend` or `docker logs iofold-frontend`
 - Check network connectivity
 
 ### API Key Errors

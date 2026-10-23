@@ -164,15 +164,16 @@ const agent = await createPlaygroundDeepAgent({
 ## Testing
 
 **Manual testing:**
-1. Start dev server: `pnpm dev`
-2. Create playground session via API
-3. Send chat message
-4. Verify agent uses default tools (execute_python)
-5. Check console logs for tool loading messages
+1. Start all services: `docker compose up -d`
+2. View backend logs: `docker logs -f iofold-backend`
+3. Create playground session via API
+4. Send chat message
+5. Verify agent uses default tools (execute_python)
+6. Check console logs for tool loading messages
 
 **TypeScript verification:**
 ```bash
-pnpm tsc --noEmit
+docker exec iofold-backend pnpm tsc --noEmit
 # Should show no errors in playground/tools/* or agent-deepagents.ts
 ```
 

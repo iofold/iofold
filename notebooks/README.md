@@ -19,7 +19,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # 3. Make sure the backend is running (in project root)
-# pnpm run dev
+docker compose up -d
+curl http://localhost:8787/health  # Verify backend is running
 
 # 4a. Start Marimo editor (interactive)
 marimo edit 01_eval_experimentation.py

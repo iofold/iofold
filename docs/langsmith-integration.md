@@ -40,7 +40,7 @@ src/playground/llm/
 
 ### Environment Variables
 
-Set these in your `.env` file or Cloudflare Workers secrets:
+Set these in your `.env` file (project root) or Cloudflare Workers secrets:
 
 ```bash
 # Required: Enable LangSmith tracing
@@ -57,7 +57,7 @@ LANGSMITH_PROJECT=iofold-development
 
 1. Get your LangSmith API key from https://smith.langchain.com
 
-2. Add to `.dev.vars` (for local development):
+2. Add to `.env` (for local development):
    ```bash
    LANGSMITH_API_KEY=lsv2_pt_...
    LANGSMITH_TRACING_V2=true
@@ -190,7 +190,7 @@ const model = getChatModel({
 Set `LANGSMITH_TRACING_V2=false` or remove the environment variable:
 
 ```bash
-# In .dev.vars
+# In .env
 LANGSMITH_TRACING_V2=false
 ```
 

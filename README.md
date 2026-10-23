@@ -51,10 +51,10 @@ pnpm install
 
 ### 2. Configure Environment
 
-Create `.dev.vars` file (based on `.dev.vars.example`):
+Create `.env` file (based on `.env.example`):
 
 ```bash
-cp .dev.vars.example .dev.vars
+cp .env.example .env
 ```
 
 Fill in your API keys:
@@ -90,27 +90,20 @@ npx wrangler d1 execute iofold_validation --remote --file=./schema.sql
 
 ## Usage
 
-### Start Development Server
-
-```bash
-pnpm run dev
-```
-
-The server will start at `http://localhost:8787`
-
-### Docker Development Setup
+### Start Development Server (Docker)
 
 All services run in Docker with a single command:
 
 ```bash
-# Build and start all services
+# Start all services
 docker compose up -d
 
 # View logs
-docker compose logs -f
+docker logs -f iofold-backend    # Backend :8787
+docker logs -f iofold-frontend   # Frontend :3000
 
-# View backend logs only
-docker compose logs -f backend
+# Stop services
+docker compose down
 ```
 
 **Services:**
@@ -118,7 +111,7 @@ docker compose logs -f backend
 - Frontend: `http://localhost:3000`
 - Python Sandbox: `http://localhost:9999`
 
-**Required in `.dev.vars`:**
+**Required in `.env`:**
 - `CF_ACCOUNT_ID` - Your Cloudflare account ID
 - `CF_AI_GATEWAY_ID` - Your AI Gateway ID (create at Cloudflare dashboard)
 - `CF_AI_GATEWAY_TOKEN` - Your AI Gateway token

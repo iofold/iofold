@@ -55,7 +55,7 @@ src/db/schema/
 
 ## Environment Variables
 
-For remote D1 operations, set these in `.dev.vars`:
+For remote D1 operations, set these in `.env`:
 
 ```env
 CLOUDFLARE_ACCOUNT_ID=your_account_id

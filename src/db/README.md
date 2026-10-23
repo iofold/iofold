@@ -187,7 +187,7 @@ Required environment variables for remote:
 ```bash
 CLOUDFLARE_ACCOUNT_ID=your_account_id
 CLOUDFLARE_DATABASE_ID=your_database_id  # From wrangler d1 list
-CLOUDFLARE_D1_TOKEN=your_api_token       # From .dev.vars or Cloudflare dashboard
+CLOUDFLARE_D1_TOKEN=your_api_token       # From .env or Cloudflare dashboard
 ```
 
 ### Table Exclusions

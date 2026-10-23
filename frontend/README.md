@@ -73,19 +73,38 @@ frontend/
 
 ### Prerequisites
 
-- Node.js 18+ and pnpm
-- Backend API running (see `/src` for backend setup)
+- Docker Engine 20.10+ or Docker Desktop
+- Docker Compose V2
 
-### Installation
+### Local Development (Docker - Recommended)
 
-1. **Install dependencies:**
+All services run in Docker containers with auto-restart.
+
+1. **Start all services:**
 
 ```bash
-cd frontend
-pnpm install
+# From project root
+docker compose up -d
 ```
 
-2. **Configure environment variables:**
+2. **View logs:**
+
+```bash
+docker logs -f iofold-backend    # Backend :8787
+docker logs -f iofold-frontend   # Frontend :3000
+```
+
+3. **Execute commands in container:**
+
+```bash
+docker exec iofold-frontend <command>
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### Environment Configuration
+
+Configure environment variables in `frontend/.env.local`:
 
 ```bash
 cp .env.example .env.local
@@ -106,31 +125,23 @@ E2E_TEST_EMAIL=e2e-test@iofold.com
 E2E_TEST_PASSWORD=...
 ```
 
-3. **Run development server:**
-
-```bash
-pnpm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
 ### Development Commands
 
 ```bash
-# Run dev server with hot reload
-pnpm run dev
+# Start all services (frontend + backend + sandbox)
+docker compose up -d
+
+# View frontend logs
+docker logs -f iofold-frontend
+
+# Run linter in container
+docker exec iofold-frontend pnpm run lint
+
+# Type check in container
+docker exec iofold-frontend pnpm run type-check
 
 # Build for production
-pnpm run build
-
-# Start production server
-pnpm start
-
-# Run linter
-pnpm run lint
-
-# Type check
-pnpm run type-check
+docker exec iofold-frontend pnpm run build
 
 # Build and preview for Cloudflare Workers
 pnpm run preview
