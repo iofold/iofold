@@ -77,6 +77,86 @@ from .utils import (
     extract_eval_context,
 )
 
+# Sandbox utilities
+from .sandbox import (
+    ALLOWED_MODULES,
+    execute_reward_function,
+    execute_batch,
+    FORBIDDEN_IMPORTS,
+    FORBIDDEN_CALLS,
+    CodeValidator,
+    validate_eval_code,
+    get_validation_warnings,
+    quick_check,
+)
+
+# LLM utilities
+from .llm import (
+    LLMClient,
+    OpenAIClient,
+    create_llm_client,
+)
+
+# Embedding utilities
+from .embeddings import (
+    EmbeddingClientProtocol,
+    EmbeddingClient,
+    create_embedding_client,
+    TFIDFEmbedding,
+    create_tfidf_embedding,
+)
+
+# Metrics utilities
+from .metrics import (
+    ConfusionMatrix,
+    calculate_confusion_matrix,
+    accuracy,
+    precision,
+    recall,
+    f1_score,
+    pearson_correlation,
+    cohen_kappa,
+    fleiss_kappa,
+    composite_score,
+    normalize_metrics,
+    meets_thresholds,
+)
+
+# Testing utilities
+from .testing import (
+    CandidateTester,
+    test_eval_function,
+    CrossValidator,
+    cross_validate_candidate,
+    WinnerSelector,
+    select_best_candidate,
+    DEFAULT_WEIGHTS,
+)
+
+# Clustering utilities
+from .clustering import (
+    cluster_traces,
+    get_cluster_traces,
+    get_cluster_representatives,
+    find_similar_traces,
+    find_most_similar,
+    compare_traces,
+    compute_pairwise_similarities,
+    extract_first_message,
+    extract_full_trace_text,
+    # Note: extract_tool_pattern already exported from extraction
+)
+
+# Generation utilities
+from .generation import (
+    DeepAgent,
+    PatternAnalyzer,
+    CandidateGenerator,
+    format_trace_for_prompt,
+    format_labeled_trace,
+    format_candidates_for_prompt,
+)
+
 __version__ = "0.1.0"
 
 __all__ = [
@@ -127,4 +207,62 @@ __all__ = [
     "serialize_for_storage",
     "normalize_trace",
     "extract_eval_context",
+    # Sandbox
+    "ALLOWED_MODULES",
+    "execute_reward_function",
+    "execute_batch",
+    "FORBIDDEN_IMPORTS",
+    "FORBIDDEN_CALLS",
+    "CodeValidator",
+    "validate_eval_code",
+    "get_validation_warnings",
+    "quick_check",
+    # LLM
+    "LLMClient",
+    "OpenAIClient",
+    "create_llm_client",
+    # Embeddings
+    "EmbeddingClientProtocol",
+    "EmbeddingClient",
+    "create_embedding_client",
+    "TFIDFEmbedding",
+    "create_tfidf_embedding",
+    # Metrics
+    "ConfusionMatrix",
+    "calculate_confusion_matrix",
+    "accuracy",
+    "precision",
+    "recall",
+    "f1_score",
+    "pearson_correlation",
+    "cohen_kappa",
+    "fleiss_kappa",
+    "composite_score",
+    "normalize_metrics",
+    "meets_thresholds",
+    # Testing
+    "CandidateTester",
+    "test_eval_function",
+    "CrossValidator",
+    "cross_validate_candidate",
+    "WinnerSelector",
+    "select_best_candidate",
+    "DEFAULT_WEIGHTS",
+    # Clustering
+    "cluster_traces",
+    "get_cluster_traces",
+    "get_cluster_representatives",
+    "find_similar_traces",
+    "find_most_similar",
+    "compare_traces",
+    "compute_pairwise_similarities",
+    "extract_first_message",
+    "extract_full_trace_text",
+    # Generation
+    "DeepAgent",
+    "PatternAnalyzer",
+    "CandidateGenerator",
+    "format_trace_for_prompt",
+    "format_labeled_trace",
+    "format_candidates_for_prompt",
 ]
