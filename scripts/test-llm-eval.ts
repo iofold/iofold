@@ -19,8 +19,8 @@
 import { config } from 'dotenv';
 import OpenAI from 'openai';
 
-// Load environment variables from .dev.vars
-config({ path: '.dev.vars' });
+// Load environment variables from .env
+config({ path: '.env' });
 
 // Example LLM-based eval code
 // This eval uses ctx.call_llm() to semantically evaluate the agent's response
@@ -272,7 +272,7 @@ async function main() {
   const cfGatewayToken = process.env.CF_AI_GATEWAY_TOKEN;
 
   if (!cfAccountId || !cfGatewayId) {
-    console.error('Error: Missing CF_ACCOUNT_ID or CF_AI_GATEWAY_ID in .dev.vars');
+    console.error('Error: Missing CF_ACCOUNT_ID or CF_AI_GATEWAY_ID in .env');
     process.exit(1);
   }
 

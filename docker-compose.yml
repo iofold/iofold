@@ -65,7 +65,7 @@ services:
       - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
       - SSL_CERT_DIR=/etc/ssl/certs
     env_file:
-      - .dev.vars
+      - .env
     command: >
       sh -c "
         pnpm install --frozen-lockfile --prefer-offline &&

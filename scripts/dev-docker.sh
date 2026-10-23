@@ -6,7 +6,7 @@
 #   - Backend: Cloudflare Workers via Wrangler
 #   - Frontend: Next.js
 #
-# REQUIRED: Add CLOUDFLARE_API_TOKEN to .dev.vars
+# REQUIRED: Add CLOUDFLARE_API_TOKEN to .env
 
 set -e
 
